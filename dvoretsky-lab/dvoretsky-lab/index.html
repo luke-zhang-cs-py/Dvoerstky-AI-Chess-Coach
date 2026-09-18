@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dvoretsky Lab</title>
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+
+<header class="masthead">
+  <div class="masthead-row">
+    <h1 class="wordmark">Dvoretsky Lab <span>— a training room built from your own games</span></h1>
+    <div class="masthead-tools">
+      <input type="text" id="handle" placeholder="lichess.org/@/yourname" aria-label="Lichess username or profile link">
+      <button id="sync" class="primary">Sync games</button>
+      <label class="textsize">Text
+        <select id="uiScale" aria-label="Text size">
+          <option value="1">Normal</option>
+          <option value="1.12">Large</option>
+          <option value="1.25">Larger</option>
+          <option value="1.4">Largest</option>
+        </select>
+      </label>
+    </div>
+  </div>
+
+  <div class="ruler">
+    <div class="ruler-track" id="ruler" role="img" aria-label="Rating scale showing measured strength against the Candidate Master line"></div>
+    <div class="ruler-caption" id="rulerCaption"></div>
+  </div>
+
+  <nav class="tabs" role="tablist">
+    <button class="tab" role="tab" data-tab="strength">Strength</button>
+    <button class="tab" role="tab" data-tab="sparring">Sparring</button>
+    <button class="tab" role="tab" data-tab="drills">Drills</button>
+    <button class="tab" role="tab" data-tab="calendar">Calendar</button>
+    <button class="tab" role="tab" data-tab="review">Review</button>
+    <button class="tab" role="tab" data-tab="scout">Scout</button>
+    <button class="tab" role="tab" data-tab="settings">Settings</button>
+  </nav>
+</header>
+
+<main>
+  <div id="flash" class="notice hidden" role="status"></div>
+
+  <!-- STRENGTH -->
+  <section class="panel" id="panel-strength" role="tabpanel">
+    <div id="strengthBody"></div>
+  </section>
+
+  <!-- SPARRING -->
+  <section class="panel" id="panel-sparring" role="tabpanel">
+    <div class="desk">
+      <div class="board-wrap">
+        <div class="board" id="sparBoard"></div>
+        <div class="board-meta">
+          <span id="sparStatus">Set the colour and strength, then start.</span>
+          <button id="sparFlip" class="quiet">Flip</button>
+        </div>
+        <div class="moves scroll" id="sparMoves" style="margin-top:.6rem"></div>
+      </div>
+
+      <div class="stack">
+        <div class="sheet">
+          <h3>Your mirror</h3>
+          <p class="tiny soft">The opponent plays your own opening book, loses material at the rate you lose it, and blunders at the frequency your games show — scaled up when the position is sharp, down when it is quiet.</p>
+          <div class="row">
+            <label>Play as <select id="sparColor"><option value="w">White</option><option value="b">Black</option><option value="random">Random</option></select></label>
+            <label>Strength <input type="text" id="sparElo" size="5" placeholder="auto"></label>
+            <label>Think <select id="sparThink"><option value="500">fast</option><option value="900" selected>normal</option><option value="1800">slow</option></select></label>
+            <button id="sparStart" class="primary">Start game</button>
+          </div>
+          <div class="row" style="margin-top:.5rem">
+            <label><input type="checkbox" id="sparCoach" checked> Live advice for both sides</label>
+            <button id="sparHint" class="quiet">One hint</button>
+            <button id="sparTakeback" class="quiet">Take back</button>
+            <button id="sparResign" class="quiet">Resign</button>
+          </div>
+        </div>
+
+        <div id="sparAdvice"></div>
+
+        <div class="sheet">
+          <h4>Game text</h4>
+          <textarea id="sparPgn" rows="3" readonly aria-label="Moves of the current sparring game"></textarea>
+          <p class="tiny soft">Copy this into the Review tab's PGN import to run a justification transcript on your own sparring game.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- DRILLS -->
+  <section class="panel" id="panel-drills" role="tabpanel">
+    <div id="drillHome"></div>
+    <div id="drillStage" class="hidden">
+      <div class="desk">
+        <div class="board-wrap">
+          <div class="board" id="drillBoard"></div>
+          <div class="board-meta"><span id="drillProgress"></span><button id="drillQuit" class="quiet">Back to drills</button></div>
+        </div>
+        <div class="stack">
+          <div class="sheet" id="drillPrompt"></div>
+          <div id="drillFeedback"></div>
+          <div class="row">
+            <button id="drillReveal">Show the move</button>
+          </div>
+          <div class="row hidden" id="drillGrades">
+            <span class="tiny soft">How did that feel?</span>
+            <button data-grade="0">Missed it</button>
+            <button data-grade="1">Hard</button>
+            <button data-grade="2">Got it</button>
+            <button data-grade="3">Instant</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CALENDAR -->
+  <section class="panel" id="panel-calendar" role="tabpanel">
+    <div id="calBody"></div>
+  </section>
+
+  <!-- REVIEW -->
+  <section class="panel" id="panel-review" role="tabpanel">
+    <div class="row" style="margin-bottom:1rem">
+      <select id="revGame" style="max-width:38rem"></select>
+      <button id="revStart" class="primary">Start justification review</button>
+    </div>
+    <div id="revStage" class="hidden">
+      <div class="desk">
+        <div class="board-wrap">
+          <div class="board" id="revBoard"></div>
+          <div class="board-meta"><span id="revProgress"></span></div>
+          <div class="moves scroll" id="revMoves" style="margin-top:.6rem"></div>
+        </div>
+        <div class="stack">
+          <div class="sheet" id="revPrompt"></div>
+          <div>
+            <textarea id="revText" rows="7" placeholder="Candidates I looked at: …&#10;Main line: …&#10;What he threatens: …&#10;Evaluation at the end: …"></textarea>
+            <div class="row" style="margin-top:.5rem">
+              <button id="revSubmit" class="primary">Commit and see the engine</button>
+              <button id="revNext">Next move</button>
+              <button id="revSkip" class="quiet">Skip</button>
+            </div>
+          </div>
+          <div id="revFeedback"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SCOUT -->
+  <section class="panel" id="panel-scout" role="tabpanel">
+    <div class="sheet">
+      <h3>Read any public profile</h3>
+      <p class="tiny soft">Paste a Lichess profile link or username. The same measurement runs against their last 90 days and returns what that player should work on. Useful for preparing against an opponent, or for coaching someone else.</p>
+      <div class="row">
+        <input type="text" id="scoutHandle" placeholder="https://lichess.org/@/someone" style="min-width:20rem">
+        <select id="scoutPerf"><option value="rapid">rapid</option><option value="blitz">blitz</option><option value="classical">classical</option><option value="bullet">bullet</option></select>
+        <button id="scoutBtn" class="primary">Read profile</button>
+      </div>
+    </div>
+    <div id="scoutOut" style="margin-top:1rem"></div>
+  </section>
+
+  <!-- SETTINGS -->
+  <section class="panel" id="panel-settings" role="tabpanel">
+    <div class="grid2">
+      <div class="sheet">
+        <h3>Training</h3>
+        <p class="row"><label>Minutes a day <input type="text" id="setMinutes" size="4"></label></p>
+        <p class="row"><label>Endgame depth
+          <select id="setTier"><option value="1">essentials only</option><option value="2">essentials and standard theory</option><option value="3">everything, including the hard ones</option></select></label></p>
+        <p class="row"><label>Session starts at <input type="text" id="setHour" size="3"> :00</label></p>
+        <p class="row"><label>Time control <select id="setPerf">
+          <option value="rapid">rapid</option><option value="blitz">blitz</option>
+          <option value="classical">classical</option><option value="bullet">bullet</option></select></label></p>
+        <button id="saveSettings" class="primary">Save settings</button>
+      </div>
+
+      <div class="sheet">
+        <h3>Data</h3>
+        <p class="tiny soft">Everything lives in this browser. The only outbound requests are to Lichess, and to an assistant API if you set a key below.</p>
+        <p class="row">
+          <button id="exportAll">Export backup</button>
+          <label class="quiet" style="border:1px solid var(--rule);padding:.35em .85em;border-radius:2px;cursor:pointer">
+            Import PGN or backup<input type="file" id="importFile" accept=".pgn,.json,.txt" class="hidden"></label>
+          <button id="wipe">Delete everything</button>
+        </p>
+        <h4 style="margin-top:1rem">Written coaching (optional)</h4>
+        <p class="tiny soft">Without a key, the review still produces a full structured critique and hands you a prompt to paste elsewhere. A key entered here is stored in this browser only; treat it as you would any secret typed into a local page.</p>
+        <p><input type="password" id="setKey" placeholder="API key (optional)" style="width:100%"></p>
+      </div>
+    </div>
+
+    <div class="sheet" style="margin-top:1rem">
+      <h3>How the numbers are made</h3>
+      <p class="tiny soft">Measured strength blends three things: a FIDE-style performance rating over the last ninety days, a strength estimate derived from average centipawn loss, and your listed rating as an anchor. The blend leans on results once there are enough of them and on move quality when there are not. The margin shown is the sampling error on the performance rating, so it narrows as you play. Motif labels are produced by geometric rules over the position rather than by a neural classifier: they are reliable for forks, pins, hanging pieces and back-rank patterns, and rougher for deflection and prophylaxis.</p>
+    </div>
+  </section>
+</main>
+
+<script src="js/core.js"></script>
+<script src="js/engine.js"></script>
+<script src="js/data.js"></script>
+<script src="js/analysis.js"></script>
+<script src="js/training.js"></script>
+<script src="js/coach.js"></script>
+<script src="js/sparring.js"></script>
+<script src="js/board.js"></script>
+<script src="js/ui.js"></script>
+</body>
+</html>
