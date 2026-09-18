@@ -1,34 +1,35 @@
-/* Dvoretsky Lab — a cool grey-green study palette. The red is the trainer's pen
-   and appears only where something went wrong; olive marks the move that held. */
+/* Dvoretsky Lab — dark terminal palette. Cyan is the interactive/accent
+   colour, red is the trainer's pen and appears only where something went
+   wrong, green marks the move that held, amber is caution. */
 :root {
-  --paper: #E7EAE4;
-  --card: #F3F5F0;
-  --card-sunk: #DDE2DA;
-  --ink: #141B23;
-  --ink-soft: #48535E;   /* 6.5:1 on paper — safe for sustained reading */
-  --ink-faint: #5A646D;  /* 5.0:1 on paper — was #8B949C at 2.5:1, which failed */
-  --ink-ghost: #8B949C;  /* non-text only: tick marks, rules, disabled glyphs */
-  --rule: #C4CBBE;
-  --rule-soft: #D6DBD0;
-  --blue: #2E4C6D;
-  --blue-tint: #DCE4EC;
-  --olive: #4B6839;
-  --olive-tint: #DFE7D6;
-  --red: #9C2B25;
-  --red-tint: #F0DCDA;
-  --amber: #75591B;
-  --amber-tint: #EEE5CE;
-  --sq-light: #DFE4D9;
-  --sq-dark: #97A68F;
-  --sq-from: #C9CE86;
-  --sq-to: #D8DB99;
-  --sq-hint: #7E9C6B;
+  --paper: #0A0E14;
+  --card: #10151D;
+  --card-sunk: #0D1117;
+  --ink: #D7E0E8;
+  --ink-soft: #8FA3B3;
+  --ink-faint: #6B7F8F;
+  --ink-ghost: #4A5A68;   /* non-text only: tick marks, rules, disabled glyphs */
+  --rule: #263140;
+  --rule-soft: #1A232E;
+  --blue: #39D9FF;
+  --blue-tint: #0D2830;
+  --olive: #5EF2A0;
+  --olive-tint: #0D2419;
+  --red: #FF5C6A;
+  --red-tint: #2A1216;
+  --amber: #FFCF5C;
+  --amber-tint: #2A2110;
+  --sq-light: #1C2836;
+  --sq-dark: #0A1420;
+  --sq-from: #123A33;
+  --sq-to: #16493F;
+  --sq-hint: #39D9FF;
 
-  --serif: 'Iowan Old Style', 'Palatino Linotype', Palatino, Charter, 'Bitstream Charter', Georgia, serif;
   --mono: ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;
 
-  --r: 2px;
-  --shadow: 0 1px 0 var(--rule-soft);
+  --r: 0px;
+  --shadow: 0 0 0 1px var(--rule-soft);
+  --glow: 0 0 0 1px var(--blue), 0 0 10px -3px var(--blue);
 
   /* One scale, set on <html>, so every rem in the sheet follows the reader's
      choice in the masthead. Nothing below is sized in px. */
@@ -40,6 +41,11 @@
   --fs-lg: 1rem;       /* body */
 }
 
+/* Board colour presets — swap by setting data-board-theme on <html>. */
+:root[data-board-theme="green"] { --sq-light: #16281c; --sq-dark: #081410; --sq-from: #163a1c; --sq-to: #1c4a22; --sq-hint: #5ef2a0; }
+:root[data-board-theme="amber"] { --sq-light: #2a2013; --sq-dark: #140f08; --sq-from: #3a2c10; --sq-to: #4a3812; --sq-hint: #ffcf5c; }
+:root[data-board-theme="mono"]  { --sq-light: #262b31; --sq-dark: #0e1114; --sq-from: #33383e; --sq-to: #3f454c; --sq-hint: #d7e0e8; }
+
 html { font-size: calc(17px * var(--ui-scale)); }
 
 * { box-sizing: border-box; }
@@ -50,7 +56,7 @@ body {
   margin: 0;
   background: var(--paper);
   color: var(--ink);
-  font-family: var(--serif);
+  font-family: var(--mono);
   font-size: var(--fs-lg);
   line-height: 1.62;
   -webkit-text-size-adjust: 100%;
@@ -60,7 +66,11 @@ body {
 h1, h2, h3, h4 { font-weight: 600; line-height: 1.2; margin: 0 0 .4em; letter-spacing: -0.01em; }
 h1 { font-size: 1.5rem; }
 h2 { font-size: 1.25rem; }
-h3 { font-size: 1.08rem; margin-bottom: .5em; }
+h3 {
+  font-size: var(--fs-sm); margin-bottom: .6em; text-transform: uppercase;
+  letter-spacing: .08em; color: var(--ink-soft);
+}
+h3::before { content: '// '; color: var(--rule); }
 h4 { font-size: 1rem; color: var(--ink); font-weight: 600; }
 p { margin: 0 0 .75em; max-width: 66ch; }
 p:last-child { margin-bottom: 0; }
@@ -78,15 +88,16 @@ button {
   font-size: var(--fs-md);
   min-height: 2.1em;
 }
-button:hover:not(:disabled) { background: #fff; border-color: var(--ink-faint); }
+button:hover:not(:disabled) { background: var(--card-sunk); border-color: var(--blue); }
 button:disabled { opacity: .45; cursor: not-allowed; }
-button.primary { background: var(--blue); color: #F5F7F9; border-color: var(--blue); }
-button.primary:hover:not(:disabled) { background: #24405E; border-color: #24405E; }
+button.primary { background: var(--blue); color: #04141A; border-color: var(--blue); font-weight: 600; }
+button.primary:hover:not(:disabled) { background: #6BE5FF; border-color: #6BE5FF; box-shadow: var(--glow); }
 button.quiet { background: transparent; border-color: transparent; color: var(--blue); padding: .3em .5em; text-decoration: underline; text-decoration-color: var(--rule); text-underline-offset: 3px; }
 button.quiet:hover { background: var(--blue-tint); border-color: transparent; text-decoration-color: var(--blue); }
 
 input[type=text], input[type=password], select, textarea {
-  background: #fff;
+  background: var(--card-sunk);
+  color: var(--ink);
   border: 1px solid var(--rule);
   border-radius: var(--r);
   padding: .45em .6em;
@@ -98,7 +109,7 @@ input:focus-visible, button:focus-visible, select:focus-visible, textarea:focus-
   outline: 2px solid var(--blue);
   outline-offset: 1px;
 }
-textarea { width: 100%; resize: vertical; font-family: var(--serif); line-height: 1.6; font-size: var(--fs-lg); }
+textarea { width: 100%; resize: vertical; font-family: var(--mono); line-height: 1.6; font-size: var(--fs-lg); }
 
 /* ---------- masthead ---------- */
 .masthead {
@@ -118,6 +129,7 @@ textarea { width: 100%; resize: vertical; font-family: var(--serif); line-height
 @media (prefers-reduced-motion: reduce) { .masthead .ruler { transition: none; } }
 .masthead-row { display: flex; gap: 1rem; align-items: baseline; flex-wrap: wrap; }
 .wordmark { font-size: 1.15rem; font-weight: 600; letter-spacing: -0.015em; margin: 0; }
+.wordmark::before { content: '> '; color: var(--olive); }
 .wordmark span { color: var(--ink-soft); font-weight: 400; font-size: var(--fs-md); }
 .masthead-tools { margin-left: auto; display: flex; gap: .45rem; align-items: center; flex-wrap: wrap; }
 .masthead-tools input[type=text] { width: 15rem; }
@@ -166,7 +178,7 @@ textarea { width: 100%; resize: vertical; font-family: var(--serif); line-height
 }
 .tab:hover { color: var(--ink); background: var(--paper); }
 .tab[aria-selected=true] {
-  background: var(--paper); border-color: var(--rule); color: var(--ink); font-weight: 600;
+  background: var(--paper); border-color: var(--rule); color: var(--blue); font-weight: 600;
   box-shadow: inset 0 2px 0 var(--blue);
 }
 
@@ -217,15 +229,15 @@ main { padding: 1.3rem 1.25rem 4rem; max-width: 1400px; margin: 0 auto; }
 }
 .sq.occupied .dot { width: 84%; height: 84%; border-radius: 50%; background: transparent; border: 3px solid var(--sq-hint); opacity: .6; }
 .sq .coord { position: absolute; font-family: var(--mono); font-size: var(--fs-xs); font-weight: 600; }
-.sq.light .coord { color: #56616B; }
-.sq.dark .coord { color: #F1F4ED; }
-/* highlighted squares are pale whichever colour they started as */
-.sq.from .coord, .sq.to .coord, .sq.check .coord { color: #3C444D; }
+.sq.light .coord { color: #4A5A68; }
+.sq.dark .coord { color: #2A3644; }
+/* highlighted squares get a coordinate colour that still reads against the accent tint */
+.sq.from .coord, .sq.to .coord, .sq.check .coord { color: rgba(255,255,255,.35); }
 .sq .coord.f { bottom: 1px; right: 3px; }
 .sq .coord.r { top: 1px; left: 3px; }
 .piece { pointer-events: none; }
-.piece.w { color: #FBFCFA; text-shadow: 0 0 1px #111, 0 0 1px #111, 0 1px 2px rgba(0,0,0,.35); }
-.piece.b { color: #1A1F17; text-shadow: 0 0 1px rgba(255,255,255,.25); }
+.piece.w { color: #F3F7FA; text-shadow: 0 0 1px #04141A, 0 0 1px #04141A, 0 1px 2px rgba(0,0,0,.5); }
+.piece.b { color: #8FA3B3; text-shadow: 0 0 1px #000, 0 0 4px rgba(0,0,0,.6); }
 .sq .arrowmark { position: absolute; inset: 0; border: 2px dashed var(--blue); opacity: .7; pointer-events: none; }
 
 .evalbar { display: flex; height: 8px; border: 1px solid var(--rule); margin-top: .5rem; background: var(--sq-dark); }
@@ -298,7 +310,7 @@ td.num, th.num { text-align: right; font-family: var(--mono); }
   padding: .5rem .55rem; min-height: 7rem; font-size: var(--fs-sm); cursor: pointer; text-align: left;
   line-height: 1.4;
 }
-.day:hover { background: #fff; }
+.day:hover { background: var(--card-sunk); border-color: var(--blue); }
 .day.today { border-color: var(--blue); border-width: 2px; }
 .day.done { background: var(--olive-tint); }
 .day .dnum { font-family: var(--mono); color: var(--ink-soft); font-weight: 600; display: block; margin-bottom: .15rem; }

@@ -4,6 +4,8 @@
   var Chess = root.Chess;
   var GLYPH = { wk: '\u2654', wq: '\u2655', wr: '\u2656', wb: '\u2657', wn: '\u2658', wp: '\u2659',
                 bk: '\u265A', bq: '\u265B', br: '\u265C', bb: '\u265D', bn: '\u265E', bp: '\u265F' };
+  var GLYPH_LETTERS = { wk: 'K', wq: 'Q', wr: 'R', wb: 'B', wn: 'N', wp: 'P',
+                         bk: 'k', bq: 'q', br: 'r', bb: 'b', bn: 'n', bp: 'p' };
   var FILES = 'abcdefgh';
 
   function Board(el, opts) {
@@ -15,11 +17,21 @@
     this.lastMove = null;
     this.interactive = this.opts.interactive !== false;
     this.allowedColor = this.opts.allowedColor || null; // 'w' | 'b' | null = both
+    this.pieceSet = this.opts.pieceSet || 'glyph'; // 'glyph' | 'letters'
+    this.showCoords = this.opts.showCoords !== false;
     this.marks = [];
     this.el.addEventListener('click', this.onClick.bind(this));
     this.el.addEventListener('keydown', this.onKey.bind(this));
     this.render();
   }
+
+  // Runtime update (e.g. from Settings) without recreating the board.
+  Board.prototype.setDisplayOptions = function (opts) {
+    opts = opts || {};
+    if (opts.pieceSet !== undefined) this.pieceSet = opts.pieceSet;
+    if (opts.showCoords !== undefined) this.showCoords = opts.showCoords;
+    this.render();
+  };
 
   Board.prototype.setFen = function (fen, lastMove) {
     this.game = new Chess(fen);
@@ -55,6 +67,7 @@
     var checkSq = null;
     if (g.inCheck()) checkSq = Chess.algebraic(g.kings[g.turn]);
 
+    var glyphs = this.pieceSet === 'letters' ? GLYPH_LETTERS : GLYPH;
     var html = '';
     order.forEach(function (rf) {
       var r = rf[0], f = rf[1];
@@ -73,13 +86,15 @@
 
       html += '<div class="' + cls.join(' ') + '" data-sq="' + name + '"' +
         (canMove || targets[name] ? ' tabindex="0" role="button" aria-label="' + name + '"' : '') + '>';
-      if (piece) html += '<span class="piece ' + piece.color + '">' + GLYPH[piece.color + piece.type] + '</span>';
+      if (piece) html += '<span class="piece ' + piece.color + '">' + glyphs[piece.color + piece.type] + '</span>';
       if (targets[name]) html += '<span class="dot"></span>';
       if (mark) html += '<span class="arrowmark"></span>';
-      var edgeRank = self.flipped ? f === 7 : f === 0;
-      var edgeFile = self.flipped ? r === 0 : r === 7;
-      if (edgeRank) html += '<span class="coord r">' + (8 - r) + '</span>';
-      if (edgeFile) html += '<span class="coord f">' + FILES[f] + '</span>';
+      if (self.showCoords) {
+        var edgeRank = self.flipped ? f === 7 : f === 0;
+        var edgeFile = self.flipped ? r === 0 : r === 7;
+        if (edgeRank) html += '<span class="coord r">' + (8 - r) + '</span>';
+        if (edgeFile) html += '<span class="coord f">' + FILES[f] + '</span>';
+      }
       html += '</div>';
     });
     this.el.innerHTML = html;
@@ -128,5 +143,6 @@
   };
 
   Board.GLYPH = GLYPH;
+  Board.GLYPH_LETTERS = GLYPH_LETTERS;
   root.Board = Board;
 })(typeof window !== 'undefined' ? window : globalThis);

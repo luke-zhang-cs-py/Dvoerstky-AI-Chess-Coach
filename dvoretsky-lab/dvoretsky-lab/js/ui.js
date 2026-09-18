@@ -19,7 +19,8 @@
     track: Store.get('track', []),
     transcripts: Store.get('transcripts', {}),
     completed: Store.get('completed', {}),
-    settings: Store.get('settings', { minutes: 60, endgameTier: 2, hour: 19, apiKey: '', perf: 'rapid' }),
+    settings: Store.get('settings', { minutes: 60, endgameTier: 2, hour: 19, apiKey: '', perf: 'rapid',
+      boardTheme: 'cyan', pieceSet: 'glyph', showCoords: true }),
     engine: new Engine(),
     spar: null,
     review: null,
@@ -490,10 +491,10 @@
   /* ---------- sparring ---------- */
   var sparBoard = null;
   function initSparring() {
-    sparBoard = new Board($('#sparBoard'), {
+    sparBoard = new Board($('#sparBoard'), boardOpts({
       onMove: onSparMove,
       allowedColor: 'w'
-    });
+    }));
     $('#sparStart').addEventListener('click', function () { startSpar($('#sparColor').value); });
     $('#sparFlip').addEventListener('click', function () { sparBoard.flip(); });
     $('#sparHint').addEventListener('click', function () { refreshAdvice(true); });
@@ -669,7 +670,7 @@
     S.drill = { queue: queue, index: 0, revealed: false, attempts: 0 };
     $('#drillHome').classList.add('hidden');
     $('#drillStage').classList.remove('hidden');
-    if (!drillBoard) drillBoard = new Board($('#drillBoard'), { onMove: onDrillMove });
+    if (!drillBoard) drillBoard = new Board($('#drillBoard'), boardOpts({ onMove: onDrillMove }));
     showCard();
   }
 
@@ -757,7 +758,7 @@
     S.drill = { queue: [], index: 0, endgame: eg };
     $('#drillHome').classList.add('hidden');
     $('#drillStage').classList.remove('hidden');
-    if (!drillBoard) drillBoard = new Board($('#drillBoard'), { onMove: onEndgameMove });
+    if (!drillBoard) drillBoard = new Board($('#drillBoard'), boardOpts({ onMove: onEndgameMove }));
     var g = new Chess(eg.fen);
     drillBoard.opts.onMove = onEndgameMove;
     drillBoard.allowedColor = g.turnColor();
@@ -796,7 +797,7 @@
     S.drill = { queue: [c], index: 0 };
     $('#drillHome').classList.add('hidden');
     $('#drillStage').classList.remove('hidden');
-    if (!drillBoard) drillBoard = new Board($('#drillBoard'), { onMove: onDrillMove });
+    if (!drillBoard) drillBoard = new Board($('#drillBoard'), boardOpts({ onMove: onDrillMove }));
     drillBoard.opts.onMove = onDrillMove;
     showCard();
   }
@@ -919,7 +920,7 @@
       errors: (S.profile ? S.profile.errors : []).filter(function (e) { return e.gameId === game.id; })
     };
     $('#revStage').classList.remove('hidden');
-    if (!revBoard) revBoard = new Board($('#revBoard'), { interactive: false });
+    if (!revBoard) revBoard = new Board($('#revBoard'), boardOpts({ interactive: false }));
     revBoard.flipped = game.myColor === 'b';
     renderReviewStep();
   }
@@ -1096,11 +1097,17 @@
     $('#setMinutes').value = s.minutes; $('#setTier').value = s.endgameTier;
     $('#setHour').value = s.hour; $('#setKey').value = s.apiKey || '';
     $('#setPerf').value = s.perf || 'rapid';
+    $('#setBoardTheme').value = s.boardTheme || 'cyan';
+    $('#setPieceSet').value = s.pieceSet || 'glyph';
+    $('#setShowCoords').checked = s.showCoords !== false;
     $('#saveSettings').addEventListener('click', function () {
       S.settings = { minutes: +$('#setMinutes').value, endgameTier: +$('#setTier').value,
         hour: +$('#setHour').value, apiKey: $('#setKey').value, perf: $('#setPerf').value,
+        boardTheme: $('#setBoardTheme').value, pieceSet: $('#setPieceSet').value,
+        showCoords: $('#setShowCoords').checked,
         uiScale: S.settings.uiScale || '1' };
       Store.set('settings', S.settings);
+      applyBoardSettings();
       flash('Settings saved.');
       renderCalendar();
     });
@@ -1196,7 +1203,21 @@
     measureMasthead();
   }
 
+  // Board display options (colour theme, piece style, coordinates) live in
+  // S.settings and apply globally: boardTheme via a data-attribute on <html>
+  // that css/app.css keys its board-square variables off of, the rest via
+  // Board.prototype.setDisplayOptions on whichever boards currently exist.
+  function boardOpts(extra) {
+    return Object.assign({ pieceSet: S.settings.pieceSet || 'glyph', showCoords: S.settings.showCoords !== false }, extra || {});
+  }
+  function applyBoardSettings() {
+    document.documentElement.setAttribute('data-board-theme', S.settings.boardTheme || 'cyan');
+    var opts = { pieceSet: S.settings.pieceSet || 'glyph', showCoords: S.settings.showCoords !== false };
+    [sparBoard, drillBoard, revBoard].forEach(function (b) { if (b) b.setDisplayOptions(opts); });
+  }
+
   function boot() {
+    applyBoardSettings();
     initChrome();
     initTabs();
     initSparring();
