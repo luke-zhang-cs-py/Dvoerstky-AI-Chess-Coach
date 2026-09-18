@@ -343,6 +343,9 @@
     h.push('<div class="sheet"><h3>Openings by result and leakage</h3><div class="tablewrap">' + openingTable(p) + '</div></div>');
     h.push('</div>');
 
+    h.push('<div class="sheet" style="margin-top:1.1rem"><h3>Opening tree — how the positions you reach tend to evolve</h3>' +
+      '<p class="tiny soft">Move-by-move, both colours. Score is your result from that point on; the cp figure is the average evaluation swing over your next ten moves from there — the number that finds a structure you keep entering and then misplaying, as opposed to a bad opening move itself.</p>' +
+      openingTree(p) + '</div>');
     h.push('<div class="sheet" style="margin-top:1.1rem"><h3>Trajectory towards 2200</h3>' + trajectoryCard() + '</div>');
     h.push('<div class="sheet" style="margin-top:1.1rem"><h3>Where in the game it goes wrong</h3>' + timingChart(p) + '</div>');
     h.push('<div class="sheet" style="margin-top:1.1rem"><h3>Your ten most expensive moves</h3><div class="tablewrap">' + worstTable(p) + '</div></div>');
@@ -416,6 +419,44 @@
         '<td class="num">' + o.cpLost + '</td></tr>';
     });
     return h + '</tbody></table>';
+  }
+
+  // Renders p.openingTree (built in analysis.js's buildOpeningTree): a tree of
+  // literal move sequences, each node showing how often you reached it, your
+  // score from there, and the average eval swing over the following ten
+  // moves. Not filtered to any specific opening — the busiest lines (usually
+  // a player's actual repertoire, e.g. Caro-Kann / QGD) simply sort first,
+  // since children are already frequency-sorted by buildOpeningTree.
+  var OPENING_TREE_LEAK_CP = 50;      // highlight threshold for the eval-swing stat
+  var OPENING_TREE_MAX_CHILDREN = 8;  // per level, so a wide root doesn't swamp the panel
+
+  function openingTree(p) {
+    var kids = (p.openingTree && p.openingTree.childList) || [];
+    if (!kids.length) return '<div class="empty">Not enough repeated lines yet — needs a handful of analysed games sharing the same opening moves.</div>';
+    return '<ul class="opening-tree">' + kids.slice(0, OPENING_TREE_MAX_CHILDREN).map(openingTreeNode).join('') + '</ul>';
+  }
+
+  function openingTreeNode(node) {
+    var label = Math.ceil(node.ply / 2) + (node.ply % 2 === 1 ? '.' : '…');
+    var scoreBad = node.scorePct < 42;
+    var dropLabel, dropBad = false;
+    if (node.evalDrop == null) {
+      dropLabel = 'no eval data';
+    } else if (node.evalDrop > 0) {
+      dropLabel = '−' + node.evalDrop + ' cp/10mv';
+      dropBad = node.evalDrop >= OPENING_TREE_LEAK_CP;
+    } else {
+      dropLabel = '+' + (-node.evalDrop) + ' cp/10mv';
+    }
+    var h = '<li><div class="node">' +
+      '<span class="san">' + label + ' ' + esc(node.san) + '</span>' +
+      '<span class="stat">' + node.games + ' games</span>' +
+      '<span class="stat' + (scoreBad ? ' bad' : '') + '">' + node.scorePct + '% score</span>' +
+      '<span class="stat' + (dropBad ? ' bad' : '') + '">' + dropLabel + '</span>' +
+      '</div>';
+    var kids = node.childList || [];
+    if (kids.length) h += '<ul>' + kids.slice(0, OPENING_TREE_MAX_CHILDREN).map(openingTreeNode).join('') + '</ul>';
+    return h + '</li>';
   }
 
   function timingChart(p) {

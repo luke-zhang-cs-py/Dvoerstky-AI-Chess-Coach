@@ -45,9 +45,12 @@ tells you so after syncing.
 your 90-day FIDE-style performance rating, an Elo implied by your average centipawn loss,
 and your listed Lichess rating as an anchor. Underneath: accuracy broken down by phase,
 clock-pressure rate, which tactical motifs your mistakes share and what each costs you,
-openings sorted by score *and* by evaluation leaked, when in the game things go wrong,
-your ten most expensive moves (each with a button that opens it as a drill), and the
-trajectory chart described below.
+openings sorted by score *and* by evaluation leaked, an opening tree of your actual move
+sequences (both colours) showing how often you reach each position, your score from there,
+and the average evaluation swing over your next ten moves — the number that finds a
+structure you keep entering and then misplaying, as opposed to a single bad opening move
+— when in the game things go wrong, your ten most expensive moves (each with a button that
+opens it as a drill), and the trajectory chart described below.
 
 **Sparring** — an opponent modelled on you. It plays your own opening book first (built
 from your games, both colours), then a move-selection model tuned so its realised
@@ -106,49 +109,46 @@ key, PGN import, full backup export/import, and a delete-everything button.
 
 ---
 
-## Five more features worth building
+## Four more features worth building
 
 These are ordered by what they would be worth against a 2100 plateau, not by effort.
 
-**1. Opening leak tracing.** You have strong theory and it isn't what's holding you back —
-the Strength tab already shows evaluation leaked per opening. The next step is a tree: your
-Caro-Kann and QGD moves as nodes, each annotated with how many times you reached it, your
-score from there, and the *average evaluation drop over the following ten moves*. That last
-number finds the real problem, which is usually not a bad move in the opening but a
-structure you keep entering and then misplaying. The data is already stored; it needs the
-tree layout and the forward-looking aggregation.
-
-**2. A clock-discipline trainer.** The app already measures what fraction of your blunders
+**1. A clock-discipline trainer.** The app already measures what fraction of your blunders
 arrive in the last third of your clock. If that fraction is high, no amount of tactics
 training fixes it — the issue is time allocation, not vision. A drill that gives you a
 position and a *budget* (thirty seconds for this one, four minutes for that one), grades
 you on both the move and whether you respected the budget, and reports where you overspend,
 targets something puzzle sites cannot.
 
-**3. Blindfold and visualisation ladders.** Difficulty in "spotting advanced sequences" is
+**2. Blindfold and visualisation ladders.** Difficulty in "spotting advanced sequences" is
 very often a visualisation ceiling rather than a pattern gap: you can find a four-move idea
 but cannot hold the position at the end of it clearly enough to evaluate it. A ladder —
 name the square colour, then track a knight's path with the board hidden, then play out
 three moves from a shown position and evaluate the result from memory — attacks that
 directly, and is measurable week over week.
 
-**4. Predict-the-move on classic games.** Dvoretsky's own method. Step through a master
+**3. Predict-the-move on classic games.** Dvoretsky's own method. Step through a master
 game one move at a time, commit to your move before seeing the played one, and score your
 agreement across a whole game. Curated by theme (Karpov's prophylaxis, Rubinstein's rook
 endings, Petrosian's exchange sacrifices) and matched to your weakest phase, this trains
 plan selection in a way tactics puzzles never touch — puzzles always tell you something is
 there, which is the opposite of a real middlegame.
 
-**5. A coach-facing export.** One PDF or page: calibration with error bars, phase
+**4. A coach-facing export.** One PDF or page: calibration with error bars, phase
 breakdown, motif table, the ten most expensive moves with diagrams, the trajectory, and the
 last month's drill compliance. If you ever work with a human coach — and for the climb from
 CM to NM you probably should — this is the document that saves the first three sessions of
 them working out what you already know about yourself. It also makes the Scout tab useful
 for genuine preparation against a named opponent.
 
-A sixth, if you want one: **rated drill sessions**, where the puzzles carry a rating and so
+A fifth, if you want one: **rated drill sessions**, where the puzzles carry a rating and so
 do you, so the drill queue difficulty tracks your actual solving strength rather than
 whichever of your blunders happened to be worst.
+
+Already built: **opening leak tracing** — the Strength tab's opening tree, keyed by literal
+move sequence rather than Lichess's coarser opening-name family, each node showing games
+reached, score from there, and average evaluation swing over the following ten moves
+(`Analysis.buildOpeningTree` in `js/analysis.js`, rendered by `openingTree()` in `js/ui.js`).
 
 ---
 

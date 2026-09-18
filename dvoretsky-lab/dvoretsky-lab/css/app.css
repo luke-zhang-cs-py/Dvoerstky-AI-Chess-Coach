@@ -264,6 +264,16 @@ td.num, th.num { text-align: right; font-family: var(--mono); }
 .bar.olive { background: var(--olive); }
 .bar.amber { background: var(--amber); }
 
+/* ---------- opening tree ---------- */
+.opening-tree, .opening-tree ul { list-style: none; margin: 0; padding: 0; }
+.opening-tree ul { margin-left: 1.1rem; padding-left: .8rem; border-left: 1px solid var(--rule-soft); }
+.opening-tree li { margin: .15rem 0; }
+.opening-tree .node { display: flex; align-items: baseline; gap: .6rem; flex-wrap: wrap; padding: .15rem .3rem; border-radius: var(--r); }
+.opening-tree .node:hover { background: var(--paper); }
+.opening-tree .san { font-family: var(--mono); font-weight: 600; }
+.opening-tree .stat { font-size: var(--fs-sm); color: var(--ink-soft); }
+.opening-tree .stat.bad { color: var(--red); font-weight: 600; }
+
 /* ---------- candidate panels (dual sided) ---------- */
 .sides { display: grid; grid-template-columns: 1fr 1fr; gap: 0; border: 1px solid var(--rule); background: var(--card); }
 @media (max-width: 620px) { .sides { grid-template-columns: 1fr; } }
