@@ -181,6 +181,23 @@
       </div>
 
       <div class="sheet">
+        <h3>Board</h3>
+        <p class="row"><label>Board colours
+          <select id="setBoardTheme">
+            <option value="cyan">Cyan</option>
+            <option value="green">Terminal green</option>
+            <option value="amber">Amber</option>
+            <option value="mono">Monochrome</option>
+          </select></label></p>
+        <p class="row"><label>Piece style
+          <select id="setPieceSet">
+            <option value="glyph">Classic symbols</option>
+            <option value="letters">Letters</option>
+          </select></label></p>
+        <p class="row"><label><input type="checkbox" id="setShowCoords"> Show file/rank coordinates</label></p>
+      </div>
+
+      <div class="sheet">
         <h3>Data</h3>
         <p class="tiny soft">Everything lives in this browser. The only outbound requests are to Lichess, and to an assistant API if you set a key below.</p>
         <p class="row">

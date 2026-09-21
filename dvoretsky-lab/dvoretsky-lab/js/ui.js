@@ -19,7 +19,8 @@
     track: Store.get('track', []),
     transcripts: Store.get('transcripts', {}),
     completed: Store.get('completed', {}),
-    settings: Store.get('settings', { minutes: 60, endgameTier: 2, hour: 19, apiKey: '', perf: 'rapid' }),
+    settings: Store.get('settings', { minutes: 60, endgameTier: 2, hour: 19, apiKey: '', perf: 'rapid',
+      boardTheme: 'cyan', pieceSet: 'glyph', showCoords: true }),
     engine: new Engine(),
     spar: null,
     review: null,
@@ -343,6 +344,9 @@
     h.push('<div class="sheet"><h3>Openings by result and leakage</h3><div class="tablewrap">' + openingTable(p) + '</div></div>');
     h.push('</div>');
 
+    h.push('<div class="sheet" style="margin-top:1.1rem"><h3>Opening tree — how the positions you reach tend to evolve</h3>' +
+      '<p class="tiny soft">Move-by-move, both colours. Score is your result from that point on; the cp figure is the average evaluation swing over your next ten moves from there — the number that finds a structure you keep entering and then misplaying, as opposed to a bad opening move itself.</p>' +
+      openingTree(p) + '</div>');
     h.push('<div class="sheet" style="margin-top:1.1rem"><h3>Trajectory towards 2200</h3>' + trajectoryCard() + '</div>');
     h.push('<div class="sheet" style="margin-top:1.1rem"><h3>Where in the game it goes wrong</h3>' + timingChart(p) + '</div>');
     h.push('<div class="sheet" style="margin-top:1.1rem"><h3>Your ten most expensive moves</h3><div class="tablewrap">' + worstTable(p) + '</div></div>');
@@ -418,6 +422,44 @@
     return h + '</tbody></table>';
   }
 
+  // Renders p.openingTree (built in analysis.js's buildOpeningTree): a tree of
+  // literal move sequences, each node showing how often you reached it, your
+  // score from there, and the average eval swing over the following ten
+  // moves. Not filtered to any specific opening — the busiest lines (usually
+  // a player's actual repertoire, e.g. Caro-Kann / QGD) simply sort first,
+  // since children are already frequency-sorted by buildOpeningTree.
+  var OPENING_TREE_LEAK_CP = 50;      // highlight threshold for the eval-swing stat
+  var OPENING_TREE_MAX_CHILDREN = 8;  // per level, so a wide root doesn't swamp the panel
+
+  function openingTree(p) {
+    var kids = (p.openingTree && p.openingTree.childList) || [];
+    if (!kids.length) return '<div class="empty">Not enough repeated lines yet — needs a handful of analysed games sharing the same opening moves.</div>';
+    return '<ul class="opening-tree">' + kids.slice(0, OPENING_TREE_MAX_CHILDREN).map(openingTreeNode).join('') + '</ul>';
+  }
+
+  function openingTreeNode(node) {
+    var label = Math.ceil(node.ply / 2) + (node.ply % 2 === 1 ? '.' : '…');
+    var scoreBad = node.scorePct < 42;
+    var dropLabel, dropBad = false;
+    if (node.evalDrop == null) {
+      dropLabel = 'no eval data';
+    } else if (node.evalDrop > 0) {
+      dropLabel = '−' + node.evalDrop + ' cp/10mv';
+      dropBad = node.evalDrop >= OPENING_TREE_LEAK_CP;
+    } else {
+      dropLabel = '+' + (-node.evalDrop) + ' cp/10mv';
+    }
+    var h = '<li><div class="node">' +
+      '<span class="san">' + label + ' ' + esc(node.san) + '</span>' +
+      '<span class="stat">' + node.games + ' games</span>' +
+      '<span class="stat' + (scoreBad ? ' bad' : '') + '">' + node.scorePct + '% score</span>' +
+      '<span class="stat' + (dropBad ? ' bad' : '') + '">' + dropLabel + '</span>' +
+      '</div>';
+    var kids = node.childList || [];
+    if (kids.length) h += '<ul>' + kids.slice(0, OPENING_TREE_MAX_CHILDREN).map(openingTreeNode).join('') + '</ul>';
+    return h + '</li>';
+  }
+
   function timingChart(p) {
     var b = p.errorTiming, max = Math.max(1, Math.max.apply(null, b));
     var labels = ['first fifth', 'second', 'middle', 'fourth', 'final fifth'];
@@ -449,10 +491,10 @@
   /* ---------- sparring ---------- */
   var sparBoard = null;
   function initSparring() {
-    sparBoard = new Board($('#sparBoard'), {
+    sparBoard = new Board($('#sparBoard'), boardOpts({
       onMove: onSparMove,
       allowedColor: 'w'
-    });
+    }));
     $('#sparStart').addEventListener('click', function () { startSpar($('#sparColor').value); });
     $('#sparFlip').addEventListener('click', function () { sparBoard.flip(); });
     $('#sparHint').addEventListener('click', function () { refreshAdvice(true); });
@@ -628,7 +670,7 @@
     S.drill = { queue: queue, index: 0, revealed: false, attempts: 0 };
     $('#drillHome').classList.add('hidden');
     $('#drillStage').classList.remove('hidden');
-    if (!drillBoard) drillBoard = new Board($('#drillBoard'), { onMove: onDrillMove });
+    if (!drillBoard) drillBoard = new Board($('#drillBoard'), boardOpts({ onMove: onDrillMove }));
     showCard();
   }
 
@@ -716,7 +758,7 @@
     S.drill = { queue: [], index: 0, endgame: eg };
     $('#drillHome').classList.add('hidden');
     $('#drillStage').classList.remove('hidden');
-    if (!drillBoard) drillBoard = new Board($('#drillBoard'), { onMove: onEndgameMove });
+    if (!drillBoard) drillBoard = new Board($('#drillBoard'), boardOpts({ onMove: onEndgameMove }));
     var g = new Chess(eg.fen);
     drillBoard.opts.onMove = onEndgameMove;
     drillBoard.allowedColor = g.turnColor();
@@ -755,7 +797,7 @@
     S.drill = { queue: [c], index: 0 };
     $('#drillHome').classList.add('hidden');
     $('#drillStage').classList.remove('hidden');
-    if (!drillBoard) drillBoard = new Board($('#drillBoard'), { onMove: onDrillMove });
+    if (!drillBoard) drillBoard = new Board($('#drillBoard'), boardOpts({ onMove: onDrillMove }));
     drillBoard.opts.onMove = onDrillMove;
     showCard();
   }
@@ -878,7 +920,7 @@
       errors: (S.profile ? S.profile.errors : []).filter(function (e) { return e.gameId === game.id; })
     };
     $('#revStage').classList.remove('hidden');
-    if (!revBoard) revBoard = new Board($('#revBoard'), { interactive: false });
+    if (!revBoard) revBoard = new Board($('#revBoard'), boardOpts({ interactive: false }));
     revBoard.flipped = game.myColor === 'b';
     renderReviewStep();
   }
@@ -1055,11 +1097,17 @@
     $('#setMinutes').value = s.minutes; $('#setTier').value = s.endgameTier;
     $('#setHour').value = s.hour; $('#setKey').value = s.apiKey || '';
     $('#setPerf').value = s.perf || 'rapid';
+    $('#setBoardTheme').value = s.boardTheme || 'cyan';
+    $('#setPieceSet').value = s.pieceSet || 'glyph';
+    $('#setShowCoords').checked = s.showCoords !== false;
     $('#saveSettings').addEventListener('click', function () {
       S.settings = { minutes: +$('#setMinutes').value, endgameTier: +$('#setTier').value,
         hour: +$('#setHour').value, apiKey: $('#setKey').value, perf: $('#setPerf').value,
+        boardTheme: $('#setBoardTheme').value, pieceSet: $('#setPieceSet').value,
+        showCoords: $('#setShowCoords').checked,
         uiScale: S.settings.uiScale || '1' };
       Store.set('settings', S.settings);
+      applyBoardSettings();
       flash('Settings saved.');
       renderCalendar();
     });
@@ -1155,7 +1203,21 @@
     measureMasthead();
   }
 
+  // Board display options (colour theme, piece style, coordinates) live in
+  // S.settings and apply globally: boardTheme via a data-attribute on <html>
+  // that css/app.css keys its board-square variables off of, the rest via
+  // Board.prototype.setDisplayOptions on whichever boards currently exist.
+  function boardOpts(extra) {
+    return Object.assign({ pieceSet: S.settings.pieceSet || 'glyph', showCoords: S.settings.showCoords !== false }, extra || {});
+  }
+  function applyBoardSettings() {
+    document.documentElement.setAttribute('data-board-theme', S.settings.boardTheme || 'cyan');
+    var opts = { pieceSet: S.settings.pieceSet || 'glyph', showCoords: S.settings.showCoords !== false };
+    [sparBoard, drillBoard, revBoard].forEach(function (b) { if (b) b.setDisplayOptions(opts); });
+  }
+
   function boot() {
+    applyBoardSettings();
     initChrome();
     initTabs();
     initSparring();

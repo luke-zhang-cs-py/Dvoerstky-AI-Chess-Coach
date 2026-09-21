@@ -443,6 +443,74 @@
     return out.sort(function (a, b) { return b.cpLoss - a.cpLoss; });
   }
 
+  /* ---------------- opening tree ---------------- */
+  // "A tree: your moves as nodes, each annotated with how many times you
+  // reached it, your score from there, and the average evaluation drop over
+  // the following ten moves." Nodes are keyed by literal move sequence (both
+  // colours' plies, like a real opening tree), not by Lichess's coarse
+  // openingName family used in the `openings` list above -- that's what lets
+  // this show e.g. the Caro-Kann Advance and Exchange as separate branches
+  // instead of one bucket.
+
+  var OPENING_TREE_MAX_PLY = 20;       // ~10 full moves: how deep the tree grows
+  var OPENING_TREE_EVAL_WINDOW = 10;   // the "following ten moves" the feature is named for
+  var OPENING_TREE_MIN_GAMES = 2;      // same repetition threshold the openings list above uses
+
+  // Eval, from MY perspective, after the move at `ply` (1-indexed). Reuses the
+  // same clamp mineErrors()/buildProfile() use so one mate score can't blow
+  // out a node's average.
+  function myPovEval(g, ply) {
+    var mv = g.moves && g.moves[ply - 1];
+    if (!mv || typeof mv.evalAfter !== 'number') return null;
+    var cp = clampEval(mv.evalAfter);
+    return g.myColor === 'b' ? -cp : cp;
+  }
+
+  function newTreeNode(san, ply) {
+    return { san: san, ply: ply, games: 0, score: 0, evalDropSum: 0, evalDropSamples: 0, children: {} };
+  }
+
+  function buildOpeningTree(games) {
+    var root = newTreeNode(null, 0);
+    games.forEach(function (g) {
+      if (!g.moves || !g.moves.length) return;
+      var node = root;
+      var maxPly = Math.min(g.moves.length, OPENING_TREE_MAX_PLY);
+      for (var ply = 1; ply <= maxPly; ply++) {
+        var mv = g.moves[ply - 1];
+        var san = mv && mv.san;
+        if (!san) break;
+        if (!node.children[san]) node.children[san] = newTreeNode(san, ply);
+        node = node.children[san];
+        node.games++;
+        node.score += g.score;
+        var before = myPovEval(g, ply);
+        var after = myPovEval(g, ply + OPENING_TREE_EVAL_WINDOW);
+        if (before != null && after != null) {
+          node.evalDropSum += (before - after);
+          node.evalDropSamples++;
+        }
+      }
+    });
+    finalizeTreeNode(root);
+    return root;
+  }
+
+  // Fills in derived stats and sorts+prunes each node's children by
+  // frequency, so the busiest lines (typically the player's actual
+  // repertoire, e.g. Caro-Kann / QGD) surface first without hardcoding any
+  // opening name.
+  function finalizeTreeNode(node) {
+    node.scorePct = node.games ? Math.round(node.score / node.games * 100) : 0;
+    node.evalDrop = node.evalDropSamples ? Math.round(node.evalDropSum / node.evalDropSamples) : null;
+    var kids = Object.keys(node.children).map(function (k) { return node.children[k]; })
+      .filter(function (k) { return k.games >= OPENING_TREE_MIN_GAMES; });
+    kids.forEach(finalizeTreeNode);
+    kids.sort(function (a, b) { return b.games - a.games; });
+    node.childList = kids;
+    return node;
+  }
+
   /* ---------------- aggregate profile ---------------- */
 
   function buildProfile(games, lichessRating, now) {
@@ -514,6 +582,8 @@
       .filter(function (o) { return o.games >= 2; })
       .sort(function (a, b) { return b.games - a.games; });
 
+    var openingTree = buildOpeningTree(games);
+
     // clock behaviour
     var timeErrors = errors.filter(function (e) { return e.timePressure; }).length;
     var withClock = errors.filter(function (e) { return e.clockFrac != null; }).length;
@@ -538,6 +608,7 @@
       phases: phases,
       motifs: motifs,
       openings: openings,
+      openingTree: openingTree,
       clock: { pressureErrors: timeErrors, withClockData: withClock,
         pressureRate: withClock ? +(timeErrors / withClock * 100).toFixed(1) : null },
       errorTiming: buckets,
@@ -607,6 +678,7 @@
     mineErrors: mineErrors,
     buildProfile: buildProfile,
     buildBook: buildBook,
+    buildOpeningTree: buildOpeningTree,
     VAL: VAL
   };
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -1,0 +1,4 @@
+stockfish/
+stockfish.zip
+__pycache__/
+*.pyc

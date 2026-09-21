@@ -1,0 +1,825 @@
+[Event "rated bullet game"]
+[Site "https://lichess.org/0Z9mTV05"]
+[Date "2024.05.10"]
+[Round "-"]
+[White "ermactually"]
+[Black "gallardo007"]
+[Result "0-1"]
+[GameId "0Z9mTV05"]
+[UTCDate "2024.05.10"]
+[UTCTime "20:39:00"]
+[WhiteElo "1914"]
+[BlackElo "1866"]
+[WhiteRatingDiff "-28"]
+[BlackRatingDiff "+7"]
+[Variant "Standard"]
+[TimeControl "60+0"]
+[ECO "A00"]
+[Opening "Mieses Opening"]
+[Termination "Normal"]
+
+1. d3 { [%eval -0.21] } 1... c5 { [%eval 0.0] } 2. c4 { [%eval 0.0] } 2... e6 { [%eval 0.0] } 3. Nc3 { [%eval -0.2] } 3... d5 { [%eval -0.17] } 4. Nf3 { [%eval -0.52] } 4... d4 { [%eval -0.39] } 5. Nb1 { [%eval -0.82] } 5... Nc6 { [%eval -1.08] } 6. e3 { [%eval -1.0] } 6... e5 { [%eval -0.83] } 7. e4 { [%eval -1.3] } 7... f5 { [%eval -0.73] } 8. Nbd2 { [%eval -1.48] } 8... f4 { [%eval -1.44] } 9. b3 { [%eval -1.82] } 9... Nf6 { [%eval -1.58] } 10. Ba3 { [%eval -1.9] } 10... Bd7 { [%eval -1.85] } 11. Be2 { [%eval -1.79] } 11... Qa5 { [%eval -1.77] } 12. h3 { [%eval -4.43] } 12... Qxa3 { [%eval -4.27] } 13. Qc1 { [%eval -5.51] } 13... Qa5 { [%eval -4.81] } 14. Qc2 { [%eval -5.0] } 14... Qc7 { [%eval -5.08] } 15. O-O { [%eval -5.1] } 15... Be7 { [%eval -5.25] } 16. a4 { [%eval -5.88] } 16... O-O { [%eval -5.55] } 17. Nb1 { [%eval -6.13] } 17... a6 { [%eval -5.94] } 18. Na3 { [%eval -6.03] } 18... Be6 { [%eval -5.68] } 19. Nb1 { [%eval -6.01] } 19... Nb4 { [%eval -5.87] } 20. Nbd2 { [%eval -7.59] } 20... Nxc2 { [%eval -7.51] } 21. Ra2 { [%eval -7.75] } 21... Nb4 { [%eval -7.68] } 22. Rb2 { [%eval -7.81] } 22... a5 { [%eval -7.7] } 23. Rbb1 { [%eval -7.88] } 23... Qd7 { [%eval -7.25] } 24. Rb2 { [%eval -7.76] } 24... Bxh3 { [%eval -7.0] } 25. Nb1 { [%eval -7.98] } 25... Bxg2 { [%eval -7.98] } 26. Kxg2 { [%eval -7.64] } 26... Qg4+ { [%eval -7.5] } 27. Kh1 { [%eval -7.59] } 27... Nh5 { [%eval -7.29] } 28. Rg1 { [%eval -7.81] } 28... Qh3+ { [%eval -7.65] } 29. Nh2 { [%eval -7.31] } 29... f3 { [%eval -7.28] } 30. Bxf3 { [%eval #-13] } 30... Rxf3 { [%eval -10.13] } 31. Rg3 { [%eval #-7] } 31... Rxg3 { [%eval #-6] } 32. fxg3 { [%eval #-6] } 32... Nxg3+ { [%eval #-5] } 33. Kg1 { [%eval #-5] } 33... Bg5 { [%eval #-4] } 34. Rf2 { [%eval #-4] } 34... Be3 { [%eval #-3] } 35. Nd2 { [%eval #-2] } 35... Rf8 { [%eval #-2] } 36. Ndf1 { [%eval #-1] } 36... Bxf2# 0-1
+
+
+
+
+[Event "rated blitz game"]
+[Site "https://lichess.org/2p4GFcz0"]
+[Date "2026.03.16"]
+[Round "-"]
+[White "dmr301020"]
+[Black "ermactually"]
+[Result "0-1"]
+[GameId "2p4GFcz0"]
+[UTCDate "2026.03.16"]
+[UTCTime "18:34:24"]
+[WhiteElo "1551"]
+[BlackElo "1657"]
+[WhiteRatingDiff "-4"]
+[BlackRatingDiff "+71"]
+[Variant "Standard"]
+[TimeControl "180+0"]
+[ECO "B10"]
+[Opening "Caro-Kann Defense"]
+[Termination "Normal"]
+
+1. e4 c6 2. Nc3 d5 3. exd5 cxd5 4. Bb5+ Nc6 5. Qf3 Nf6 6. d4 a6 7. Bxc6+ bxc6 8. Be3 Bg4 9. Qg3 e6 10. Nge2 Rc8 11. Nf4 Qb6 12. b3 Bb4 13. Kd2 0-1
+
+
+
+
+[Event "rated bullet game"]
+[Site "https://lichess.org/5LaotKWD"]
+[Date "2024.01.28"]
+[Round "-"]
+[White "ermactually"]
+[Black "chking123"]
+[Result "0-1"]
+[GameId "5LaotKWD"]
+[UTCDate "2024.01.28"]
+[UTCTime "17:28:28"]
+[WhiteElo "1940"]
+[BlackElo "1889"]
+[WhiteRatingDiff "-30"]
+[BlackRatingDiff "+6"]
+[Variant "Standard"]
+[TimeControl "60+0"]
+[ECO "D31"]
+[Opening "Semi-Slav Defense: Noteboom Variation"]
+[Termination "Normal"]
+
+1. d4 e6 2. Nf3 d5 3. c4 dxc4 4. Nc3 c6 5. e3 b5 6. a4 b4 7. Na2 Ba6 8. Nxb4 Bxb4+ 9. Bd2 Bxd2+ 10. Qxd2 Nd7 11. Qc2 Nb6 12. b3 cxb3 13. Qxb3 Bxf1 14. Kxf1 Rb8 15. Ke2 Nd5 16. Qc3 Nxc3+ 0-1
+
+
+
+
+[Event "rated bullet game"]
+[Site "https://lichess.org/7tvBHanT"]
+[Date "2026.03.22"]
+[Round "-"]
+[White "Oalshehhi"]
+[Black "ermactually"]
+[Result "0-1"]
+[GameId "7tvBHanT"]
+[UTCDate "2026.03.22"]
+[UTCTime "22:30:08"]
+[WhiteElo "2023"]
+[BlackElo "2007"]
+[WhiteRatingDiff "-6"]
+[BlackRatingDiff "+15"]
+[Variant "Standard"]
+[TimeControl "60+0"]
+[ECO "B13"]
+[Opening "Caro-Kann Defense: Exchange Variation"]
+[Termination "Time forfeit"]
+
+1. e4 c6 2. d4 d5 3. exd5 cxd5 4. Nf3 Nc6 5. Bd3 Nf6 6. O-O Bg4 7. c3 e6 8. Re1 Be7 9. Bg5 h5 10. Bxf6 Bxf6 11. Nbd2 O-O 12. h3 Bf5 13. Bxf5 exf5 14. Nf1 g6 15. Qd2 Bg7 16. Ng3 Qd7 17. Qf4 Rfe8 18. h4 Re6 19. Rxe6 fxe6 20. Re1 Re8 21. Ng5 Nd8 22. Nf1 e5 23. dxe5 Nf7 24. Nxf7 Kxf7 25. Nd2 Qb5 26. b3 Kg8 27. Nf3 Qd3 28. Re3 Qd1+ 29. Kh2 Qb1 30. e6 Qxa2 31. Nd4 Qa6 32. e7 Qc6 33. g4 Qd7 34. gxf5 Rxe7 35. Rxe7 Qxe7 36. fxg6 Qf6 37. Qxf6 Bxf6 0-1
+
+
+
+
+[Event "rated rapid game"]
+[Site "https://lichess.org/90v8efhK"]
+[Date "2026.03.21"]
+[Round "-"]
+[White "siddharth2414"]
+[Black "ermactually"]
+[Result "0-1"]
+[GameId "90v8efhK"]
+[UTCDate "2026.03.21"]
+[UTCTime "19:38:23"]
+[WhiteElo "1226"]
+[BlackElo "1500"]
+[WhiteRatingDiff "-2"]
+[BlackRatingDiff "+119"]
+[Variant "Standard"]
+[TimeControl "600+0"]
+[ECO "B10"]
+[Opening "Caro-Kann Defense"]
+[Termination "Normal"]
+
+1. e4 c6 2. Nf3 d5 3. exd5 cxd5 4. Be2 Nf6 5. d3 Nc6 6. Nc3 Bg4 7. O-O e6 8. a3 Bc5 9. d4 Bxf3 10. Bxf3 Nxd4 11. Na4 Nxf3+ 12. Qxf3 Rc8 13. b4 Be7 14. c3 Ne4 15. Bb2 Bf6 16. Rac1 O-O 17. Qe3 Qd7 18. Nc5 Nxc5 19. bxc5 Qb5 20. Rb1 Qxc5 21. Qxc5 Rxc5 22. Rfc1 Rfc8 23. g3 Bxc3 24. Bxc3 Rxc3 25. Rxc3 Rxc3 26. Rxb7 h6 27. a4 d4 28. Rxa7 d3 29. Rd7 Ra3 30. Rd8+ Kh7 31. Kg2 Kg6 32. h3 e5 33. Kf3 f5 34. Rd6+ Kf7 35. Rd5 e4+ 36. Ke3 Ke6 37. Rd4 g5 38. Rb4 f4+ 39. gxf4 gxf4+ 40. Kd2 Kd5 41. Rb5+ Kc4 42. Rb6 Rxa4 43. Rg6 Ra2+ 44. Kc1 d2+ 45. Kd1 e3 46. Rc6+ Kd5 47. Rxh6 Ra1+ 48. Ke2 d1=Q# 0-1
+
+
+
+
+[Event "rated bullet game"]
+[Site "https://lichess.org/BLmM1vIF"]
+[Date "2024.01.28"]
+[Round "-"]
+[White "MuRoBaBa68"]
+[Black "ermactually"]
+[Result "1-0"]
+[GameId "BLmM1vIF"]
+[UTCDate "2024.01.28"]
+[UTCTime "17:12:26"]
+[WhiteElo "1784"]
+[BlackElo "1845"]
+[WhiteRatingDiff "+6"]
+[BlackRatingDiff "-66"]
+[Variant "Standard"]
+[TimeControl "60+0"]
+[ECO "A40"]
+[Opening "Queen's Pawn Game"]
+[Termination "Time forfeit"]
+
+1. d4 c6 2. Bf4 d5 3. Nf3 Nf6 4. e3 Bf5 5. Bg3 e6 6. Bd3 Be4 7. Nbd2 Bxd3 8. cxd3 Nbd7 9. e4 Be7 10. e5 Ng8 11. O-O Nh6 12. a4 Nf5 13. Nb3 Nxg3 14. fxg3 h6 15. Nc5 O-O 16. Qe2 Nxc5 17. dxc5 Bxc5+ 18. Kh1 a6 19. d4 Ba7 20. b4 Rb8 21. Nh4 Qg5 22. Rf4 Qg6 23. Raf1 Qh7 24. Qf3 g5 25. Rf6 gxh4 26. Qg4+ Kh8 27. Qxh4 Rg8 28. Rxh6 Rg7 29. Rxh7+ Rxh7 30. Qf6+ Kg8 31. g4 Rf8 32. g5 Bxd4 33. g6 Rg7 34. gxf7+ Rfxf7 35. Qd8+ Kh7 36. Qh4+ Kg8 37. Qxd4 Kh7 38. Rxf7 Rxf7 39. h3 Kg8 40. Kh2 Rf1 41. Qb6 Ra1 42. Qxb7 Rxa4 43. Qxc6 Rxb4 44. Qxe6+ Kf8 45. Qxd5 Kg7 46. Qd7+ Kf8 47. Qd6+ Kg8 48. Qxb4 Kg7 49. Qa5 Kh7 50. Qxa6 Kg7 51. e6 Kg6 52. e7+ Kf7 53. Qb7 Ke8 54. Qd7+ Kf7 55. Qd8 Ke6 56. e8=Q+ Kf5 57. Qf7+ Ke4 58. Qdf6 1-0
+
+
+
+
+[Event "rated bullet game"]
+[Site "https://lichess.org/HiWkJ1Y4"]
+[Date "2026.07.22"]
+[Round "-"]
+[White "ermactually"]
+[Black "Sayan300"]
+[Result "1-0"]
+[GameId "HiWkJ1Y4"]
+[UTCDate "2026.07.22"]
+[UTCTime "18:15:21"]
+[WhiteElo "1963"]
+[BlackElo "1814"]
+[WhiteRatingDiff "+9"]
+[BlackRatingDiff "-5"]
+[Variant "Standard"]
+[TimeControl "60+0"]
+[ECO "D91"]
+[Opening "Grünfeld Defense: Three Knights Variation, Petrosian System"]
+[Termination "Time forfeit"]
+
+1. d4 Nf6 2. Nf3 g6 3. c4 d5 4. Nc3 Bg7 5. Bg5 Ne4 6. Nxe4 dxe4 7. Nd2 Qxd4 8. Qc2 Bf5 9. e3 Qxb2 10. Qxb2 Bxb2 11. Rb1 Bc3 12. Rxb7 O-O 13. Rxc7 Na6 14. Rxe7 Rfd8 15. Rb7 Rxd2 16. Be2 Rb2+ 17. Kf1 Rxb7 18. f3 Rb1+ 19. Kf2 Rxh1 20. fxe4 Rb8 21. exf5 gxf5 22. Bf6 Rb2 23. Bxc3 Rxa2 24. Kf3 Rxh2 25. Be5 Rh1 26. Kf2 Rc1 27. g4 Rcc2 28. gxf5 Rxe2+ 29. Kf3 Red2 30. Ke4 1-0
+
+
+
+
+[Event "rated bullet game"]
+[Site "https://lichess.org/J09X6tk9"]
+[Date "2026.03.17"]
+[Round "-"]
+[White "ermactually"]
+[Black "wojtek0812"]
+[Result "1-0"]
+[GameId "J09X6tk9"]
+[UTCDate "2026.03.17"]
+[UTCTime "18:26:35"]
+[WhiteElo "2098"]
+[BlackElo "2087"]
+[WhiteRatingDiff "+29"]
+[BlackRatingDiff "-5"]
+[Variant "Standard"]
+[TimeControl "60+0"]
+[ECO "A43"]
+[Opening "Benoni Defense: Old Benoni"]
+[Termination "Time forfeit"]
+
+1. d4 { [%eval 0.15] } 1... c5 { [%eval 0.61] } 2. Nf3 { [%eval -0.08] } 2... cxd4 { [%eval 0.0] } 3. Nxd4 { [%eval -0.08] } 3... d5 { [%eval 0.0] } 4. Nc3 { [%eval -0.3] } 4... e5 { [%eval -0.19] } 5. Nb3 { [%eval -0.47] } 5... d4 { [%eval -0.47] } 6. Ne4 { [%eval -0.95] } 6... f5 { [%eval -0.92] } 7. Nec5 { [%eval -3.25] } 7... Bxc5 { [%eval -3.55] } 8. Nxc5 { [%eval -3.58] } 8... Qa5+ { [%eval -3.79] } 9. Bd2 { [%eval -4.24] } 9... Qxc5 { [%eval -4.1] } 10. e3 { [%eval -4.11] } 10... Nf6 { [%eval -4.04] } 11. a3 { [%eval -4.38] } 11... O-O { [%eval -2.92] } 12. Bd3 { [%eval -4.55] } 12... e4 { [%eval -4.39] } 13. Be2 { [%eval -4.44] } 13... d3 { [%eval -3.74] } 14. Bf1 { [%eval -4.97] } 14... dxc2 { [%eval -5.05] } 15. Qc1 { [%eval -5.27] } 15... Be6 { [%eval -5.22] } 16. Be2 { [%eval -5.34] } 16... Nc6 { [%eval -5.1] } 17. O-O { [%eval -5.59] } 17... Ne5 { [%eval -5.52] } 18. Bb4 { [%eval -5.61] } 18... Qc6 { [%eval -4.76] } 19. Bxf8 { [%eval -5.22] } 19... Kxf8 { [%eval -5.05] } 20. a4 { [%eval -5.54] } 20... Rc8 { [%eval -5.22] } 21. Bb5 { [%eval -6.17] } 21... Qc5 { [%eval -6.08] } 22. Re1 { [%eval -6.87] } 22... a6 { [%eval -6.59] } 23. Bf1 { [%eval -6.83] } 23... Nd3 { [%eval -6.86] } 24. Bxd3 { [%eval -6.56] } 24... exd3 { [%eval -6.29] } 25. e4 { [%eval -8.4] } 25... Nxe4 { [%eval -8.1] } 26. Re3 { [%eval -9.05] } 26... Kg8 { [%eval -8.07] } 27. Rxd3 { [%eval -8.65] } 27... Qxf2+ { [%eval -8.35] } 28. Kh1 { [%eval -8.08] } 28... h5 { [%eval -6.75] } 29. Rf3 { [%eval -6.85] } 29... Qc5 { [%eval -6.9] } 30. Qf1 { [%eval -8.67] } 30... c1=Q { [%eval -8.39] } 31. Rxc1 { [%eval -8.12] } 31... Qxc1 { [%eval -8.42] } 32. h3 { [%eval #-8] } 32... Qg5 { [%eval -7.95] } 33. Qe1 { [%eval -9.0] } 33... Ng3+ { [%eval -5.97] } 34. Kh2 { [%eval -7.73] } 34... Ne4 { [%eval -7.65] } 35. Qe2 { [%eval -7.73] } 35... Rc1 { [%eval -7.86] } 36. Rf1 { [%eval -7.91] } 36... Rxf1 { [%eval -8.39] } 37. Qxf1 { [%eval -7.94] } 37... Qg3+ { [%eval -7.59] } 38. Kh1 { [%eval #-7] } 38... f4 { [%eval -7.96] } 39. Qg1 { [%eval #-4] } 39... Bd5 { [%eval -8.72] } 40. Qf1 { [%eval #-5] } 40... Nf2+ { [%eval #-4] } 41. Kg1 { [%eval #-4] } 1-0
+
+
+
+
+[Event "rated bullet game"]
+[Site "https://lichess.org/K9WY6aAe"]
+[Date "2026.03.22"]
+[Round "-"]
+[White "ermactually"]
+[Black "locked_in"]
+[Result "0-1"]
+[GameId "K9WY6aAe"]
+[UTCDate "2026.03.22"]
+[UTCTime "22:44:07"]
+[WhiteElo "2023"]
+[BlackElo "1995"]
+[WhiteRatingDiff "-14"]
+[BlackRatingDiff "+6"]
+[Variant "Standard"]
+[TimeControl "60+0"]
+[ECO "D40"]
+[Opening "Queen's Gambit Declined: Semi-Tarrasch Defense, Pillsbury Variation"]
+[Termination "Normal"]
+
+1. d4 Nf6 2. Nf3 e6 3. c4 d5 4. Nc3 c5 5. Bg5 Be7 6. e3 cxd4 7. exd4 h6 8. Bh4 Nc6 9. Be2 Bd7 10. O-O Qc7 11. Bg3 Bd6 12. Bxd6 Qxd6 13. c5 Qc7 14. a3 a6 15. Rc1 O-O 16. Re1 Rac8 17. Bd3 Qb8 18. Bb1 Rfe8 19. Qc2 e5 20. Nxe5 Nxe5 21. dxe5 Rxe5 22. Rxe5 Qxe5 23. Rd1 Re8 24. Qd2 d4 25. Na2 Bg4 26. Rf1 Be2 27. Re1 d3 28. Bxd3 Nd5 29. Rxe2 Qb8 30. Rxe8+ Qxe8 31. Bh7+ Kxh7 32. Qxd5 Qe1# 0-1
+
+
+
+
+[Event "rated bullet game"]
+[Site "https://lichess.org/Lnn5nPYH"]
+[Date "2026.03.17"]
+[Round "-"]
+[White "ermactually"]
+[Black "unexpectednoob"]
+[Result "1-0"]
+[GameId "Lnn5nPYH"]
+[UTCDate "2026.03.17"]
+[UTCTime "18:23:03"]
+[WhiteElo "2103"]
+[BlackElo "2062"]
+[WhiteRatingDiff "+31"]
+[BlackRatingDiff "-5"]
+[Variant "Standard"]
+[TimeControl "60+0"]
+[ECO "A40"]
+[Opening "Englund Gambit: Main Line"]
+[Termination "Time forfeit"]
+
+1. d4 e5 2. dxe5 Nc6 3. Nf3 Qe7 4. Bf4 Qb4+ 5. Bd2 Qxb2 6. Nc3 Bb4 7. Rb1 Qa3 8. Rb3 Qa5 9. e3 Bxc3 10. Bxc3 Qxa2 11. Bc4 Nge7 12. O-O Ng6 13. Ng5 O-O 14. Qg4 Ncxe5 15. Qe4 Nxc4 16. Qxc4 d5 17. Qxd5 c6 18. Qc4 Qxc2 19. Rfb1 h6 20. Nf3 Be6 21. Qb4 Bxb3 22. Qxb3 Qxb3 23. Rxb3 b5 24. h3 a5 25. Rb1 a4 26. Bd4 Rfc8 27. Bc5 Rd8 28. Nd2 Rxd2 29. Rc1 Rd5 30. Rb1 Rxc5 31. Kh2 Rd5 32. Kg3 Rc8 33. h4 c5 34. e4 b4 35. exd5 c4 36. d6 b3 37. d7 Rd8 38. Rc1 Rxd7 39. Rxc4 Ra7 40. Rxa4 1-0
+
+
+
+
+[Event "rated blitz game"]
+[Site "https://lichess.org/UU4BA17F"]
+[Date "2024.02.18"]
+[Round "-"]
+[White "LuChessBR"]
+[Black "ermactually"]
+[Result "1-0"]
+[GameId "UU4BA17F"]
+[UTCDate "2024.02.18"]
+[UTCTime "22:24:36"]
+[WhiteElo "1669"]
+[BlackElo "1663"]
+[WhiteRatingDiff "+5"]
+[BlackRatingDiff "-27"]
+[Variant "Standard"]
+[TimeControl "180+0"]
+[ECO "A40"]
+[Opening "Queen's Pawn Game"]
+[Termination "Normal"]
+
+1. d4 c6 2. Bf4 d5 3. e3 Nf6 4. Nf3 Bf5 5. c3 e6 6. Bd3 Be7 7. Bxf5 exf5 8. Bxb8 Rxb8 9. Qc2 g6 10. Nbd2 Bf8 11. Ne5 Bg7 12. Ndf3 O-O 13. O-O Nd7 14. Nxd7 Qxd7 15. c4 dxc4 16. Qxc4 Rbc8 17. Rac1 Rfe8 18. b4 h5 19. Rc2 a6 20. Rd1 Red8 21. Rcd2 Qd5 22. Rc2 Qxc4 23. Rxc4 Rd5 24. Rc5 Rxc5 25. bxc5 Rb8 26. Rb1 Bh6 27. Ne5 Bg7 28. Nxc6 Rc8 29. Ne7+ 1-0
+
+
+
+
+[Event "rated blitz game"]
+[Site "https://lichess.org/WTaSIY2C"]
+[Date "2024.02.18"]
+[Round "-"]
+[White "ermactually"]
+[Black "tamhahs"]
+[Result "1-0"]
+[GameId "WTaSIY2C"]
+[UTCDate "2024.02.18"]
+[UTCTime "22:14:38"]
+[WhiteElo "1661"]
+[BlackElo "1647"]
+[WhiteRatingDiff "+32"]
+[BlackRatingDiff "-5"]
+[Variant "Standard"]
+[TimeControl "180+0"]
+[ECO "A40"]
+[Opening "Mikenas Defense"]
+[Termination "Normal"]
+
+1. d4 { [%eval 0.15] } 1... Nc6 { [%eval 0.51] } 2. c4 { [%eval 0.4] } 2... b6 { [%eval 0.95] } 3. Nc3 { [%eval 0.84] } 3... Bb7 { [%eval 1.78] } 4. Nf3 { [%eval 1.44] } 4... e6 { [%eval 1.74] } 5. Bf4 { [%eval 0.84] } 5... Bb4 { [%eval 0.88] } 6. e3 { [%eval 0.32] } 6... Nf6 { [%eval 0.41] } 7. Be2 { [%eval 0.0] } 7... Qe7 { [%eval 0.39] } 8. O-O { [%eval 0.25] } 8... Bxc3 { [%eval 0.28] } 9. bxc3 { [%eval 0.24] } 9... O-O-O { [%eval 1.14] } 10. a4 { [%eval 0.39] } 10... Na5 { [%eval 0.76] } 11. c5 { [%eval 0.86] } 11... h6 { [%eval 1.09] } 12. Qd2 { [%eval 0.22] } 12... g5 { [%eval 0.12] } 13. Be5 { [%eval 0.0] } 13... Rhg8 { [%eval 0.76] } 14. cxb6 { [%eval 0.36] } 14... axb6 { [%eval 0.4] } 15. c4 { [%eval -0.88] } 15... Ne4 { [%eval -0.53] } 16. Qc2 { [%eval -0.46] } 16... g4 { [%eval -0.42] } 17. Nd2 { [%eval -0.31] } 17... f5 { [%eval 1.79] } 18. Nxe4 { [%eval 1.53] } 18... Bxe4 { [%eval 1.24] } 19. Qc3 { [%eval 0.84] } 19... Qh4 { [%eval 5.52] } 20. Bg3 { [%eval 5.09] } 20... Qh5 { [%eval 5.46] } 21. c5 { [%eval 5.44] } 21... Nc6 { [%eval 6.06] } 22. cxb6 { [%eval 5.66] } 22... cxb6 { [%eval #1] } 23. a5 { [%eval 5.15] } 23... Kb7 { [%eval #9] } 24. Bb5 { [%eval 1.08] } 24... Nxa5 { [%eval #4] } 25. Qc7+ { [%eval #3] } 1-0
+
+
+
+
+[Event "rated blitz game"]
+[Site "https://lichess.org/Wf2nIfLY"]
+[Date "2024.03.30"]
+[Round "-"]
+[White "ermactually"]
+[Black "herrmartins"]
+[Result "0-1"]
+[GameId "Wf2nIfLY"]
+[UTCDate "2024.03.30"]
+[UTCTime "02:39:30"]
+[WhiteElo "1679"]
+[BlackElo "1672"]
+[WhiteRatingDiff "-22"]
+[BlackRatingDiff "+6"]
+[Variant "Standard"]
+[TimeControl "180+0"]
+[ECO "D15"]
+[Opening "Slav Defense: Three Knights Variation"]
+[Termination "Normal"]
+
+1. d4 d5 2. c4 c6 3. Nc3 Nf6 4. Nf3 Bf5 5. Bf4 dxc4 6. a4 e6 7. e3 Bd6 8. Bxd6 Qxd6 9. Bxc4 O-O 10. O-O a6 11. Re1 Nbd7 12. e4 Qb4 13. exf5 Qxc4 14. fxe6 fxe6 15. Rc1 Qb4 16. Qd2 Qd6 17. Ne4 Qc7 18. Nxf6+ Nxf6 19. Rxe6 Rad8 20. Rce1 Nd5 21. h3 b5 22. axb5 axb5 23. Qd3 Nf4 24. Qc2 Nxe6 25. Rxe6 Rfe8 26. Rxc6 Qf4 27. Qb3+ Kh8 28. Rc7 Qxc7 0-1
+
+
+
+
+[Event "rated bullet game"]
+[Site "https://lichess.org/WngdNIJv"]
+[Date "2024.05.10"]
+[Round "-"]
+[White "ermactually"]
+[Black "krostaly"]
+[Result "0-1"]
+[GameId "WngdNIJv"]
+[UTCDate "2024.05.10"]
+[UTCTime "20:41:03"]
+[WhiteElo "1886"]
+[BlackElo "1873"]
+[WhiteRatingDiff "-24"]
+[BlackRatingDiff "+5"]
+[Variant "Standard"]
+[TimeControl "60+0"]
+[ECO "A40"]
+[Opening "Englund Gambit"]
+[Termination "Normal"]
+
+1. d4 e5 2. c4 exd4 3. Qxd4 Nc6 4. Qd1 Nf6 5. Nc3 Bb4 6. Nf3 Bxc3+ 7. bxc3 O-O 8. Ba3 Re8 9. e3 d5 10. cxd5 Nxd5 11. Bc4 Nxc3 12. Qxd8 Rxd8 13. Bb2 Ne4 14. Ng5 Nxg5 15. h4 Ne6 16. h5 h6 17. g4 Na5 18. Be2 Rd6 19. f4 Bd7 20. g5 Bc6 21. Rg1 hxg5 22. fxg5 Re8 23. g6 f6 24. Kf2 Ng5 25. Ba3 Rde6 26. Rg3 Ne4+ 27. Kg2 Nxg3+ 28. Kxg3 Rxe3+ 29. Kf2 Rxe2+ 30. Kg3 R8e3+ 31. Kg4 Rxa3 32. Kf4 Re4+ 33. Kf5 Rf3# 0-1
+
+
+
+
+[Event "rated blitz game"]
+[Site "https://lichess.org/XsE5qw2k"]
+[Date "2024.02.18"]
+[Round "-"]
+[White "ermactually"]
+[Black "emad1968"]
+[Result "1-0"]
+[GameId "XsE5qw2k"]
+[UTCDate "2024.02.18"]
+[UTCTime "23:10:25"]
+[WhiteElo "1679"]
+[BlackElo "1802"]
+[WhiteRatingDiff "+24"]
+[BlackRatingDiff "-7"]
+[Variant "Standard"]
+[TimeControl "180+0"]
+[ECO "A40"]
+[Opening "Englund Gambit"]
+[Termination "Normal"]
+
+1. d4 { [%eval 0.15] } 1... e5 { [%eval 1.74] } 2. dxe5 { [%eval 1.63] } 2... Bc5 { [%eval 2.3] } 3. Nf3 { [%eval 1.86] } 3... d6 { [%eval 1.78] } 4. exd6 { [%eval 1.4] } 4... Nf6 { [%eval 2.18] } 5. Nc3 { [%eval 1.73] } 5... cxd6 { [%eval 1.96] } 6. e3 { [%eval 1.61] } 6... O-O { [%eval 1.56] } 7. Bc4 { [%eval 1.11] } 7... Qe7 { [%eval 1.34] } 8. O-O { [%eval 1.51] } 8... a6 { [%eval 1.61] } 9. a3 { [%eval 1.65] } 9... Bg4 { [%eval 2.09] } 10. h3 { [%eval 1.85] } 10... Bxf3 { [%eval 2.81] } 11. Qxf3 { [%eval 2.82] } 11... Nbd7 { [%eval 2.88] } 12. Qxb7 { [%eval 3.0] } 12... Ne5 { [%eval 6.56] } 13. Qxe7 { [%eval 6.51] } 13... Nxc4 { [%eval 6.47] } 14. Qb7 { [%eval 6.28] } 14... Rab8 { [%eval 6.88] } 15. Qf3 { [%eval 6.33] } 15... Ne5 { [%eval 6.45] } 16. Qg3 { [%eval 6.24] } 16... Bb6 { [%eval 6.29] } 17. e4 { [%eval 5.86] } 17... Ba5 { [%eval 6.32] } 18. Bd2 { [%eval 5.85] } 18... Bxc3 { [%eval 5.96] } 19. Bxc3 { [%eval 5.92] } 19... Nxe4 { [%eval 5.68] } 20. Qe3 { [%eval 5.78] } 20... Nxc3 { [%eval 5.85] } 21. Qxc3 { [%eval 5.92] } 21... Rbc8 { [%eval 5.84] } 22. Qa5 { [%eval 5.62] } 22... Rxc2 { [%eval 6.1] } 23. Qxa6 { [%eval 5.88] } 23... Rxb2 { [%eval 6.16] } 24. Qxd6 { [%eval 5.98] } 24... Ng6 { [%eval 6.37] } 25. Rfb1 { [%eval 6.49] } 25... Re2 { [%eval 6.4] } 26. a4 { [%eval 6.21] } 26... h6 { [%eval 6.28] } 27. a5 { [%eval 6.0] } 27... Nh4 { [%eval 6.94] } 28. a6 { [%eval 6.95] } 28... Nf5 { [%eval 8.52] } 29. Qd3 { [%eval 8.7] } 29... Re5 { [%eval 10.62] } 30. a7 { [%eval 10.45] } 30... Ne7 { [%eval 14.03] } 31. Rb8 { [%eval 13.71] } 31... Ng6 { [%eval #7] } 32. Rxf8+ { [%eval #7] } 32... Kxf8 { [%eval #5] } 33. a8=Q+ { [%eval #4] } 33... Ke7 { [%eval #2] } 34. Qdd8+ { [%eval #1] } 34... Ke6 { [%eval #1] } 35. Qc6+ { [%eval #3] } 35... Kf5 { [%eval #3] } 36. Qdd7+ { [%eval #4] } 36... Kg5 { [%eval #1] } 37. Rd1 { [%eval #5] } 37... Re6 { [%eval #5] } 38. Rd5+ { [%eval #4] } 38... Kf6 { [%eval #4] } 39. Qcc8 { [%eval #6] } 39... Re1+ { [%eval #5] } 40. Kh2 { [%eval #4] } 40... Re6 { [%eval #4] } 41. Qcd8+ { [%eval #3] } 41... Re7 { [%eval #1] } 42. Qd6# 1-0
+
+
+
+
+[Event "rated rapid game"]
+[Site "https://lichess.org/Z6B8R7L5"]
+[Date "2026.03.21"]
+[Round "-"]
+[White "ermactually"]
+[Black "Sunflowers555"]
+[Result "1-0"]
+[GameId "Z6B8R7L5"]
+[UTCDate "2026.03.21"]
+[UTCTime "19:51:27"]
+[WhiteElo "1619"]
+[BlackElo "1537"]
+[WhiteRatingDiff "+130"]
+[BlackRatingDiff "-3"]
+[Variant "Standard"]
+[TimeControl "600+0"]
+[ECO "D07"]
+[Opening "Queen's Gambit Declined: Chigorin Defense, Janowski Variation"]
+[Termination "Normal"]
+
+1. d4 { [%eval 0.15] } 1... d5 { [%eval 0.27] } 2. c4 { [%eval 0.22] } 2... dxc4 { [%eval 0.28] } 3. Nc3 { [%eval 0.0] } 3... Nc6 { [%eval 0.82] } 4. Nf3 { [%eval 0.42] } 4... e6 { [%eval 1.19] } 5. Bg5 { [%eval 0.27] } 5... Be7 { [%eval 0.28] } 6. Bxe7 { [%eval 0.24] } 6... Ngxe7 { [%eval 0.33] } 7. e3 { [%eval 0.28] } 7... Nf5 { [%eval 0.67] } 8. Bxc4 { [%eval 0.79] } 8... O-O { [%eval 0.85] } 9. O-O { [%eval 0.81] } 9... b6 { [%eval 0.77] } 10. a3 { [%eval 0.58] } 10... Bb7 { [%eval 0.67] } 11. Ne2 { [%eval 0.04] } 11... Na5 { [%eval 0.07] } 12. Ba2 { [%eval -0.29] } 12... Bxf3 { [%eval -0.23] } 13. gxf3 { [%eval -0.27] } 13... Qg5+ { [%eval 0.39] } 14. Ng3 { [%eval 0.31] } 14... Nh4 { [%eval 0.56] } 15. Rc1 { [%eval 0.24] } 15... c6 { [%eval 1.66] } 16. b4 { [%eval 1.63] } 16... Nb7 { [%eval 1.77] } 17. Rxc6 { [%eval 1.71] } 17... Nd8 { [%eval 2.24] } 18. Rc2 { [%eval 1.63] } 18... f5 { [%eval 2.61] } 19. f4 { [%eval 2.38] } 19... Qg6 { [%eval 2.77] } 20. Qh5 { [%eval 2.76] } 20... Qf6 { [%eval 2.69] } 21. Rfc1 { [%eval 2.69] } 21... Kh8 { [%eval 2.89] } 22. Rc7 { [%eval 2.6] } 22... Rg8 { [%eval 3.65] } 23. e4 { [%eval 3.25] } 23... fxe4 { [%eval 3.41] } 24. f5 { [%eval 1.54] } 24... exf5 { [%eval 4.58] } 25. Bxg8 { [%eval 4.59] } 25... h6 { [%eval 5.08] } 26. Ba2 { [%eval 4.98] } 26... Ng6 { [%eval 6.2] } 27. Nxf5 { [%eval 6.42] } 27... Nf8 { [%eval 6.86] } 28. Ng3 { [%eval 5.66] } 28... Qxd4 { [%eval 6.85] } 29. Nf5 { [%eval 6.09] } 29... Qf6 { [%eval 6.4] } 30. Rxg7 { [%eval 6.38] } 30... Nde6 { [%eval 6.37] } 31. Bxe6 { [%eval 6.33] } 31... Nxe6 { [%eval 6.27] } 32. Rg6 { [%eval 6.01] } 32... Qe7 { [%eval #3] } 33. Qxh6+ { [%eval #6] } 33... Qh7 { [%eval #6] } 34. Qxh7+ { [%eval #6] } 34... Kxh7 { [%eval #6] } 35. Rxe6 { [%eval #5] } 35... Rg8+ { [%eval #5] } 36. Kf1 { [%eval #4] } 36... Rg5 { [%eval #3] } 37. Rc7+ { [%eval #2] } 37... Kh8 { [%eval #2] } 38. Rd6 { [%eval #3] } 38... e3 { [%eval #2] } 39. Rd8+ { [%eval 9.76] } 39... Rg8 { [%eval 9.4] } 40. Rxg8+ { [%eval 9.38] } 40... Kxg8 { [%eval 9.19] } 41. fxe3 { [%eval 9.36] } 41... Kf8 { [%eval #7] } 42. Kf2 { [%eval #10] } 42... Ke8 { [%eval #10] } 43. Re7+ { [%eval #16] } 43... Kf8 { [%eval 9.64] } 44. Kf3 { [%eval 8.98] } 44... a5 { [%eval #6] } 45. bxa5 { [%eval #5] } 45... bxa5 { [%eval #5] } 46. Ke4 { [%eval #6] } 46... a4 { [%eval #4] } 47. Ke5 { [%eval #3] } 47... Kg8 { [%eval #3] } 48. Ra7 { [%eval 9.03] } 48... Kh8 { [%eval #3] } 49. Kf6 { [%eval #2] } 49... Kg8 { [%eval #2] } 50. h3 { [%eval #2] } 50... Kf8 { [%eval #1] } 51. Ra8# 1-0
+
+
+
+
+[Event "rated bullet game"]
+[Site "https://lichess.org/ZlU42LaR"]
+[Date "2026.03.16"]
+[Round "-"]
+[White "ermactually"]
+[Black "JoeSB1"]
+[Result "1-0"]
+[GameId "ZlU42LaR"]
+[UTCDate "2026.03.16"]
+[UTCTime "18:56:38"]
+[WhiteElo "2059"]
+[BlackElo "2096"]
+[WhiteRatingDiff "+44"]
+[BlackRatingDiff "-6"]
+[Variant "Standard"]
+[TimeControl "60+0"]
+[ECO "A40"]
+[Opening "Englund Gambit: Main Line"]
+[Termination "Time forfeit"]
+
+1. d4 e5 2. dxe5 Nc6 3. Nf3 Qe7 4. Bf4 Qb4+ 5. Bd2 Qxb2 6. Nc3 Nb4 7. Nd4 c5 8. Rb1 Qa3 9. Rb3 Qa5 10. Ndb5 a6 11. Nd6+ Bxd6 12. exd6 Nf6 13. Ne4 Nxe4 14. Re3 O-O 15. Rxe4 Qxa2 16. e3 Nxc2+ 17. Ke2 b5 18. f3 b4 19. Qc1 a5 20. Kf2 Bb7 21. Bd3 Bxe4 22. Bxe4 Na3 23. Qxc5 Qxd2+ 24. Kg3 Rae8 25. Rc1 h6 26. h3 f5 27. Rc2 Qd1 28. Rc1 Qxd6+ 29. Qxd6 fxe4 30. Qd5+ Kh8 31. Qd4 exf3 32. gxf3 Rxf3+ 33. Kxf3 Rf8+ 34. Ke2 Nb5 35. Kd3 Nc3 36. Rxc3 Rd8 37. Qc4 Kh7 38. Rb3 Re8 39. Rxb4 Rf8 40. Kd4 Rf6 41. Kd5 h5 42. Qc5 g6 43. Qd4 Kh6 44. Qxf6 1-0
+
+
+
+
+[Event "rated bullet game"]
+[Site "https://lichess.org/ZoBNKWzU"]
+[Date "2026.03.24"]
+[Round "-"]
+[White "ermactually"]
+[Black "Pablojuan99"]
+[Result "1-0"]
+[GameId "ZoBNKWzU"]
+[UTCDate "2026.03.24"]
+[UTCTime "22:01:05"]
+[WhiteElo "1957"]
+[BlackElo "2069"]
+[WhiteRatingDiff "+14"]
+[BlackRatingDiff "-7"]
+[Variant "Standard"]
+[TimeControl "60+0"]
+[ECO "A40"]
+[Opening "Englund Gambit: Hartlaub-Charlick Gambit"]
+[Termination "Normal"]
+
+1. d4 e5 2. dxe5 d6 3. Nf3 Nc6 4. exd6 Bxd6 5. Nbd2 Nf6 6. e3 O-O 7. Be2 Bg4 8. O-O Qd7 9. h3 Bxh3 10. Nh2 Bxg2 11. Kxg2 Rad8 12. Bg4 Nxg4 13. Qxg4 Qe7 14. Ndf3 f5 15. Qh3 Ne5 16. Nxe5 Bxe5 17. Rb1 f4 18. exf4 Bxf4 19. Bxf4 Rxf4 20. f3 Qg5+ 21. Ng4 Rd2+ 22. Rf2 Qd5 23. Rh1 Rxf2+ 24. Nxf2 h6 25. Qg3 Rf7 26. Rh4 Qxa2 27. Rg4 Qxb2 28. Rg6 Qb6 29. Rxb6 Rd7 30. Rg6 1-0
+
+
+
+
+[Event "rated bullet game"]
+[Site "https://lichess.org/a9V8Xye7"]
+[Date "2024.02.18"]
+[Round "-"]
+[White "grantmasder"]
+[Black "ermactually"]
+[Result "1-0"]
+[GameId "a9V8Xye7"]
+[UTCDate "2024.02.18"]
+[UTCTime "23:26:10"]
+[WhiteElo "1869"]
+[BlackElo "1866"]
+[WhiteRatingDiff "+6"]
+[BlackRatingDiff "-21"]
+[Variant "Standard"]
+[TimeControl "60+0"]
+[ECO "D11"]
+[Opening "Slav Defense: Modern Line"]
+[Termination "Normal"]
+
+1. d4 c6 2. c4 d5 3. Nf3 Nf6 4. g3 Bg4 5. Bg2 Bxf3 6. Bxf3 e6 7. O-O Be7 8. Qc2 Nbd7 9. b3 h6 10. Nc3 a6 11. Bb2 O-O 12. Rad1 Nb6 13. Rfe1 Nbd7 14. e4 Ne8 15. exd5 cxd5 16. cxd5 Rc8 17. Qb1 exd5 18. Nxd5 Ndf6 19. Nxe7+ Kh8 20. Nf5 Nd6 21. Nxd6 Qxd6 22. d5 Rcd8 23. Rd2 Qb4 24. Red1 Qb6 25. Bd4 Qc7 26. Bxf6 gxf6 27. d6 Qd7 28. Qd3 Qe6 29. Qd5 Qh3 30. Bg2 Qg4 31. Qd3 Qg6 32. Qxg6 fxg6 33. d7 Kg7 34. Rd6 Rf7 35. Bxb7 Re7 36. Bxa6 Kf7 37. Bb5 Kf8 38. a4 Kf7 39. Bc4+ Kf8 40. Bb5 f5 41. Rxg6 Kf7 42. Rxh6 Rexd7 43. Rh7+ Ke8 44. Rhxd7 Rxd7 45. Rxd7 Kf8 46. Rh7 Kg8 47. Ra7 Kf8 48. Be2 Ke8 49. f4 Kd8 50. b4 Kc8 51. b5 Kb8 52. b6 Kc8 53. a5 Kb8 54. h4 Kc8 55. h5 Kb8 56. h6 Kc8 57. h7 Kb8 58. h8=R# 1-0
+
+
+
+
+[Event "rated bullet game"]
+[Site "https://lichess.org/aFiAfXSK"]
+[Date "2026.03.24"]
+[Round "-"]
+[White "arinaitweac"]
+[Black "ermactually"]
+[Result "1-0"]
+[GameId "aFiAfXSK"]
+[UTCDate "2026.03.24"]
+[UTCTime "22:00:12"]
+[WhiteElo "1929"]
+[BlackElo "1969"]
+[WhiteRatingDiff "+6"]
+[BlackRatingDiff "-12"]
+[Variant "Standard"]
+[TimeControl "60+0"]
+[ECO "B10"]
+[Opening "Caro-Kann Defense"]
+[Termination "Normal"]
+
+1. e4 c6 2. f4 d5 3. exd5 cxd5 4. Nf3 Nf6 5. d4 Nc6 6. Bd3 Bg4 7. O-O Bxf3 8. Qxf3 e6 9. c3 Be7 10. f5 exf5 11. Qxf5 O-O 12. Bg5 Nd7 1-0
+
+
+
+
+[Event "rated blitz game"]
+[Site "https://lichess.org/d6bqtTAZ"]
+[Date "2024.02.18"]
+[Round "-"]
+[White "AlhabibM"]
+[Black "ermactually"]
+[Result "1-0"]
+[GameId "d6bqtTAZ"]
+[UTCDate "2024.02.18"]
+[UTCTime "22:44:07"]
+[WhiteElo "1662"]
+[BlackElo "1682"]
+[WhiteRatingDiff "+6"]
+[BlackRatingDiff "-24"]
+[Variant "Standard"]
+[TimeControl "180+0"]
+[ECO "D15"]
+[Opening "Slav Defense: Three Knights Variation"]
+[Termination "Normal"]
+
+1. d4 c6 2. c4 d5 3. Nc3 Nf6 4. Nf3 Bf5 5. Bg5 e6 6. e3 Be7 7. Bd3 Bxd3 8. Qxd3 h6 9. Bh4 O-O 10. O-O Nbd7 11. Rac1 a6 12. a3 Nh7 13. Bg3 Ndf6 14. cxd5 cxd5 15. Na4 b5 16. Nc5 Bxc5 17. Rxc5 Ne4 18. Rc6 Nxg3 19. fxg3 Ng5 20. Ne5 Ne4 21. Rfc1 Nd6 22. Rc7 Nc4 23. Rb7 Nxb2 24. Qf1 Nc4 25. Nxc4 bxc4 26. Rcb1 Qg5 27. Qf4 Qxf4 28. gxf4 Rfc8 29. Rc1 c3 30. Rb3 Ra7 31. Rbxc3 Rxc3 32. Rxc3 Rb7 33. Kf2 Kh7 34. Kf3 Kg6 35. h4 Kf5 36. g4+ Kf6 37. g5+ hxg5 38. hxg5+ Kg6 39. Rc6 f6 40. gxf6 Kxf6 41. Rxa6 Rb3 42. a4 Ra3 43. a5 g5 44. fxg5+ Kf5 45. g6 Kxg6 46. Rxe6+ Kf5 47. Ra6 Ra4 48. Ra8 Ke6 49. a6 1-0
+
+
+
+
+[Event "rated blitz game"]
+[Site "https://lichess.org/gxpz4g9A"]
+[Date "2026.03.16"]
+[Round "-"]
+[White "ermactually"]
+[Black "FekolkinVictor"]
+[Result "1-0"]
+[GameId "gxpz4g9A"]
+[UTCDate "2026.03.16"]
+[UTCTime "18:36:39"]
+[WhiteElo "1789"]
+[BlackElo "1859"]
+[WhiteRatingDiff "+73"]
+[BlackRatingDiff "-6"]
+[Variant "Standard"]
+[TimeControl "180+0"]
+[ECO "D06"]
+[Opening "Queen's Gambit Declined: Marshall Defense"]
+[Termination "Time forfeit"]
+
+1. d4 d5 2. c4 Nf6 3. cxd5 Nxd5 4. e4 Nf6 5. Nc3 Bg4 6. Be2 Bxe2 7. Ngxe2 e6 8. Bg5 Be7 9. O-O h6 10. Bh4 O-O 11. Qc2 a6 12. Rad1 c6 13. Rfe1 Nbd7 14. Nc1 Ng4 15. Bxe7 Qxe7 16. Qe2 Ngf6 17. Nb3 Rad8 18. Rd2 b5 19. Red1 Nb6 20. Nc5 Nc4 21. Rd3 a5 22. d5 cxd5 23. exd5 Qxc5 24. dxe6 Rxd3 25. exf7+ Kxf7 26. Rxd3 Kg8 27. b3 Nb6 28. Qe6+ Kh8 29. h3 Re8 30. Qf7 Re1+ 31. Kh2 Qe5+ 32. g3 Nbd5 33. Nxd5 Nxd5 34. Rxd5 Qe4 35. Rd8+ Kh7 36. Qg8+ Kg6 37. Rd6+ Kf5 38. Qd5+ Qxd5 39. Rxd5+ Ke4 40. Rxb5 Ra1 41. Rxa5 Rb1 42. Ra4+ Kd3 43. Kg2 Ra1 44. Kf3 Kc3 45. h4 Kb2 46. g4 Rd1 47. Kf4 Rd8 48. f3 Rf8+ 49. Kg3 Rf7 50. h5 Rf6 51. f4 Kc3 52. Kf3 Rf7 53. Ke4 Re7+ 54. Kf5 Re1 55. Kg6 Rg1 56. f5 Rxg4+ 57. Kh7 Rg5 58. Ra6 Kb4 59. Rg6 Rxf5 60. Kxg7 Rxh5 61. Rxh6 Rh2 62. Rg6 Ka3 63. Rg5 Kxa2 64. Kg6 Kxb3 65. Kf5 1-0
+
+
+
+
+[Event "rated blitz game"]
+[Site "https://lichess.org/iQkgy3l6"]
+[Date "2026.03.17"]
+[Round "-"]
+[White "plusandminus"]
+[Black "ermactually"]
+[Result "1-0"]
+[GameId "iQkgy3l6"]
+[UTCDate "2026.03.17"]
+[UTCTime "18:30:52"]
+[WhiteElo "1864"]
+[BlackElo "1862"]
+[WhiteRatingDiff "+5"]
+[BlackRatingDiff "-51"]
+[Variant "Standard"]
+[TimeControl "180+0"]
+[ECO "D10"]
+[Opening "Slav Defense"]
+[Termination "Normal"]
+
+1. d4 c6 2. c4 d5 3. Nc3 Nf6 4. cxd5 Bf5 5. dxc6 Nxc6 6. d5 Nb4 7. e4 Nxe4 8. Qa4+ Bd7 9. Qxb4 1-0
+
+
+
+
+[Event "rated blitz game"]
+[Site "https://lichess.org/jGljnckf"]
+[Date "2026.03.16"]
+[Round "-"]
+[White "Random_Bayesian"]
+[Black "ermactually"]
+[Result "0-1"]
+[GameId "jGljnckf"]
+[UTCDate "2026.03.16"]
+[UTCTime "18:36:04"]
+[WhiteElo "1644"]
+[BlackElo "1728"]
+[WhiteRatingDiff "-4"]
+[BlackRatingDiff "+61"]
+[Variant "Standard"]
+[TimeControl "180+0"]
+[ECO "B13"]
+[Opening "Caro-Kann Defense: Exchange Variation"]
+[Termination "Normal"]
+
+1. e4 c6 2. Nf3 d5 3. exd5 cxd5 4. d4 Nc6 5. Nc3 Nf6 6. Bb5 Bg4 7. O-O e6 8. Bxc6+ bxc6 9. Qd3 Be7 10. Ne5 Qc7 11. Nxg4 Nxg4 12. h3 Qh2# 0-1
+
+
+
+
+[Event "rated bullet game"]
+[Site "https://lichess.org/qUlE2Svd"]
+[Date "2026.07.22"]
+[Round "-"]
+[White "ZAbeginSKY"]
+[Black "ermactually"]
+[Result "0-1"]
+[GameId "qUlE2Svd"]
+[UTCDate "2026.07.22"]
+[UTCTime "21:05:54"]
+[WhiteElo "2002"]
+[BlackElo "1998"]
+[WhiteRatingDiff "-5"]
+[BlackRatingDiff "+15"]
+[Variant "Standard"]
+[TimeControl "60+0"]
+[ECO "B10"]
+[Opening "Caro-Kann Defense"]
+[Termination "Normal"]
+
+1. e4 c6 2. e5 d5 3. exd6 Qxd6 4. Nf3 Bg4 5. d4 Nf6 6. Nc3 Nbd7 7. g3 Nb6 8. Bf4 Qd7 9. Be2 Nbd5 10. O-O Nxf4 11. gxf4 Bh3 12. Ne5 Qf5 13. Re1 Nd7 14. Qd2 Nxe5 15. dxe5 Qg6+ 16. Kh1 Qg2# 0-1
+
+
+
+
+[Event "rated bullet game"]
+[Site "https://lichess.org/qc8J4AlA"]
+[Date "2024.02.18"]
+[Round "-"]
+[White "ermactually"]
+[Black "snh"]
+[Result "0-1"]
+[GameId "qc8J4AlA"]
+[UTCDate "2024.02.18"]
+[UTCTime "22:37:03"]
+[WhiteElo "1870"]
+[BlackElo "1871"]
+[WhiteRatingDiff "-24"]
+[BlackRatingDiff "+5"]
+[Variant "Standard"]
+[TimeControl "60+0"]
+[ECO "D12"]
+[Opening "Slav Defense: Quiet Variation, Schallopp Defense"]
+[Termination "Normal"]
+
+1. d4 c6 2. c4 d5 3. Nc3 Bf5 4. Nf3 Nf6 5. e3 e6 6. Be2 Nbd7 7. O-O Nb6 8. h3 Nxc4 9. Bxc4 dxc4 10. Qa4 Nd5 11. Qxc4 Nxc3 12. Qxc3 Bd6 13. Qc2 Bxc2 14. Bd2 O-O 15. Bc3 Qf6 16. Rac1 Be4 17. d5 Qg6 18. dxe6 fxe6 19. Nh4 Qg5 20. g3 Bxg3 21. fxg3 Qxg3+ 0-1
+
+
+
+
+[Event "rated blitz game"]
+[Site "https://lichess.org/tdjo34kW"]
+[Date "2024.03.29"]
+[Round "-"]
+[White "raunch33"]
+[Black "ermactually"]
+[Result "1-0"]
+[GameId "tdjo34kW"]
+[UTCDate "2024.03.29"]
+[UTCTime "18:28:19"]
+[WhiteElo "1673"]
+[BlackElo "1703"]
+[WhiteRatingDiff "+6"]
+[BlackRatingDiff "-24"]
+[Variant "Standard"]
+[TimeControl "180+2"]
+[ECO "B13"]
+[Opening "Caro-Kann Defense: Exchange Variation"]
+[Termination "Normal"]
+
+1. e4 c6 2. d4 d5 3. exd5 cxd5 4. Nf3 Nc6 5. Bd3 Bg4 6. c3 e5 7. h3 Bh5 8. dxe5 Nxe5 9. Bb5+ Nc6 10. O-O Be7 11. Nbd2 Nf6 12. Re1 O-O 13. Nf1 a6 14. Bxc6 bxc6 15. Ng3 Bg6 16. Ne5 Bd6 17. Nxg6 hxg6 18. Qd3 Qc7 19. Ne2 Rfe8 20. Be3 Re6 21. Nd4 Re7 22. Bg5 Rxe1+ 23. Rxe1 Ne4 24. Rxe4 dxe4 25. Qxe4 c5 26. Nf3 Rd8 27. Qc2 Rd7 28. Be3 Qd8 29. Qa4 Bh2+ 1-0
+
+
+
+
+[Event "rated bullet game"]
+[Site "https://lichess.org/w44tbPi5"]
+[Date "2026.09.03"]
+[Round "-"]
+[White "ermactually"]
+[Black "Kyzenn"]
+[Result "0-1"]
+[GameId "w44tbPi5"]
+[UTCDate "2026.09.03"]
+[UTCTime "15:32:00"]
+[WhiteElo "1978"]
+[BlackElo "1988"]
+[WhiteRatingDiff "-14"]
+[BlackRatingDiff "+5"]
+[Variant "Standard"]
+[TimeControl "60+0"]
+[ECO "D44"]
+[Opening "Semi-Slav Defense Accepted"]
+[Termination "Normal"]
+
+1. d4 c6 2. Nf3 d5 3. c4 Nf6 4. Nc3 dxc4 5. Bg5 e6 6. a4 Be7 7. e3 Nd5 8. Bxc4 Bxg5 9. Nxd5 cxd5 10. Bb5+ Nc6 11. Nxg5 Qxg5 12. Bxc6+ bxc6 13. Qc2 Bd7 14. Rc1 Qxg2 0-1
+
+
+
+
+[Event "rated rapid game"]
+[Site "https://lichess.org/x2zfmDkO"]
+[Date "2026.03.22"]
+[Round "-"]
+[White "ermactually"]
+[Black "KeithRollin"]
+[Result "0-1"]
+[GameId "x2zfmDkO"]
+[UTCDate "2026.03.22"]
+[UTCTime "00:34:51"]
+[WhiteElo "1895"]
+[BlackElo "2014"]
+[WhiteRatingDiff "-63"]
+[BlackRatingDiff "+4"]
+[Variant "Standard"]
+[TimeControl "600+0"]
+[ECO "A31"]
+[Opening "English Opening: Symmetrical Variation, Anti-Benoni Variation"]
+[Termination "Normal"]
+
+1. d4 Nf6 2. c4 c5 3. Nf3 d6 4. Bg5 Nbd7 5. Nc3 g6 6. e3 Bg7 7. Be2 O-O 8. O-O a6 9. Rc1 b5 10. cxb5 axb5 11. Bxb5 Ba6 12. Bxa6 Rxa6 13. dxc5 Nxc5 14. Qe2 Qa8 15. a3 Rb8 16. Nd4 Nb3 17. Rc2 Nxd4 18. exd4 Rab6 19. Qxe7 Nd5 20. Nxd5 Qxd5 21. b4 Qxd4 22. Rfc1 Qg4 23. h3 Qf5 24. Rc7 Bd4 25. R7c6 Qxf2+ 26. Kh2 Be5+ 27. Kh1 Rxc6 0-1
+
+
+
+
+[Event "rated blitz game"]
+[Site "https://lichess.org/xzAscUng"]
+[Date "2024.02.18"]
+[Round "-"]
+[White "ermactually"]
+[Black "Pregador"]
+[Result "1-0"]
+[GameId "xzAscUng"]
+[UTCDate "2024.02.18"]
+[UTCTime "22:58:14"]
+[WhiteElo "1678"]
+[BlackElo "1656"]
+[WhiteRatingDiff "+18"]
+[BlackRatingDiff "-6"]
+[Variant "Standard"]
+[TimeControl "180+0"]
+[ECO "D07"]
+[Opening "Queen's Gambit Declined: Chigorin Defense, Modern Gambit"]
+[Termination "Time forfeit"]
+
+1. d4 d5 2. Nf3 Nf6 3. c4 Nc6 4. Nc3 dxc4 5. Bf4 Bg4 6. e3 e6 7. Be2 Bb4 8. O-O O-O 9. h3 Bf5 10. Bxc4 Ne4 11. Rc1 Nxc3 12. bxc3 Ba5 13. Qb3 Bb6 14. Nh4 Bg6 15. Nxg6 hxg6 16. Be2 Qf6 17. c4 a6 18. c5 Ba7 19. Qxb7 Ne7 20. Qxc7 Nd5 21. Qe5 Nxf4 22. exf4 Qe7 23. Bf3 Rad8 24. Rfd1 f6 25. Qe3 g5 26. fxg5 fxg5 27. Rb1 Bb8 28. Rb7 Qf6 29. c6 Bf4 30. Qc3 Rf7 31. a4 e5 32. Rxf7 Qxf7 33. c7 Rc8 34. dxe5 Qe7 35. Bb7 Rxc7 36. Qb2 Qxe5 37. Qxe5 Bxe5 38. Bf3 g6 39. g3 Kg7 40. Kg2 Kf6 41. Rd5 Bd6 42. Ra5 Bb4 43. Rxa6+ Kg7 44. Rb6 Ba5 45. Rb5 Bc3 46. h4 Be5 47. hxg5 Bd6 48. g4 Rc5 49. Kh3 Rxb5 50. axb5 Bc5 51. b6 Bxb6 52. Bg2 Bc7 53. f3 Be5 54. Bf1 1-0
+
+
+
+
+[Event "rated bullet game"]
+[Site "https://lichess.org/y1Yf0BPY"]
+[Date "2024.01.28"]
+[Round "-"]
+[White "Abdelrahman600"]
+[Black "ermactually"]
+[Result "0-1"]
+[GameId "y1Yf0BPY"]
+[UTCDate "2024.01.28"]
+[UTCTime "16:56:48"]
+[WhiteElo "1621"]
+[BlackElo "1500"]
+[WhiteRatingDiff "-4"]
+[BlackRatingDiff "+343"]
+[Variant "Standard"]
+[TimeControl "60+0"]
+[ECO "D10"]
+[Opening "Slav Defense: Exchange Variation"]
+[Termination "Time forfeit"]
+
+1. d4 c6 2. c4 d5 3. cxd5 cxd5 4. Nc3 Nf6 5. Nf3 Nc6 6. Bg5 Bg4 7. e3 Bxf3 8. Qxf3 e6 9. Bb5 Be7 10. O-O a6 11. Ba4 b5 12. Bb3 O-O 13. Rac1 h6 14. Bxf6 Bxf6 15. Nxd5 exd5 16. Rxc6 a5 17. Bxd5 Rc8 18. Rxc8 Qxc8 19. Be4 Qd7 20. Bd3 Rc8 21. Bf5 Qc7 22. Bxc8 Qxc8 23. Qe2 b4 24. Qd2 Qe6 25. Rc1 Qxa2 26. Rc5 Qa1+ 27. Rc1 Qa2 28. h3 a4 29. Qxb4 a3 30. Qxa3 Qe6 31. b4 Kh7 32. b5 Bd8 33. Qa6 Be7 34. Qxe6 fxe6 35. b6 Bd6 36. b7 Bb8 37. Rc2 Ba7 38. Rc8 Kg6 39. b8=Q Bxb8 40. Rxb8 Kf6 41. Re8 Kg6 42. Kf1 Kf7 43. e4 Kxe8 44. Ke2 Ke7 45. Ke3 Kf6 46. f4 Ke7 47. Kd3 Kf6 48. e5+ Ke7 49. g4 Kf7 50. Ke4 Ke7 51. d5 Kf7 0-1
+
+
+
+
+[Event "rated rapid game"]
+[Site "https://lichess.org/yOWvgd3B"]
+[Date "2026.03.22"]
+[Round "-"]
+[White "Ditiatev"]
+[Black "ermactually"]
+[Result "0-1"]
+[GameId "yOWvgd3B"]
+[UTCDate "2026.03.22"]
+[UTCTime "00:15:44"]
+[WhiteElo "1816"]
+[BlackElo "1749"]
+[WhiteRatingDiff "-5"]
+[BlackRatingDiff "+146"]
+[Variant "Standard"]
+[TimeControl "600+0"]
+[ECO "B12"]
+[Opening "Caro-Kann Defense: Advance Variation, Short Variation"]
+[Termination "Normal"]
+
+1. e4 c6 2. Nf3 d5 3. e5 Bf5 4. d4 e6 5. Bd3 Bxd3 6. Qxd3 Nd7 7. O-O Qb6 8. Ng5 h6 9. Nh7 Be7 10. a4 g6 11. Nf6+ Ngxf6 12. exf6 Nxf6 13. Nd2 Bf8 14. Nf3 Bg7 15. c3 O-O 16. b4 Rfe8 17. Ne5 Qc7 18. Qh3 h5 19. g4 hxg4 20. Nxg4 a5 21. Nh6+ Kf8 22. f4 Nh5 23. Ng4 b5 24. bxa5 Rxa5 25. Ba3+ Kg8 26. Bb4 Rxa4 27. Rxa4 bxa4 28. Ne5 Ra8 29. Qg4 a3 30. Nxg6 fxg6 31. Qxe6+ Kh7 32. f5 a2 33. Qxg6+ Kg8 34. Ra1 Nf6 35. h4 Qf4 36. h5 Qe3+ 37. Kf1 Qd3+ 38. Kg2 Qb1 39. h6 Ra7 40. Bc5 Qxa1 41. Bxa7 Qb2+ 42. Kh3 Qxc3+ 43. Kh4 Qe1+ 44. Kg5 Qe3+ 45. Kh4 Qxh6+ 46. Qxh6 Bxh6 47. Bc5 a1=Q 48. Kg3 Bg7 49. Kf4 Ne4 50. f6 Bxf6 51. Kf5 Bxd4 52. Bxd4 Qxd4 53. Ke6 Qf6+ 54. Kd7 Kf7 55. Kc7 Qd6+ 56. Kb6 Qc5+ 57. Kc7 Qa7+ 58. Kd8 Qb8+ 59. Kd7 Nc5+ 60. Kxc6 d4 61. Kxc5 d3 62. Kd5 d2 63. Ke4 d1=Q 64. Kf5 Qd5+ 65. Kg4 Qb4+ 66. Kg3 Qdb3+ 67. Kf2 Qd2+ 68. Kf1 Qb1# 0-1
+
+
+
+
+[Event "rated blitz game"]
+[Site "https://lichess.org/z0X9khlt"]
+[Date "2024.02.02"]
+[Round "-"]
+[White "ermactually"]
+[Black "Milosns"]
+[Result "0-1"]
+[GameId "z0X9khlt"]
+[UTCDate "2024.02.02"]
+[UTCTime "02:30:34"]
+[WhiteElo "1500"]
+[BlackElo "1462"]
+[WhiteRatingDiff "-262"]
+[BlackRatingDiff "+4"]
+[Variant "Standard"]
+[TimeControl "180+0"]
+[ECO "D07"]
+[Opening "Queen's Gambit Declined: Chigorin Defense"]
+[Termination "Normal"]
+
+1. d4 d5 2. c4 Nc6 3. cxd5 Nb4 4. Qa4+ Qd7 5. Qxb4 e5 6. Qc3 Qxd5 7. dxe5 a5 8. Nf3 Bb4 9. e3 Bxc3+ 10. Nxc3 Qc6 11. Nd4 Qb6 12. Bc4 Be6 13. Bd3 O-O-O 14. O-O c6 15. Be4 Ne7 16. Bf3 Rhe8 17. Bd2 Qxb2 18. Ne4 Rxd4 19. exd4 Qxd4 20. Be3 Qxe5 21. Rab1 Bd5 22. Ng5 Bxf3 23. Nxf3 Qc3 24. Rfc1 Qa3 25. Rc2 Nd5 26. Bd2 Nb4 27. Bxb4 axb4 28. Rb3 Qa5 29. h3 g5 30. Kh2 h5 31. Rcb2 c5 32. Nxg5 c4 33. Rxb4 Qxg5 34. Rxc4+ Kb8 35. Rcb4 Re7 36. R4b3 h4 37. a4 Qc5 38. Rb5 Qc4 39. a5 Re1 40. Rxb7+ Kc8 41. Rb8+ Kd7 42. R2b7+ Ke6 43. Rc8 Qf4+ 44. g3 Qxf2# 0-1
+
+
+
+
