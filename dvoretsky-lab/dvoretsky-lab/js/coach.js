@@ -6,9 +6,13 @@
   'use strict';
 
   var SAN_RE = /\b(?:[KQRBN][a-h]?[1-8]?x?[a-h][1-8](?:=[QRBN])?|[a-h]x?[a-h][1-8](?:=[QRBN])?|[a-h][1-8]|O-O(?:-O)?)\b/g;
-  var OPP_WORDS = /\b(his|her|their|black'?s|white'?s|opponent|threat(?:en|ens|ening)?|reply|replies|answer|counter|defend|defence|defense|prophyla|stop|prevent|allow)\b/i;
-  var CANDIDATE_WORDS = /\b(alternativ|instead|also considered|other option|candidate|compared|versus|vs\.?|or\b|either)\b/i;
-  var EVAL_WORDS = /\b(equal|balanced|better|worse|winning|losing|slight|clearly|decisive|compensation|edge|advantage|drawn|unclear|\+[-=]|=|±|∓|⩲|⩱)\b/i;
+  var OPP_WORDS = /\b(his|her|their|black'?s|white'?s|opponent|threat(?:en|ens|ening)?|reply|replies|answer|counter|defend|defence|defense|prophyla\w*|stop|prevent|allow)\b/i;
+  var CANDIDATE_WORDS = /\b(alternativ\w*|instead|also considered|other option|candidates?|compared|versus|vs\.?|either)\b/i;
+  // "Nf3 or d4": two moves either side of "or". A bare "or" is in half of all sentences.
+  var MOVE_OR_MOVE = new RegExp(SAN_RE.source + '\\s+or\\s+' + SAN_RE.source);
+  var EVAL_WORDS = /\b(equal|balanced|better|worse|winning|losing|slight|clearly|decisive|compensation|edge|advantage|drawn|unclear)\b/i;
+  // The symbols have no letters in them, so \b cannot anchor them: whitespace or punctuation instead.
+  var EVAL_SYMBOLS = /(^|[\s(])(\+-|-\+|\+=|=\+|=|±|∓|⩲|⩱)(?=$|[\s).,;:!?])/;
   var HEDGE_WORDS = /\b(felt|looked|seemed|natural|instinct|gut|by feel|principle|usually|generally|always play|habit|why not)\b/i;
 
   /* Score one written justification against the position it was written for. */
@@ -19,9 +23,9 @@
     var uniqueSans = sans.filter(function (v, i) { return sans.indexOf(v) === i; });
 
     var concreteness = Math.min(1, uniqueSans.length / 4) * 0.7 + Math.min(1, words / 45) * 0.3;
-    var candidates = CANDIDATE_WORDS.test(text) ? 1 : (uniqueSans.length >= 3 ? 0.6 : 0.15);
+    var candidates = (CANDIDATE_WORDS.test(text) || MOVE_OR_MOVE.test(text)) ? 1 : (uniqueSans.length >= 3 ? 0.6 : 0.15);
     var opponent = OPP_WORDS.test(text) ? 1 : 0.1;
-    var evaluation = EVAL_WORDS.test(text) ? 1 : 0.15;
+    var evaluation = (EVAL_WORDS.test(text) || EVAL_SYMBOLS.test(text)) ? 1 : 0.15;
     var hedging = HEDGE_WORDS.test(text) ? 1 : 0;
 
     // Did the writer see the move the position actually demanded?
@@ -136,9 +140,12 @@
         (turning[0].timePressure ? ' — with under fifteen percent of your clock left, which is its own separate problem' : '') + '.');
     }
     if (turning.length > 1) {
-      narrative.push('Two further losses of a pawn or more followed at moves ' +
-        turning.slice(1).map(function (t) { return t.moveNo; }).join(' and ') +
-        '. Note that they came after the first one: the damage in this game is sequential, not independent.');
+      var rest = turning.slice(1).sort(function (a, b) { return a.moveNo - b.moveNo; });
+      var allAfter = rest.every(function (t) { return t.moveNo > turning[0].moveNo; });
+      narrative.push((rest.length === 1 ? 'One further costly move' : rest.length + ' further costly moves') +
+        (rest.length === 1 ? ' came at move ' : ' came at moves ') +
+        rest.map(function (t) { return t.moveNo; }).join(' and ') + '.' +
+        (allAfter ? (rest.length === 1 ? ' It' : ' They') + ' came after the first one: the damage in this game is sequential, not independent.' : ''));
     }
     if (phaseCost[worstPhase] > 0) {
       narrative.push('By phase, ' + Math.round(phaseCost[worstPhase]) + ' of your ' +
@@ -175,7 +182,9 @@
 
   function openingLine(game, errs) {
     var name = game.openingName || 'an unlabelled opening';
-    var openErrs = errs.filter(function (e) { return e.phase === 'opening'; });
+    // earliest first: "at move N" means where it started, not where it cost most
+    var openErrs = errs.filter(function (e) { return e.phase === 'opening'; })
+      .sort(function (a, b) { return a.moveNo - b.moveNo; });
     var side = game.myColor === 'w' ? 'White' : 'Black';
     if (!openErrs.length) {
       return 'You came out of ' + name + ' as ' + side + ' with the position intact. The theory is not the problem.';

@@ -7,16 +7,59 @@
 
   var $ = function (s, r) { return (r || document).querySelector(s); };
   var $$ = function (s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); };
-  var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
-    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); };
+  var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); };
+
+  /* ---------- what comes back from storage or a backup file is untrusted ----------
+     A backup is a file anyone can edit, and the fields below reach innerHTML
+     and href. Coerce each to the shape the app itself would have written. */
+  var RESULT_OK = /^(1-0|0-1|1\/2-1\/2|\*)$/;
+  function numOrNull(v) { if (v == null || v === '') return null; v = +v; return isFinite(v) ? v : null; }
+  function strOrNull(v) { return v == null ? null : String(v); }
+  function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
+  function cleanGame(g) {
+    g.result = RESULT_OK.test(g.result) ? g.result : '*';
+    g.myColor = g.myColor === 'b' ? 'b' : 'w';
+    g.score = [0, 0.5, 1].indexOf(+g.score) > -1 ? +g.score : 0.5;
+    ['myRating', 'oppRating', 'ratingDiff', 'acpl', 'oppAcpl', 'accuracy', 'clockInitial',
+     'clockIncrement', 'openingPly'].forEach(function (k) { g[k] = numOrNull(g[k]); });
+    ['id', 'myName', 'oppName', 'eco', 'openingName', 'status', 'speed', 'perf', 'source', 'judgmentText']
+      .forEach(function (k) { g[k] = strOrNull(g[k]); });
+    g.date = numOrNull(g.date) || Date.now();
+    g.endedAt = numOrNull(g.endedAt) || g.date;
+    g.url = typeof g.url === 'string' && /^https?:\/\//i.test(g.url) ? g.url : null;   // no javascript: links
+    g.analysed = !!g.analysed;
+    if (!g.id) g.id = 'g' + Math.random().toString(36).slice(2, 10);
+    return g;
+  }
+  function cleanTrack(list) {
+    return (Array.isArray(list) ? list : []).filter(function (p) {
+      return isObj(p) && /^\d{4}-\d{2}-\d{2}$/.test(p.day) && isFinite(+p.measured);
+    }).map(function (p) {
+      return { day: p.day, measured: +p.measured, moe: numOrNull(p.moe) || 0, rating: numOrNull(p.rating),
+               acpl: numOrNull(p.acpl), n: numOrNull(p.n) || 0 };
+    });
+  }
+  function cleanCards(cards) {
+    var out = {};
+    if (!isObj(cards)) return out;
+    Object.keys(cards).forEach(function (k) {
+      var c = cards[k];
+      if (!isObj(c)) return;
+      out[k] = { id: String(c.id || k), ease: numOrNull(c.ease) || 2.5, interval: numOrNull(c.interval) || 0,
+        reps: numOrNull(c.reps) || 0, lapses: numOrNull(c.lapses) || 0, due: numOrNull(c.due) || 0,
+        last: numOrNull(c.last), history: Array.isArray(c.history) ? c.history.slice(-10) : [] };
+    });
+    return out;
+  }
 
   var S = {
     handle: Store.get('handle', ''),
     games: [],
     profile: null,
     deck: {},
-    cardState: Store.get('cards', {}),
-    track: Store.get('track', []),
+    cardState: cleanCards(Store.get('cards', {})),
+    track: cleanTrack(Store.get('track', [])),
     transcripts: Store.get('transcripts', {}),
     completed: Store.get('completed', {}),
     settings: Store.get('settings', { minutes: 60, endgameTier: 2, hour: 19, apiKey: '', perf: 'rapid',
@@ -34,10 +77,11 @@
       var c = {};
       ['id','source','url','speed','perf','rated','date','endedAt','status','myColor','myName','oppName',
        'myRating','oppRating','score','result','eco','openingName','openingPly','analysed','acpl','oppAcpl',
-       'accuracy','clockInitial','clockIncrement'].forEach(function (k) { c[k] = g[k]; });
-      c.m = g.moves.map(function (mv) {
+       'accuracy','clockInitial','clockIncrement','ratingDiff','counts'].forEach(function (k) { c[k] = g[k]; });
+      c.m = (g.moves || []).map(function (mv) {
         return [mv.san, mv.evalAfter == null ? '' : mv.evalAfter, mv.judgment || '',
-                mv.serverBest || '', mv.clock == null ? '' : Math.round(mv.clock), mv.serverLine || ''];
+                mv.serverBest || '', mv.clock == null ? '' : Math.round(mv.clock), mv.serverLine || '',
+                mv.mateAfter == null ? '' : mv.mateAfter];
       });
       return c;
     });
@@ -54,17 +98,19 @@
           fenBefore: before, fenAfter: g.fen(),
           evalAfter: row[1] === '' ? null : +row[1],
           judgment: row[2] || null, serverBest: row[3] || null,
-          clock: row[4] === '' ? null : +row[4], serverLine: row[5] || null
+          clock: row[4] === '' ? null : +row[4], serverLine: row[5] || null,
+          mateAfter: row[6] == null || row[6] === '' ? null : +row[6]
         });
       });
       var out = Object.assign({}, c); delete out.m; out.moves = moves;
-      return out;
+      return cleanGame(out);
     });
   }
 
   function saveGames() {
     var ok = Store.set('games', compact(S.games));
     if (!ok) flash('Local storage is full. Reduce the sync window in Settings.', 'bad');
+    return ok;
   }
   function loadGames() {
     var raw = Store.get('games', null);
@@ -87,12 +133,14 @@
     if (name === 'review') renderReviewHome();
   }
 
+  var flashTimer = null;
   function flash(msg, kind) {
     var el = $('#flash');
+    clearTimeout(flashTimer);   // an older notice's timer must not hide this one
     el.className = 'notice ' + (kind || '');
     el.innerHTML = msg;
     el.classList.remove('hidden');
-    if (kind !== 'bad') setTimeout(function () { el.classList.add('hidden'); }, 6000);
+    if (kind !== 'bad') flashTimer = setTimeout(function () { el.classList.add('hidden'); }, 6000);
   }
 
   /* ---------- sync ---------- */
@@ -111,15 +159,19 @@
     ]).then(function (res) {
       var prof = res[0], games = res[1];
       if (!games.length) {
+        // Leave whatever is already loaded (an imported PGN, say) rather than replace it with nothing.
         flash('No rated ' + (S.settings.perf || 'rapid') + ' games found for <b>' + esc(user) +
-              '</b> in the last ' + days + ' days. Try another time control in Settings, or import a PGN.', 'warn');
+              '</b> in the last ' + days + ' days. Try another time control in Settings, or import a PGN.' +
+              (S.games.length ? ' Your ' + S.games.length + ' loaded games are unchanged.' : ''), 'warn');
+        return;
       }
       S.games = games;
-      saveGames();
+      var stored = saveGames();
       var rating = prof && prof.perfs && prof.perfs[S.settings.perf || 'rapid']
         ? prof.perfs[S.settings.perf || 'rapid'].rating : null;
       Store.set('lichessRating', rating);
       rebuild(rating);
+      if (!stored) return;   // keep the storage-full warning on screen
       var an = games.filter(function (g) { return g.analysed; }).length;
       flash('Loaded ' + games.length + ' games, ' + an + ' with server analysis.' +
         (an < games.length * 0.5 ? ' Games without analysis contribute to results but not to the error mining — request computer analysis on Lichess for the rest.' : ''),
@@ -236,11 +288,11 @@
       track.map(function (p) { return X(p.day) + ',' + Y(p.measured); }).join(' ') + '"/>');
     track.forEach(function (p) {
       s.push('<circle cx="' + X(p.day) + '" cy="' + Y(p.measured) + '" r="3" fill="var(--olive)"><title>' +
-        p.day + ': ' + p.measured + ' ± ' + p.moe + ' from ' + p.n + ' games</title></circle>');
+        esc(p.day) + ': ' + esc(p.measured) + ' ± ' + esc(p.moe) + ' from ' + esc(p.n) + ' games</title></circle>');
     });
-    s.push('<text x="' + padL + '" y="' + (H - 6) + '" class="traj-lab">' + track[0].day + '</text>');
+    s.push('<text x="' + padL + '" y="' + (H - 6) + '" class="traj-lab">' + esc(track[0].day) + '</text>');
     s.push('<text x="' + (W - padR) + '" y="' + (H - 6) + '" text-anchor="end" class="traj-lab">' +
-      track[track.length - 1].day + '</text>');
+      esc(track[track.length - 1].day) + '</text>');
     s.push('</svg>');
 
     var t = trend(track), note;
@@ -517,6 +569,7 @@
     };
     sparBoard.allowedColor = myColor;
     sparBoard.flipped = myColor === 'b';
+    sparBoard.interactive = true;   // endSpar turned it off for the last game
     sparBoard.setGame(S.spar.game);
     $('#sparStatus').textContent = 'Playing as ' + (myColor === 'w' ? 'White' : 'Black') +
       ' against your mirror at ' + S.spar.mirror.targetElo + '.';
@@ -533,15 +586,21 @@
     sparBoard.setGame(game, { from: move.fromSq, to: move.toSq });
     renderSparMoves();
     if (checkSparEnd()) return;
+    S.spar.thinking = true;   // closed from now, not from when the timer fires: no takeback in the gap
     setTimeout(mirrorMove, 120);
   }
+
+  // An engine answer is only good for the game and position it was asked about.
+  function stillCurrent(sp, fen) { return S.spar === sp && !sp.over && sp.game.fen() === fen; }
 
   function mirrorMove() {
     var sp = S.spar;
     if (!sp || sp.over) return;
     sp.thinking = true;
+    var fen = sp.game.fen();
     $('#sparStatus').innerHTML = '<span class="spin"></span> Your mirror is thinking.';
     sp.mirror.chooseMove(sp.game, sp.history.length + 1).then(function (res) {
+      if (!stillCurrent(sp, fen)) return;   // a new game was started, or this one ended, meanwhile
       sp.thinking = false;
       if (!res) { checkSparEnd(); return; }
       var san = res.san || sp.game.san(res.move);
@@ -562,8 +621,12 @@
     var sp = S.spar; if (!sp || sp.thinking) return;
     for (var i = 0; i < 2 && sp.history.length; i++) { sp.game.undoMove(); sp.history.pop(); }
     sp.over = false;
+    sparBoard.interactive = true;
     sparBoard.setGame(sp.game);
-    renderSparMoves(); refreshAdvice();
+    renderSparMoves();
+    // Taking back the mirror's only move as Black leaves it the mirror's turn again.
+    if (sp.game.turnColor() !== sp.myColor) { sp.thinking = true; setTimeout(mirrorMove, 120); }
+    else refreshAdvice();
   }
 
   function checkSparEnd() {
@@ -600,7 +663,9 @@
     if (!sp || sp.over) return;
     if (!force && !$('#sparCoach').checked) { $('#sparAdvice').innerHTML = '<p class="soft tiny">Live advice is off. Turn it on above, or ask for a single hint.</p>'; return; }
     $('#sparAdvice').innerHTML = '<p class="soft tiny"><span class="spin"></span> Reading the position for both sides.</p>';
+    var fen = sp.game.fen();
     Sparring.dualAdvice(S.engine, sp.game, { depth: 3, budget: 800 }).then(function (adv) {
+      if (!stillCurrent(sp, fen)) return;   // advice for a position no longer on the board
       sp.advice = adv;
       renderAdvice(adv);
     });
@@ -614,7 +679,7 @@
       if (!list || !list.length) { h += '<p class="tiny soft">No candidates.</p></div>'; return h; }
       list.forEach(function (c, i) {
         h += '<div class="cand' + (i === 0 ? ' top' : '') + '"><span class="mv">' + esc(c.san) + '</span>' +
-          '<span class="cp">' + Sparring.cpDisplay(side === 'white' ? (adv.sideToMove === 'w' ? c.cp : -c.cp) : (adv.sideToMove === 'b' ? c.cp : -c.cp), true) + '</span>' +
+          '<span class="cp">' + Sparring.cpDisplay(side === 'white' ? (adv.sideToMove === 'w' ? c.cp : -c.cp) : (adv.sideToMove === 'b' ? c.cp : -c.cp)) + '</span>' +
           (c.delta ? '<span class="dl">−' + c.delta + '</span>' : '') + '</div>';
       });
       return h + '</div>';
@@ -671,6 +736,7 @@
     $('#drillHome').classList.add('hidden');
     $('#drillStage').classList.remove('hidden');
     if (!drillBoard) drillBoard = new Board($('#drillBoard'), boardOpts({ onMove: onDrillMove }));
+    drillBoard.opts.onMove = onDrillMove;   // an endgame study may have left its handler behind
     showCard();
   }
 
@@ -738,6 +804,7 @@
         var d = S.drill, c = d.queue[d.index];
         Training.review(S.deck[c.id] || c, +b.dataset.grade);
         persistCards();
+        d.practised = true;
         d.index++;
         showCard();
       });
@@ -746,10 +813,12 @@
   }
 
   function finishDrill() {
+    var d = S.drill;
+    S.drill = null;   // any engine reply still on its way now has nowhere to land
     $('#drillStage').classList.add('hidden');
     $('#drillHome').classList.remove('hidden');
     renderDrillHome();
-    markDone('drill');
+    if (d && d.practised) markDone('drill');   // quitting before a single card is not a day's work
   }
 
   function startEndgame(id) {
@@ -775,18 +844,26 @@
   }
 
   function onEndgameMove(move, game) {
+    var d = S.drill;
+    if (!d) return;
+    d.practised = true;
     game.makeMove(move);
     drillBoard.setGame(game, { from: move.fromSq, to: move.toSq });
     var over = game.gameOver();
     if (over) { $('#drillFeedback').innerHTML = '<div class="coach-note ok">' + over + '.</div>'; return; }
     $('#drillFeedback').innerHTML = '<span class="spin"></span> Engine replying.';
+    var fen = game.fen();
+    drillBoard.interactive = false;   // no second move until the engine has answered the first
     S.engine.rankAsync(game, 4, 1400).then(function (r) {
+      if (S.drill !== d || game.fen() !== fen) return;   // quit or restarted meanwhile
+      drillBoard.interactive = true;
       if (!r.length) return;
       game.makeMove(r[0].move);
       drillBoard.setGame(game, { from: r[0].move.fromSq, to: r[0].move.toSq });
       var o = game.gameOver();
       $('#drillFeedback').innerHTML = o ? '<div class="coach-note ok">' + o + '.</div>' :
-        '<div class="coach-note">Engine plays <b class="mono">' + esc(r[0].san) + '</b>. Evaluation ' + Sparring.cpDisplay(game.turnColor() === 'w' ? r[0].score : -r[0].score, true) + '.</div>';
+        '<div class="coach-note">Engine plays <b class="mono">' + esc(r[0].san) + '</b>. Evaluation ' +
+        Sparring.cpDisplay(game.turnColor() === 'w' ? -r[0].score : r[0].score) + ' (White\u2019s view).</div>';
     });
   }
 
@@ -903,8 +980,8 @@
     sel.innerHTML = S.games.slice(0, 60).map(function (g, i) {
       var done = S.transcripts[g.id] ? ' ✓' : '';
       return '<option value="' + i + '">' + new Date(g.date).toLocaleDateString() + ' · ' +
-        (g.myColor === 'w' ? 'W' : 'B') + ' vs ' + esc(g.oppName) + ' (' + (g.oppRating || '?') + ') · ' +
-        g.result + ' · ' + esc((g.openingName || '').slice(0, 34)) + done + '</option>';
+        (g.myColor === 'w' ? 'W' : 'B') + ' vs ' + esc(g.oppName) + ' (' + esc(g.oppRating || '?') + ') · ' +
+        esc(g.result) + ' · ' + esc((g.openingName || '').slice(0, 34)) + done + '</option>';
     }).join('');
   }
 
@@ -920,6 +997,7 @@
       errors: (S.profile ? S.profile.errors : []).filter(function (e) { return e.gameId === game.id; })
     };
     $('#revStage').classList.remove('hidden');
+    $('#revText').disabled = false;   // the last review's end locked it
     if (!revBoard) revBoard = new Board($('#revBoard'), boardOpts({ interactive: false }));
     revBoard.flipped = game.myColor === 'b';
     renderReviewStep();
@@ -1052,7 +1130,7 @@
       var perfKey = $('#scoutPerf').value;
       var rating = prof && prof.perfs && prof.perfs[perfKey] ? prof.perfs[perfKey].rating : null;
       var p = Analysis.buildProfile(games, rating);
-      S.scout = { user: user, profile: p };
+      S.scout = { user: user, profile: p, games: games };
       out.innerHTML = scoutReport(user, p);
     }).catch(function (e) {
       out.innerHTML = '<div class="notice bad">' + esc(e.message) + '</div>';
@@ -1112,10 +1190,12 @@
       renderCalendar();
     });
     $('#exportAll').addEventListener('click', function () {
+      // The API key stays on this machine: a backup file gets emailed and synced around.
+      var settings = Object.assign({}, S.settings); delete settings.apiKey;
       download('dvoretsky-lab-backup.json', JSON.stringify({
         handle: S.handle, games: compact(S.games), cards: S.cardState,
-        transcripts: S.transcripts, completed: S.completed, settings: S.settings,
-        track: S.track
+        transcripts: S.transcripts, completed: S.completed, settings: settings,
+        track: S.track, lichessRating: Store.get('lichessRating', null)
       }), 'application/json');
     });
     $('#importFile').addEventListener('change', function (e) {
@@ -1126,11 +1206,19 @@
         if (/^\s*\{/.test(txt)) {
           try {
             var d = JSON.parse(txt);
-            if (d.games) { S.games = hydrate(d.games); saveGames(); }
-            if (d.cards) { S.cardState = d.cards; Store.set('cards', d.cards); }
-            if (d.track) { S.track = d.track; Store.set('track', d.track); }
-            if (d.transcripts) { S.transcripts = d.transcripts; Store.set('transcripts', d.transcripts); }
-            if (d.completed) { S.completed = d.completed; Store.set('completed', d.completed); }
+            if (!isObj(d)) throw new Error('not a backup');
+            if (Array.isArray(d.games)) { S.games = hydrate(d.games.filter(isObj)); saveGames(); }
+            if (isObj(d.cards)) { S.cardState = cleanCards(d.cards); Store.set('cards', S.cardState); }
+            if (d.track) { S.track = cleanTrack(d.track); Store.set('track', S.track); }
+            if (isObj(d.transcripts)) { S.transcripts = d.transcripts; Store.set('transcripts', d.transcripts); }
+            if (isObj(d.completed)) { S.completed = d.completed; Store.set('completed', d.completed); }
+            if (typeof d.handle === 'string') { S.handle = d.handle; Store.set('handle', d.handle); $('#handle').value = d.handle; }
+            if (isObj(d.settings)) {
+              var keep = S.settings.apiKey;   // never in a backup; keep the one already here
+              S.settings = Object.assign({}, S.settings, d.settings, { apiKey: keep });
+              Store.set('settings', S.settings); applyBoardSettings();
+            }
+            if (d.lichessRating != null) Store.set('lichessRating', numOrNull(d.lichessRating));
             rebuild();
             flash('Backup restored.');
           } catch (err) { flash('That JSON did not parse.', 'bad'); }
@@ -1138,9 +1226,14 @@
           var user = Data.parseHandle($('#handle').value) || '';
           var games = Data.importPGN(txt, user);
           if (!games.length) { flash('No games found in that PGN.', 'bad'); return; }
-          S.games = games.concat(S.games).slice(0, 400);
+          // the same file imported twice must not count every game twice
+          var have = {};
+          S.games.forEach(function (g) { have[g.id] = true; });
+          var fresh = games.filter(function (g) { return !have[g.id]; });
+          S.games = fresh.map(cleanGame).concat(S.games).slice(0, 400);
           saveGames(); rebuild();
-          flash('Imported ' + games.length + ' games from PGN.' +
+          flash('Imported ' + fresh.length + ' games from PGN' +
+            (fresh.length < games.length ? ' (' + (games.length - fresh.length) + ' already loaded)' : '') + '.' +
             (games.some(function (g) { return g.analysed; }) ? '' : ' None carry engine evaluations, so error mining will be empty — export from Lichess with analysis included.'));
         }
       };
@@ -1239,8 +1332,10 @@
     document.addEventListener('click', function (e) {
       if (e.target && e.target.id === 'scoutAdopt' && S.scout) {
         S.profile = S.scout.profile;
-        renderRuler(); renderStrength();
-        flash('Loaded ' + esc(S.scout.user) + '\u2019s profile into the workspace. Sync your own account to switch back.');
+        S.book = Analysis.buildBook(S.scout.games);   // so the sparring mirror plays their repertoire too
+        renderRuler(); renderStrength(); renderCalendar();
+        flash('Loaded ' + esc(S.scout.user) + '\u2019s profile into the workspace: strength, calendar and the sparring opponent\u2019s ' +
+              'openings are theirs now; your drill deck stays yours. Sync your own account to switch back.');
       }
     });
 

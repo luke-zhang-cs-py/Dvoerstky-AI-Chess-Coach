@@ -119,16 +119,6 @@
   };
 
   // cheap eval for quiescence / ordering
-  Engine.prototype.materialOnly = function (g) {
-    var b = g.board, s = 0;
-    for (var sq = 0; sq < 128; sq++) {
-      if (sq & 0x88) { sq += 7; continue; }
-      var p = b[sq]; if (!p) continue;
-      s += ((p & CM) === W ? 1 : -1) * MG_VAL[p & TM];
-    }
-    return g.turn === W ? s : -s;
-  };
-
   // Search tuning constants
   var CAPTURE_ORDER_SCALE = 10;   // MVV-LVA: rank captures by victim value, break ties by attacker value
   var PROMOTION_ORDER_BONUS = 900;
@@ -165,6 +155,28 @@
   function formatResult(g, ms, r) {
     return { move: r.move, san: g.san(r.move, ms), score: r.score,
       uci: r.move.fromSq + r.move.toSq + (r.move.promo ? Chess.SYM[r.move.promo] : '') };
+  }
+
+  // The search walks the game with makeMove/undoMove. rankAsync yields to the
+  // event loop between slices, so searching the caller's own object would let a
+  // move played meanwhile (the user's, or a second search's) interleave with the
+  // search's own and corrupt the board. Both entry points search a copy instead;
+  // the moves they return describe the same position, so they play on the
+  // original unchanged.
+  function privateCopy(g) { return new Chess(g.fen()); }
+
+  // A root move the deadline cut off before its first full depth has no score.
+  // Rather than rank it at -Infinity (which reaches the UI and the sparring
+  // model as NaN), give it the cheap static answer: the quiescence value of the
+  // position after it, which takes no deadline and finishes in microseconds.
+  function scoreUnsearched(self, g, results) {
+    results.forEach(function (r) {
+      if (r.score !== -Infinity) return;
+      g.makeMove(r.move);
+      r.score = -self.quiesce(g, -Infinity, Infinity, 0);
+      g.undoMove();
+    });
+    results.sort(function (a, b) { return b.score - a.score; });
   }
 
   function orderMoves(ms) {
@@ -328,6 +340,7 @@
 
   /* Returns ranked candidate list [{move, san, score, uci}] from side-to-move POV (cp) */
   Engine.prototype.rank = function (g, depth, msBudget) {
+    g = privateCopy(g);
     var ms = g.generate();
     if (!ms.length) return [];
     orderMoves(ms);
@@ -353,6 +366,7 @@
       while (g.history.length > base) g.undoMove();   // the throw skipped the undos
       if (!e.timeout) throw e;
     }
+    scoreUnsearched(self, g, results);
     return results.map(function (r) { return formatResult(g, ms, r); });
   };
 
@@ -368,6 +382,7 @@
      deadline or requested depth is reached. */
   Engine.prototype.rankAsync = async function (g, depth, msBudget, onDepth) {
     var self = this;
+    g = privateCopy(g);
     var ms = g.generate();
     if (!ms.length) return [];
     orderMoves(ms);
@@ -383,8 +398,8 @@
 
     // Searches every root move at depth d, ROOT_SLICE at a time, yielding
     // between slices. Returns true once all moves are done (results updated
-    // and sorted), or false if the deadline hit mid-depth (results untouched,
-    // still holding the previous depth's ordering).
+    // and sorted), or false if the deadline cut any of them short -- including
+    // the last one -- leaving results holding the previous depth's ordering.
     async function runDepth(d) {
       var partial = [], i = 0;
       while (i < results.length) {
@@ -397,10 +412,11 @@
           try {
             sc = -self.search(g, d - 1, -Infinity, Infinity, deadline);
           } catch (e) {
-            if (!e.timeout) { while (g.history.length > base) g.undoMove(); throw e; }
-            sc = results[i].score;
+            while (g.history.length > base) g.undoMove();   // unwind whatever the throw skipped
+            if (!e.timeout) throw e;
+            return false;   // a depth with one move cut short would rank two depths' scores together
           }
-          while (g.history.length > base) g.undoMove();   // unwind whatever the throw skipped
+          while (g.history.length > base) g.undoMove();
           partial.push({ move: m, score: sc });
         }
         if (i < results.length) {
@@ -419,20 +435,8 @@
       if (!completed) break;
       await yieldNow();
     }
+    scoreUnsearched(self, g, results);
     return format(results);
-  };
-
-  Engine.prototype.bestLine = function (g, depth, len) {
-    var line = [], i;
-    len = len || 4;
-    for (i = 0; i < len; i++) {
-      var r = this.rank(g, Math.max(1, depth - Math.floor(i / 2)), 400);
-      if (!r.length) break;
-      line.push(r[0].san);
-      g.makeMove(r[0].move);
-    }
-    for (i = 0; i < line.length; i++) g.undoMove();
-    return line;
   };
 
   /* Position complexity: how sharp/tactical is this? Used to model human error rate. */

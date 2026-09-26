@@ -38,14 +38,16 @@
   };
 
   /* Style shaping: nudge the sampler toward the kinds of move this player makes. */
-  Mirror.prototype.styleBonus = function (mv, g, ply) {
-    var s = this.style, bonus = 0;
+  // cand is a ranked candidate, {move, san, score}. The SAN is on the
+  // candidate, not on the move object inside it.
+  Mirror.prototype.styleBonus = function (cand, ply) {
+    var s = this.style, bonus = 0, san = cand.san || '';
     if (!s || !s.sampleMoves) return 0;
-    if (mv.captured) bonus += (s.captureRate - 0.13) * 400;
-    if (/^[a-h]/.test(mv.san || '')) bonus += (s.pawnMoveRate - 0.36) * 180;
-    if (/\+$/.test(mv.san || '')) bonus += (s.checkRate - 0.06) * 350;
-    if (/^O-O/.test(mv.san || '') && ply < 24) bonus += (s.castlesEarly - 0.6) * 200;
-    if (/^Q/.test(mv.san || '') && ply < 14) bonus += (s.earlyQueenRate - 0.5) * 60;
+    if (cand.move && cand.move.captured) bonus += (s.captureRate - 0.13) * 400;
+    if (/^[a-h]/.test(san)) bonus += (s.pawnMoveRate - 0.36) * 180;
+    if (/\+$/.test(san)) bonus += (s.checkRate - 0.06) * 350;
+    if (/^O-O/.test(san) && ply < 24) bonus += (s.castlesEarly - 0.6) * 200;
+    if (/^Q/.test(san) && ply < 14) bonus += (s.earlyQueenRate - 0.5) * 60;
     return bonus;
   };
 
@@ -115,7 +117,7 @@
       var lambda = solveLambda(losses, model.expectedLoss);
       var pool = ranked.map(function (r, i) {
         var loss = losses[i];
-        var styl = self.styleBonus(r.move, g, ply);
+        var styl = self.styleBonus(r, ply);
         var w = Math.exp(-loss * lambda) * Math.exp(styl / 300);
         if (blunder) {
           // on a blunder turn, deliberately favour the plausible-but-bad band
@@ -177,7 +179,7 @@
       return list.slice(0, 3).map(function (r, i) {
         return {
           rank: i + 1, san: r.san, uci: r.uci,
-          cp: r.score, display: cpDisplay(r.score, side === 'w'),
+          cp: r.score, display: cpDisplay(r.score),
           delta: i === 0 ? 0 : Math.round(list[0].score - r.score)
         };
       });
@@ -202,12 +204,13 @@
     return out;
   }
 
-  function cpDisplay(cp, whitePov) {
+  // cp is from whichever side's point of view the caller wants shown.
+  function cpDisplay(cp) {
     if (Math.abs(cp) > 9000) {
       var mateIn = Math.ceil((30000 - Math.abs(cp)) / 2);
       return (cp > 0 ? '#' : '-#') + Math.max(1, mateIn);
     }
-    var v = (whitePov ? cp : cp) / 100;
+    var v = cp / 100;
     return (v > 0 ? '+' : '') + v.toFixed(2);
   }
 

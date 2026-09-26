@@ -163,16 +163,28 @@
     });
     if (buf.trim()) joined.push(buf);
 
+    var parsedAll = joined.map(function (p) {
+      try { return Chess.parsePGN(p); } catch (e) { return null; }
+    }).filter(function (p) { return p && p.moves.length; });
+
+    // Whose games are these? The handle if it names a player; otherwise the
+    // name that turns up in the most games -- a player's own export has them in
+    // every one, on both colours.
     var lower = (user || '').toLowerCase();
+    var seen = {};
+    parsedAll.forEach(function (p) {
+      [p.tags.White, p.tags.Black].forEach(function (n) {
+        if (n) { n = n.toLowerCase(); seen[n] = (seen[n] || 0) + 1; }
+      });
+    });
+    if (!seen[lower]) {
+      lower = Object.keys(seen).sort(function (a, b) { return seen[b] - seen[a]; })[0] || '';
+    }
+
     var out = [];
-    joined.forEach(function (p, i) {
-      var parsed;
-      try { parsed = Chess.parsePGN(p); } catch (e) { return; }
-      if (!parsed.moves.length) return;
+    parsedAll.forEach(function (parsed, i) {
       var t = parsed.tags;
-      var myColor = (t.White || '').toLowerCase() === lower ? 'w' :
-        (t.Black || '').toLowerCase() === lower ? 'b' : (i % 2 === 0 ? 'w' : 'w');
-      if (!lower) myColor = 'w';
+      var myColor = (t.Black || '').toLowerCase() === lower ? 'b' : 'w';
       var score = parsed.result === '1/2-1/2' ? 0.5 :
         parsed.result === '1-0' ? (myColor === 'w' ? 1 : 0) :
         parsed.result === '0-1' ? (myColor === 'b' ? 1 : 0) : 0.5;

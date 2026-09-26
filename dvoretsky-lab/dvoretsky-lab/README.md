@@ -177,7 +177,22 @@ js/coach.js         justification rubric, scoring, game summaries, optional LLM 
 js/sparring.js      the mirror opponent and dual-sided advice
 js/board.js         board rendering and interaction
 js/ui.js            all seven workspaces
-test/               perft, engine, analysis, integration and sparring tests (node)
+test/               perft, engine, analysis, integration, sparring and regression tests (node),
+                    a browser check of the UI (ui_check.py) and a coverage report
 ```
 
-Run the tests with `node test/perft.js`, `node test/integration.js`, `node test/acpl.js`.
+Run the tests with `node test/perft.js`, `node test/integration.js`, `node test/acpl.js`,
+and `node test/regress.js` — one check per bug from the September 2026 audit, each
+written to fail on the code before its fix.
+
+The UI is checked in a real browser, and coverage is measured across both:
+
+```bash
+pip install playwright && playwright install chromium
+python test/ui_check.py                      # 16 checks that drive index.html
+python test/coverage_report.py --out coverage.html
+```
+
+`coverage_report.py` runs every Node suite and the browser check under V8's own block
+coverage and merges them, so a line counts as covered if any test ran it. Chromium drops
+a page's coverage when it reloads, so the browser check snapshots it before each reload.

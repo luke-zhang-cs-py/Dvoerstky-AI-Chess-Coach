@@ -20,6 +20,7 @@
     this.pieceSet = this.opts.pieceSet || 'glyph'; // 'glyph' | 'letters'
     this.showCoords = this.opts.showCoords !== false;
     this.marks = [];
+    this.pendingPromotion = null;   // the four promotion moves, while the picker is open
     this.el.addEventListener('click', this.onClick.bind(this));
     this.el.addEventListener('keydown', this.onKey.bind(this));
     this.render();
@@ -97,10 +98,30 @@
       }
       html += '</div>';
     });
+    if (this.pendingPromotion) {
+      var colour = g.turnColor();
+      html += '<div class="promo-pick" role="group" aria-label="Promote to">' + ['q', 'r', 'b', 'n'].map(function (p) {
+        return '<button type="button" data-promo="' + p + '" aria-label="' +
+          { q: 'Queen', r: 'Rook', b: 'Bishop', n: 'Knight' }[p] + '"><span class="piece ' + colour + '">' +
+          glyphs[colour + p] + '</span></button>';
+      }).join('') + '</div>';
+    }
+    // Rebuilding the squares drops keyboard focus; put it back where it was.
+    var focused = document.activeElement && this.el.contains(document.activeElement) &&
+      document.activeElement.getAttribute('data-sq');
     this.el.innerHTML = html;
+    if (this.pendingPromotion) {
+      var first = this.el.querySelector('[data-promo]');
+      if (first) first.focus();
+    } else if (focused) {
+      var again = this.el.querySelector('[data-sq="' + focused + '"]');
+      if (again && again.hasAttribute('tabindex')) again.focus();
+    }
   };
 
   Board.prototype.onKey = function (e) {
+    if (e.key === 'Escape' && this.pendingPromotion) { this.pendingPromotion = null; this.render(); return; }
+    if (e.target.closest('[data-promo]')) return;   // a picker button: its own click fires
     if (e.key !== 'Enter' && e.key !== ' ') return;
     var sq = e.target.closest('[data-sq]');
     if (!sq) return;
@@ -109,6 +130,15 @@
   };
 
   Board.prototype.onClick = function (e) {
+    var promo = e.target.closest('[data-promo]');
+    if (promo && this.pendingPromotion) {
+      var chosen = this.pendingPromotion.filter(function (c) { return Chess.SYM[c.promo] === promo.dataset.promo; })[0];
+      this.pendingPromotion = null;
+      if (chosen && this.opts.onMove) this.opts.onMove(chosen, this.game);
+      else this.render();
+      return;
+    }
+    if (this.pendingPromotion) { this.pendingPromotion = null; this.render(); return; }   // clicked away: cancel
     var sq = e.target.closest('[data-sq]');
     if (!sq) return;
     this.handleSquare(sq.dataset.sq);
@@ -124,10 +154,17 @@
       }.bind(this));
       if (candidates.length) {
         var chosen = candidates[0];
-        if (candidates.length > 1) { // promotion
-          var want = this.opts.promptPromotion ? this.opts.promptPromotion() : 'q';
-          var found = candidates.filter(function (c) { return Chess.SYM[c.promo] === want; })[0];
-          if (found) chosen = found;
+        if (candidates.length > 1) { // promotion: ask, rather than always queening
+          if (this.opts.promptPromotion) {
+            var want = this.opts.promptPromotion();
+            var found = candidates.filter(function (c) { return Chess.SYM[c.promo] === want; })[0];
+            if (found) chosen = found;
+          } else {
+            this.selected = null;
+            this.pendingPromotion = candidates;
+            this.render();
+            return;
+          }
         }
         this.selected = null;
         if (this.opts.onMove) this.opts.onMove(chosen, g);

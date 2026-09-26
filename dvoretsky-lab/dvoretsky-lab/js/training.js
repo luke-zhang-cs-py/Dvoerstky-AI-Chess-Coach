@@ -250,10 +250,12 @@
     return a;
   }
 
+  // Steps by calendar date, not by 24 hours: across a clock change a day is
+  // 23 or 25 hours long, and midnight + 24h lands on the same date twice.
   function planRange(startDate, days, profile, deck, opts) {
-    var out = [];
+    var out = [], s = new Date(startDate);
     for (var i = 0; i < days; i++) {
-      out.push(planDay(new Date(startDate).getTime() + i * DAY, profile, deck, opts));
+      out.push(planDay(new Date(s.getFullYear(), s.getMonth(), s.getDate() + i).getTime(), profile, deck, opts));
     }
     return out;
   }
@@ -269,6 +271,9 @@
       return x.getFullYear() + String(x.getMonth() + 1).padStart(2, '0') + String(x.getDate()).padStart(2, '0') +
         'T' + String(x.getHours()).padStart(2, '0') + String(x.getMinutes()).padStart(2, '0') + '00';
     }
+    // Times are "floating" (no TZID): a study block at 19:00 means 19:00
+    // wherever the calendar is opened, which is what a personal plan wants.
+    var dtstamp = new Date(opts.now || Date.now()).toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
     var lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Dvoretsky Lab//EN', 'CALSCALE:GREGORIAN'];
     plans.forEach(function (p) {
       var offset = 0;
@@ -279,6 +284,7 @@
         var eh = hour + Math.floor(offset / 60), em = offset % 60;
         lines.push('BEGIN:VEVENT');
         lines.push('UID:' + p.date + '-' + idx + '@dvoretsky.lab');
+        lines.push('DTSTAMP:' + dtstamp);
         lines.push('DTSTART:' + stamp(start, sh, sm));
         lines.push('DTEND:' + stamp(start, eh, em));
         lines.push('SUMMARY:' + escapeICS(item.label));
@@ -287,7 +293,21 @@
       });
     });
     lines.push('END:VCALENDAR');
-    return lines.join('\r\n');
+    return lines.map(foldICS).join('\r\n');
+  }
+
+  // RFC 5545 3.1: lines longer than 75 octets continue on the next line after
+  // CRLF + one space. Counted in UTF-8 bytes, and never splitting a character.
+  function foldICS(line) {
+    var out = '', len = 0;
+    for (var i = 0; i < line.length; i++) {
+      var ch = line[i], code = line.charCodeAt(i);
+      if (code >= 0xD800 && code <= 0xDBFF && i + 1 < line.length) ch += line[++i];   // keep surrogate pairs whole
+      var bytes = unescape(encodeURIComponent(ch)).length;
+      if (len + bytes > 75) { out += '\r\n '; len = 1; }
+      out += ch; len += bytes;
+    }
+    return out;
   }
 
   function escapeICS(s) {

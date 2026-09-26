@@ -28,8 +28,9 @@
   // Empirical ACPL → strength curve, fitted to public Lichess rapid distributions.
   // Elo ≈ 3912 − 505·ln(ACPL).  acpl 20→2400, 35→2117, 50→1937, 80→1700.
   function eloFromAcpl(acpl) {
-    if (!acpl || acpl <= 0) return null;
-    return Math.max(600, Math.min(2900, Math.round(3912 - 505 * Math.log(acpl))));
+    if (acpl == null || isNaN(acpl)) return null;
+    // ln(ACPL) runs off to infinity at 0; below 1 cp/move the curve is past its ceiling anyway
+    return Math.max(600, Math.min(2900, Math.round(3912 - 505 * Math.log(Math.max(1, acpl)))));
   }
   function acplFromElo(elo) {
     return Math.max(4, Math.exp((3912 - elo) / 505));
@@ -41,7 +42,7 @@
     pairs.forEach(function (p) {
       if (p.value == null || isNaN(p.value)) return;
       var ageDays = (now - p.date) / DAY;
-      var w = Math.pow(0.5, ageDays / halfLifeDays) * (p.weight || 1);
+      var w = Math.pow(0.5, ageDays / halfLifeDays) * (p.weight == null ? 1 : p.weight);
       num += p.value * w; den += w;
     });
     return den > 0 ? num / den : null;
@@ -56,7 +57,7 @@
     var perf = performanceRating(window90);
     var analysed = window90.filter(function (g) { return g.acpl != null; });
     var acplWeighted = weightedMean(analysed.map(function (g) {
-      return { value: g.acpl, date: g.date, weight: Math.min(1.4, (g.moves.length / 2) / 30) };
+      return { value: g.acpl, date: g.date, weight: Math.min(1.4, ((g.moves || []).length / 2) / 30) };
     }), 35, now);
     var moveQualityElo = eloFromAcpl(acplWeighted);
 
@@ -71,7 +72,7 @@
     var anchor = lichessRating || (perf ? perf.rating : 2000);
     var blended = ((perf ? perf.rating : anchor) * wPerf + (moveQualityElo || anchor) * wMove + anchor * wAnchor) / total;
 
-    // standard error of performance rating ≈ 800/sqrt(n) for Elo-ish scales
+    // standard error of a performance rating is roughly 700/sqrt(n) on an Elo scale
     var se = n ? Math.round(700 / Math.sqrt(n)) : 200;
 
     return {
@@ -79,7 +80,7 @@
       lichessRating: lichessRating || null,
       performanceRating: perf ? perf.rating : null,
       moveQualityElo: moveQualityElo,
-      acpl: acplWeighted ? Math.round(acplWeighted * 10) / 10 : null,
+      acpl: acplWeighted != null ? Math.round(acplWeighted * 10) / 10 : null,
       sample: n,
       analysedSample: analysed.length,
       avgOpp: perf ? perf.avgOpp : null,
@@ -176,8 +177,7 @@
       g.makeMove(played);
       var loose = looseValuablePieces(g, mover);
       if (loose.length) tags.push('left material loose');
-      if (g.attacked(colorBit(them), g.kings[colorBit(mover)])) { /* moved into check impossible */ }
-      var kingPressure = attackersNearKing(g, mover);
+      var kingPressure = attackedSquaresAroundKing(g, mover);
       if (pw > 6 && kingPressure >= 4) tags.push('king safety');
       g.undoMove();
     }
@@ -256,7 +256,9 @@
     return out;
   }
 
-  function attackersNearKing(g, color) {
+  // How many of the king's own square and its eight neighbours the enemy attacks
+  // (squares, not attackers: one queen covering three of them counts three).
+  function attackedSquaresAroundKing(g, color) {
     var k = g.kings[colorBit(color)];
     if (k < 0) return 0;
     var ob = color === 'w' ? Chess.BLACK : Chess.WHITE, n = 0;
@@ -288,6 +290,8 @@
           if (pc.color !== them) break;
           if (!first) { first = pc; }
           else {
+            // skewer through the king: it must step aside, and what is behind it falls
+            if (first.type === 'k' && VAL[pc.type] >= 300) return 'skewer';
             // pin: something valuable stands behind a lesser piece
             if (pc.type === 'k' || pc.type === 'q' || VAL[pc.type] - VAL[first.type] >= 170) return 'pin';
             // skewer: the valuable piece is in front and must move
@@ -380,9 +384,9 @@
         var mv = game.moves[i];
         var isMine = (mv.color === game.myColor);
         var after = (typeof mv.evalAfter === 'number') ? clampEval(mv.evalAfter) : null;
-        if (after == null) { continue; }
         var before = prevEval;
         prevEval = after;
+        if (after == null || before == null) continue;   // a gap: no honest "before" for this move
         if (!isMine) continue;
         var cpLoss = mv.color === 'w' ? (before - after) : (after - before);
         if (cpLoss < minLoss) continue;
@@ -525,10 +529,10 @@
     games.forEach(function (g) {
       if (!g.analysed) return;
       var prev = 20;
-      g.moves.forEach(function (mv, i) {
-        var after = (typeof mv.evalAfter === 'number') ? Math.max(-1200, Math.min(1200, mv.evalAfter)) : null;
-        if (after == null) return;
+      (g.moves || []).forEach(function (mv, i) {
+        var after = (typeof mv.evalAfter === 'number') ? clampEval(mv.evalAfter) : null;
         var before = prev; prev = after;
+        if (after == null || before == null) return;   // same gap rule as mineErrors
         if (mv.color !== g.myColor) return;
         var ph = phaseOf(mv.fenBefore, i + 1, g.openingPly);
         var loss = Math.max(0, mv.color === 'w' ? (before - after) : (after - before));
@@ -623,7 +627,7 @@
     var pawnMoves = 0, totalMoves = 0, tradesWhenAhead = 0, aggression = 0;
     games.forEach(function (g) {
       var myCastlePly = null;
-      g.moves.forEach(function (mv, i) {
+      (g.moves || []).forEach(function (mv, i) {
         if (mv.color !== g.myColor) return;
         totalMoves++;
         if (/x/.test(mv.san)) captures++; else quiet++;
@@ -652,7 +656,7 @@
     var book = {};
     games.forEach(function (g) {
       var pos = new Chess();
-      for (var i = 0; i < g.moves.length && i < maxPly; i++) {
+      for (var i = 0; g.moves && i < g.moves.length && i < maxPly; i++) {
         var fenKey = pos.fen().split(' ').slice(0, 4).join(' ');
         var san = g.moves[i].san;
         if (!book[fenKey]) book[fenKey] = {};

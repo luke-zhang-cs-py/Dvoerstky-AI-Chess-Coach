@@ -26,6 +26,11 @@
     return r * 16 + f;
   }
 
+  // 0x88 indices of the rooks' home squares: h1/a1 for White, h8/a8 for Black
+  var ROOK_HOME = {};
+  ROOK_HOME[WHITE] = { k: 119, q: 112 };
+  ROOK_HOME[BLACK] = { k: 7, q: 0 };
+
   function Chess(fen) {
     this.board = new Int8Array(128);
     this.kings = { 8: -1, 16: -1 };
@@ -48,8 +53,9 @@
 
   Chess.prototype.load = function (fen) {
     this.clear();
-    var parts = fen.trim().split(/\s+/);
+    var parts = String(fen).trim().split(/\s+/);
     var rows = parts[0].split('/');
+    if (rows.length !== 8) throw new Error('FEN needs 8 ranks, got ' + rows.length + ': ' + fen);
     var sq = 0;
     for (var r = 0; r < 8; r++) {
       var row = rows[r]; sq = r * 16;
@@ -59,13 +65,15 @@
         else {
           var color = c === c.toUpperCase() ? WHITE : BLACK;
           var type = FROM_SYM[c.toLowerCase()];
+          if (!type) throw new Error('FEN has an unknown piece "' + c + '": ' + fen);
+          if (sq > r * 16 + 7) throw new Error('FEN rank ' + (8 - r) + ' is longer than 8 squares: ' + fen);
           this.board[sq] = type | color;
           if (type === KING) this.kings[color] = sq;
           sq++;
         }
       }
     }
-    this.turn = parts[1] === 'w' ? WHITE : BLACK;
+    this.turn = parts[1] === 'b' ? BLACK : WHITE;   // a bare board (no field) is White to move
     var cst = parts[2] || '-';
     if (cst.indexOf('K') > -1) this.castling[WHITE] |= FLAG.KSIDE;
     if (cst.indexOf('Q') > -1) this.castling[WHITE] |= FLAG.QSIDE;
@@ -297,22 +305,20 @@
       if (m.flags & FLAG.QSIDE) { b[m.to + 1] = b[m.to - 2]; b[m.to - 2] = EMPTY; }
       this.castling[us] = 0;
     }
-    // rook moves / captures kill castling rights
-    var wk = us === WHITE ? 116 : 4; // e1 / e8 index not needed; use rook home squares
+    // a rook leaving its home square, or captured on it, ends that side's castling
     if (this.castling[us]) {
-      if (m.from === (us === WHITE ? 119 : 7)) this.castling[us] &= ~FLAG.KSIDE;
-      if (m.from === (us === WHITE ? 112 : 0)) this.castling[us] &= ~FLAG.QSIDE;
+      if (m.from === ROOK_HOME[us].k) this.castling[us] &= ~FLAG.KSIDE;
+      if (m.from === ROOK_HOME[us].q) this.castling[us] &= ~FLAG.QSIDE;
     }
     if (this.castling[them]) {
-      if (m.to === (them === WHITE ? 119 : 7)) this.castling[them] &= ~FLAG.KSIDE;
-      if (m.to === (them === WHITE ? 112 : 0)) this.castling[them] &= ~FLAG.QSIDE;
+      if (m.to === ROOK_HOME[them].k) this.castling[them] &= ~FLAG.KSIDE;
+      if (m.to === ROOK_HOME[them].q) this.castling[them] &= ~FLAG.QSIDE;
     }
     this.ep = (m.flags & FLAG.BIG_PAWN) ? (us === WHITE ? m.to + 16 : m.to - 16) : -1;
     if (m.piece === PAWN || (m.flags & (FLAG.CAPTURE | FLAG.EP))) this.halfmoves = 0;
     else this.halfmoves++;
     if (us === BLACK) this.movenumber++;
     this.turn = them;
-    void wk;
     return m;
   };
 
@@ -374,7 +380,9 @@
   };
 
   Chess.prototype.moveFromSan = function (san) {
-    var clean = san.replace(/[+#?!]+$/, '').replace(/[!?]/g, '').trim();
+    var clean = san.replace(/[+#?!]+$/, '').replace(/[!?]/g, '').trim()
+      .replace(/^0-0-0$/, 'O-O-O').replace(/^0-0$/, 'O-O')     // zeros, as some programs write castling
+      .replace(/^([a-h](?:x[a-h])?[18])([QRBN])$/, '$1=$2');    // a8Q for a8=Q
     var ms = this.generate();
     for (var i = 0; i < ms.length; i++) {
       var s = this.san(ms[i], ms).replace(/[+#]/g, '');
@@ -447,22 +455,32 @@
     return tags;
   }
 
-  // Returns {tags, moves:[{san, number, color, comment, nags}], result}
+  // Returns {tags, moves:[{san, uci, ply, color, fenBefore, fenAfter, captured, comment, nag}], result}
+  var RESULTS = /^(1-0|0-1|1\/2-1\/2|\*)$/;
+
   Chess.parsePGN = function (pgn) {
-    var tags = parsePgnTags(pgn);
-    var body = pgn.replace(/\[[^\]]*\]\s*/g, '').trim();
-    body = body.replace(/\{[^}]*\}/g, function (c) { return ' \u0001' + c.slice(1, -1).replace(/\s+/g, '\u0002') + '\u0001 '; });
-    body = body.replace(/\([^()]*\)/g, ' '); // strip simple variations
+    // Comments first: they carry [%eval ...] and [%clk ...], which look like
+    // brackets and would go with the tag pairs if those were stripped first.
+    var body = pgn.replace(/\{[^}]*\}/g, function (c) { return ' \u0001' + c.slice(1, -1).replace(/\s+/g, '\u0002') + '\u0001 '; });
+    var tags = parsePgnTags(body);
+    body = body.replace(/\[\w+\s+"[^"]*"\]\s*/g, '').trim();
+    // Variations nest; strip innermost first until none are left.
+    for (var prev = null; prev !== body;) { prev = body; body = body.replace(/\([^()]*\)/g, ' '); }
     var tokens = body.split(/\s+/);
-    var moves = [], pendingComment = null;
-    var game = new Chess();
-    var result = tags.Result || '*';
+    var moves = [];
+    var game = new Chess(tags.FEN || undefined);
+    var result = RESULTS.test(tags.Result || '') ? tags.Result : '*';
     for (var i = 0; i < tokens.length; i++) {
       var t = tokens[i];
       if (!t) continue;
-      if (t[0] === '\u0001') { pendingComment = t.replace(/\u0001/g, '').replace(/\u0002/g, ' ').trim(); continue; }
+      if (t[0] === '\u0001') {
+        // A comment describes the move it follows; one before the first move
+        // is about the game and has no move to go with.
+        if (moves.length) moves[moves.length - 1].comment = t.replace(/\u0001/g, '').replace(/\u0002/g, ' ').trim();
+        continue;
+      }
       if (/^\d+\.+$/.test(t)) continue;
-      if (/^(1-0|0-1|1\/2-1\/2|\*)$/.test(t)) { result = t; continue; }
+      if (RESULTS.test(t)) { result = t; continue; }
       if (/^\$\d+$/.test(t)) { if (moves.length) moves[moves.length - 1].nag = t; continue; }
       t = t.replace(/^\d+\.+/, '');
       if (!t) continue;
@@ -474,11 +492,9 @@
         ply: moves.length + 1, color: mv.color === WHITE ? 'w' : 'b',
         fenBefore: before, fenAfter: game.fen(),
         captured: mv.captured ? SYM[mv.captured] : null,
-        comment: pendingComment
+        comment: null
       });
-      pendingComment = null;
     }
-    if (pendingComment && moves.length) moves[moves.length - 1].comment = pendingComment;
     return { tags: tags, moves: moves, result: result };
   };
 
