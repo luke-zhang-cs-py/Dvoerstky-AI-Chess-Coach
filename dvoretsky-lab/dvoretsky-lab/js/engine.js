@@ -137,6 +137,19 @@
   var QUIESCE_MAX_DEPTH = 4;
   var MATE_DEPTH_OFFSET = 100;   // prefer shorter mates; must exceed any reachable search depth
   var FIFTY_MOVE_RULE_HALFMOVES = 100;
+  // A mate score's "distance to mate" is encoded via the *remaining depth*
+  // of the search call that found it (see MATE_DEPTH_OFFSET above), which
+  // is only meaningful relative to that one call. The transposition table
+  // is keyed on position alone, so the same position can be reached again
+  // at a different depth -- inside the same iterative-deepening pass, from
+  // a null-move-reduced call, or on a later move of the game -- and a
+  // cached mate score would then report the wrong distance, or bias a
+  // choice between two winning lines toward whichever was cached rather
+  // than whichever is actually shorter. Simplest correct fix: never cache
+  // a mate-range score in the first place, so there is nothing stale to
+  // retrieve. (9000 matches the "is this a mate score" threshold used
+  // where scores are displayed, e.g. sparring.js's cpDisplay.)
+  var TT_MATE_RANGE = 9000;
 
   // complexity() tuning weights
   var COMPLEXITY_CHECK_SAMPLE = 40;   // cap on how many legal moves to test for checks
@@ -305,9 +318,11 @@
       if (alpha >= beta) break;
     }
 
-    var flag = best <= alpha0 ? TT_UPPER : best >= beta ? TT_LOWER : TT_EXACT;
-    if (this.tt.size >= MAX_TT_ENTRIES) this.tt.clear();
-    this.tt.set(key, { depth: depth, score: best, flag: flag });
+    if (Math.abs(best) < TT_MATE_RANGE) {
+      var flag = best <= alpha0 ? TT_UPPER : best >= beta ? TT_LOWER : TT_EXACT;
+      if (this.tt.size >= MAX_TT_ENTRIES) this.tt.clear();
+      this.tt.set(key, { depth: depth, score: best, flag: flag });
+    }
     return best;
   };
 

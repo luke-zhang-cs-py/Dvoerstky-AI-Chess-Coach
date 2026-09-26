@@ -78,7 +78,7 @@
       if (self.lastMove && self.lastMove.from === name) cls.push('from');
       if (self.lastMove && self.lastMove.to === name) cls.push('to');
       if (checkSq === name) cls.push('check');
-      if (targets[name]) cls.push(piece ? 'occupied' : '');
+      if (targets[name] && piece) cls.push('occupied');
       var canMove = self.interactive && legalFrom[name] &&
         (!self.allowedColor || (piece && piece.color === self.allowedColor));
       if (canMove || targets[name]) cls.push('movable');
