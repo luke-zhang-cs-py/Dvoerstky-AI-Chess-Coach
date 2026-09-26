@@ -1,0 +1,35 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      TZ: America/Toronto   # the plan tests step across a real clock change
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Node suites (rules, engine, analysis, sparring, regressions)
+        run: |
+          for t in test/*.js; do
+            echo "::group::$t"
+            node "$t" || exit 1
+            echo "::endgroup::"
+          done
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Browser checks (index.html in Chromium, Stockfish included)
+        run: |
+          pip install playwright
+          python -m playwright install --with-deps chromium
+          python test/ui_check.py

@@ -13,7 +13,7 @@ via Playwright -- this is not a reimplementation or simulation of the app's
 logic, it's the actual engine making the actual decisions.
 
 Usage:
-    python -m http.server 8000   (from the dvoretsky-lab/dvoretsky-lab dir)
+    python -m http.server 8000   (from the repository root)
     python calibrate.py
 """
 import json

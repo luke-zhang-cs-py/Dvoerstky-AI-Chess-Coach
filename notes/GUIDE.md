@@ -1,4 +1,7 @@
-# Dvoretsky Lab
+# Dvoretsky Lab — the full guide
+
+The short version is the [README](../README.md). This is every tab, every number and where it
+comes from.
 
 A training room built around one player's actual games. Everything runs in the page — no
 server, no build step, no account, no paywall. Your games and notes stay in the browser's
@@ -14,8 +17,7 @@ local storage on your own machine.
 more reliably and the Lichess request is less likely to be blocked):
 
 ```bash
-cd dvoretsky-lab
-python3 -m http.server 8000
+python3 -m http.server 8000     # from the repository root
 # then open http://localhost:8000
 ```
 
@@ -203,7 +205,7 @@ The UI is checked in a real browser, and coverage is measured across both:
 
 ```bash
 pip install playwright && playwright install chromium
-python test/ui_check.py                      # 16 checks that drive index.html
+python test/ui_check.py                      # the browser checks: they drive index.html
 python test/coverage_report.py --out coverage.html
 ```
 

@@ -95,7 +95,7 @@ chess-programming community, not specific to this app.
 ```
 pip install playwright python-chess
 playwright install chromium
-python -m http.server 8000       # from dvoretsky-lab/dvoretsky-lab
+python -m http.server 8000       # from the repository root
 python calibrate.py              # downloads nothing itself -- see below
 ```
 
