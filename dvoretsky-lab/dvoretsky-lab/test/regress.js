@@ -218,6 +218,20 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
           Math.abs(+q1.get('since') - (Date.now() - 30 * 86400000)) < 60000, q1.get('perfType') + ' ' + q1.get('since'));
   }
 
+  // ---------------------------------------------------------------- formats
+  {
+    // Lichess sorts a game by estimated duration: base + 40 x increment, in seconds.
+    const want = { '15+0': 'ultraBullet', '60+1': 'bullet', '120+1': 'bullet', '180+0': 'blitz', '180+2': 'blitz',
+                   '600+5': 'rapid', '1500+0': 'classical', '-': 'correspondence' };
+    const got = {};
+    Object.keys(want).forEach(tc => {
+      const g = Data.importPGN('[White "me"]\n[Black "you"]\n[TimeControl "' + tc + '"]\n[Result "1-0"]\n\n1. e4 e5 1-0\n', 'me')[0];
+      got[tc] = g.perf;
+    });
+    check('formats: a PGN\'s time control lands in the Lichess format it was played in',
+          Object.keys(want).every(tc => got[tc] === want[tc]), JSON.stringify(got));
+  }
+
   // ---------------------------------------------------------------- the Stockfish reader
   {
     const SR = require('../js/stockfish-reader.js');

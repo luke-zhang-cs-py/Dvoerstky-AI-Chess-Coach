@@ -13,6 +13,15 @@
     <h1 class="wordmark">Dvoretsky Lab <span>— a training room built from your own games</span></h1>
     <div class="masthead-tools">
       <input type="text" id="handle" placeholder="lichess.org/@/yourname" aria-label="Lichess username or profile link">
+      <select id="syncPerf" aria-label="Which games to sync">
+        <option value="all">All games</option>
+        <option value="ultraBullet">UltraBullet</option>
+        <option value="bullet">Bullet</option>
+        <option value="blitz">Blitz</option>
+        <option value="rapid">Rapid</option>
+        <option value="classical">Classical</option>
+        <option value="correspondence">Correspondence</option>
+      </select>
       <button id="sync" class="primary">Sync games</button>
       <label class="textsize">Text
         <select id="uiScale" aria-label="Text size">
@@ -175,7 +184,7 @@
       <p class="tiny soft">Paste a Lichess profile link or username. The same measurement runs over the window chosen on the Strength tab and returns what that player should work on. Useful for preparing against an opponent, or for coaching someone else.</p>
       <div class="row">
         <input type="text" id="scoutHandle" placeholder="https://lichess.org/@/someone" style="min-width:20rem">
-        <select id="scoutPerf"><option value="all">all speeds</option><option value="rapid">rapid</option><option value="blitz">blitz</option><option value="classical">classical</option><option value="bullet">bullet</option></select>
+        <select id="scoutPerf"><option value="all">All games</option><option value="ultraBullet">UltraBullet</option><option value="bullet">Bullet</option><option value="blitz">Blitz</option><option value="rapid">Rapid</option><option value="classical">Classical</option><option value="correspondence">Correspondence</option></select>
         <button id="scoutBtn" class="primary">Read profile</button>
       </div>
     </div>
@@ -191,9 +200,6 @@
         <p class="row"><label>Endgame depth
           <select id="setTier"><option value="1">essentials only</option><option value="2">essentials and standard theory</option><option value="3">everything, including the hard ones</option></select></label></p>
         <p class="row"><label>Session starts at <input type="text" id="setHour" size="3"> :00</label></p>
-        <p class="row"><label>Time control <select id="setPerf">
-          <option value="all">all (bullet to correspondence)</option><option value="rapid">rapid</option><option value="blitz">blitz</option>
-          <option value="classical">classical</option><option value="bullet">bullet</option></select></label></p>
         <button id="saveSettings" class="primary">Save settings</button>
       </div>
 

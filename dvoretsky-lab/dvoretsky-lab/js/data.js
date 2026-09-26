@@ -233,13 +233,18 @@
     return moves;
   }
 
+  // Lichess's own rule: a game is sorted by its estimated length, base + 40 x increment
+  // seconds. "-" (no clock) is correspondence.
   function guessSpeed(tc) {
     if (!tc) return 'rapid';
-    var base = parseInt(String(tc).split('+')[0], 10);
+    if (String(tc).trim() === '-') return 'correspondence';
+    var parts = String(tc).split('+'), base = parseInt(parts[0], 10), inc = parseInt(parts[1], 10) || 0;
     if (isNaN(base)) return 'rapid';
-    if (base < 180) return 'bullet';
-    if (base < 480) return 'blitz';
-    if (base < 1500) return 'rapid';
+    var est = base + 40 * inc;
+    if (est < 30) return 'ultraBullet';
+    if (est < 180) return 'bullet';
+    if (est < 480) return 'blitz';
+    if (est < 1500) return 'rapid';
     return 'classical';
   }
 

@@ -63,6 +63,47 @@ with sync_playwright() as p:
           "%d games; %s" % (n_games, again[:60]))
     check("import: evals in the PGN reach error mining", "None carry engine evaluations" not in first, first[:70])
 
+    # ---- boards: eight equal ranks, however many pieces a rank holds, at any width
+    SHAPE = """id => { const b = document.querySelector(id).getBoundingClientRect();
+      const sq = [...document.querySelectorAll(id + ' .sq')].map(s => s.getBoundingClientRect());
+      const w = sq.map(r => r.width), h = sq.map(r => r.height);
+      return { board: Math.round(b.width), boardH: Math.round(b.height), n: sq.length,
+               spread: Math.max(...h) - Math.min(...h), squareness: Math.max(...sq.map(r => Math.abs(r.width - r.height))),
+               bottom: Math.round(b.bottom), viewH: innerHeight }; }"""
+    pg.click("button.tab[data-tab=review]"); pg.wait_for_timeout(200); pg.click("#revStart"); pg.wait_for_timeout(500)
+    shapes = {}
+    for w in (1440, 1100, 820):
+        pg.set_viewport_size({"width": w, "height": 900}); pg.wait_for_timeout(300)
+        pg.click("button.tab[data-tab=review]"); pg.wait_for_timeout(200)
+        shapes["review@%d" % w] = pg.evaluate(SHAPE, "#revBoard")
+        pg.click("button.tab[data-tab=sparring]"); pg.wait_for_timeout(200)
+        if w == 1440: pg.select_option("#sparColor", "w"); pg.click("#sparStart"); pg.wait_for_timeout(300)
+        shapes["sparring@%d" % w] = pg.evaluate(SHAPE, "#sparBoard")
+    pg.set_viewport_size({"width": 1280, "height": 900})
+    bad = {k: v for k, v in shapes.items() if v["n"] != 64 or v["spread"] > 1.5 or v["squareness"] > 1.5}
+    check("boards: every rank is the same height and every square is square", not bad,
+          bad or " ".join("%s=%d" % (k, v["board"]) for k, v in shapes.items()))
+    check("boards: on a wide screen the board has room to move (at least 540px)",
+          shapes["review@1440"]["board"] >= 540 and shapes["sparring@1440"]["board"] >= 540,
+          shapes["review@1440"]["board"])
+    check("boards: stacked on a narrow screen, the board still fits the window's height",
+          shapes["review@820"]["boardH"] <= 900 - 100, shapes["review@820"]["boardH"])
+
+    # ---- sync: every Lichess format to choose from, right next to the button
+    opts = pg.evaluate("[...document.querySelectorAll('#syncPerf option')].map(o => o.value)")
+    check("sync: the format is chosen next to Sync, from all games or any Lichess format",
+          opts == ["all", "ultraBullet", "bullet", "blitz", "rapid", "classical", "correspondence"], opts)
+    asked_fmt = []
+    pg.route("**/lichess.org/api/games/**", lambda r: (asked_fmt.append(r.request.url), r.fulfill(status=200, body="", content_type="application/x-ndjson")))
+    pg.select_option("#syncPerf", "blitz"); pg.fill("#handle", "ermactually"); pg.click("#sync"); pg.wait_for_timeout(1200)
+    check("sync: picking blitz asks Lichess for blitz only", bool(asked_fmt) and "perfType=blitz" in asked_fmt[-1] and "rapid" not in asked_fmt[-1],
+          asked_fmt[-1][-80:] if asked_fmt else "no request")
+    reload(); pg.wait_for_timeout(600)
+    check("sync: the chosen format is remembered", pg.input_value("#syncPerf") == "blitz", pg.input_value("#syncPerf"))
+    pg.select_option("#syncPerf", "all")
+    pg.unroute("**/lichess.org/api/games/**")
+    pg.route("**/lichess.org/api/games/**", lambda r: r.fulfill(status=200, body="", content_type="application/x-ndjson"))
+
     # ---- an empty sync keeps what is loaded
     pg.fill("#handle", "ermactually"); pg.click("#sync"); pg.wait_for_timeout(1500)
     n_after = pg.evaluate("document.querySelectorAll('#revGame option').length")

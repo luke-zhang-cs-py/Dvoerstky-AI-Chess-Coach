@@ -1380,13 +1380,12 @@
     var s = S.settings;
     $('#setMinutes').value = s.minutes; $('#setTier').value = s.endgameTier;
     $('#setHour').value = s.hour; $('#setKey').value = s.apiKey || '';
-    $('#setPerf').value = s.perf || 'all';
     $('#setBoardTheme').value = s.boardTheme || 'cyan';
     $('#setPieceSet').value = s.pieceSet || 'glyph';
     $('#setShowCoords').checked = s.showCoords !== false;
     $('#saveSettings').addEventListener('click', function () {
       S.settings = { minutes: +$('#setMinutes').value, endgameTier: +$('#setTier').value,
-        hour: +$('#setHour').value, apiKey: $('#setKey').value, perf: $('#setPerf').value,
+        hour: +$('#setHour').value, apiKey: $('#setKey').value, perf: S.settings.perf || 'all',
         boardTheme: $('#setBoardTheme').value, pieceSet: $('#setPieceSet').value,
         showCoords: $('#setShowCoords').checked,
         uiScale: S.settings.uiScale || '1', windowDays: S.settings.windowDays || 0 };
@@ -1478,6 +1477,17 @@
     document.documentElement.style.setProperty('--mast-h', m.offsetHeight + 'px');
   }
 
+  // Which games Sync asks for: all of them, or one Lichess format. Kept beside the button.
+  function initSyncPerf() {
+    var sel = $('#syncPerf');
+    sel.value = S.settings.perf || 'all';
+    if (sel.value !== (S.settings.perf || 'all')) sel.value = 'all';   // a saved value this list no longer has
+    sel.addEventListener('change', function () {
+      S.settings.perf = sel.value;
+      Store.set('settings', S.settings);
+    });
+  }
+
   function initWindow() {
     var range = $('#winDays');
     var at = WINDOW_STEPS.indexOf(S.settings.windowDays || 0);
@@ -1550,6 +1560,7 @@
     applyBoardSettings();
     initChrome();
     initWindow();
+    initSyncPerf();
     initTabs();
     initSparring();
     initDrillControls();

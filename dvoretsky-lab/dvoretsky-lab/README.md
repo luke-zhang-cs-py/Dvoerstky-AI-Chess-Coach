@@ -19,7 +19,10 @@ python3 -m http.server 8000
 # then open http://localhost:8000
 ```
 
-Then put your Lichess username or profile link in the box at the top and press **Sync games**.
+Then put your Lichess username or profile link in the box at the top, pick **All games** or one
+Lichess format (UltraBullet, Bullet, Blitz, Rapid, Classical, Correspondence) beside it, and
+press **Sync games**. Variants such as Chess960 are left out: they do not start from the normal
+position, so neither engine can read them.
 
 ### If Lichess won't load
 
@@ -89,8 +92,7 @@ language model; without one it hands you the prompt to paste elsewhere.
 **Scout** — read any public Lichess profile from a link and get the same tailored report.
 Useful for preparing against a specific opponent, and for pointing the app at a friend.
 
-**Settings** — minutes per day, endgame difficulty tier, session hour, time control (all
-standard speeds by default, or one of bullet/blitz/rapid/classical), API
+**Settings** — minutes per day, endgame difficulty tier, session hour, API
 key, PGN import, full backup export/import, and a delete-everything button.
 
 ---
