@@ -48,14 +48,23 @@
     return den > 0 ? num / den : null;
   }
 
-  /* Blend: 90-day performance rating (result-based) with move-quality strength (ACPL-based).
-     Result-based rating is noisy over small samples; move quality is lower-variance but
-     ignores practical strength (clock handling, resourcefulness). We weight by sample size. */
-  function calibrateStrength(games, lichessRating, now) {
+  // Games inside the chosen window. windowDays 0 (or none) means every game loaded.
+  function inWindow(games, windowDays, now) {
+    if (!windowDays) return games.slice();
+    return games.filter(function (g) { return now - g.date <= windowDays * DAY; });
+  }
+
+  /* Blend: performance rating over the chosen window (result-based) with move-quality
+     strength (ACPL-based). Result-based rating is noisy over small samples; move quality is
+     lower-variance but ignores practical strength (clock handling, resourcefulness). We
+     weight by sample size. Move quality is recency-weighted inside the window (35-day
+     half-life), so an all-time window still leans on how you play now. */
+  function calibrateStrength(games, lichessRating, now, windowDays) {
     now = now || Date.now();
-    var window90 = games.filter(function (g) { return now - g.date <= 90 * DAY; });
-    var perf = performanceRating(window90);
-    var analysed = window90.filter(function (g) { return g.acpl != null; });
+    windowDays = windowDays || 0;
+    var windowed = inWindow(games, windowDays, now);
+    var perf = performanceRating(windowed);
+    var analysed = windowed.filter(function (g) { return g.acpl != null; });
     var acplWeighted = weightedMean(analysed.map(function (g) {
       return { value: g.acpl, date: g.date, weight: Math.min(1.4, ((g.moves || []).length / 2) / 30) };
     }), 35, now);
@@ -87,8 +96,10 @@
       scorePct: perf ? perf.scorePct : null,
       marginOfError: Math.min(180, se),
       weights: { results: +(wPerf / total).toFixed(2), moveQuality: +(wMove / total).toFixed(2), anchor: +(wAnchor / total).toFixed(2) },
-      windowStart: now - 90 * DAY,
-      windowGames: window90.length
+      windowDays: windowDays,
+      windowStart: windowDays ? now - windowDays * DAY
+        : windowed.reduce(function (m, g) { return Math.min(m, g.date); }, now),
+      windowGames: windowed.length
     };
   }
 
@@ -517,10 +528,18 @@
 
   /* ---------------- aggregate profile ---------------- */
 
-  function buildProfile(games, lichessRating, now) {
+  /* opts.windowDays: only games that recent (0 = all). opts.errors: mineErrors() output
+     for these games, already computed -- mining is the slow part, and moving the window
+     should not redo it. */
+  function buildProfile(games, lichessRating, now, opts) {
     now = now || Date.now();
-    var cal = calibrateStrength(games, lichessRating, now);
-    var errors = mineErrors(games);
+    opts = opts || {};
+    var windowDays = opts.windowDays || 0;
+    games = inWindow(games, windowDays, now);
+    var cal = calibrateStrength(games, lichessRating, now, windowDays);
+    var errors = opts.errors
+      ? opts.errors.filter(function (e) { return !windowDays || now - e.date <= windowDays * DAY; })
+      : mineErrors(games);
     var analysed = games.filter(function (g) { return g.analysed; });
 
     var phases = { opening: blank(), middlegame: blank(), endgame: blank() };
@@ -617,7 +636,8 @@
         pressureRate: withClock ? +(timeErrors / withClock * 100).toFixed(1) : null },
       errorTiming: buckets,
       style: style,
-      errors: errors
+      errors: errors,
+      windowDays: windowDays
     };
   }
 

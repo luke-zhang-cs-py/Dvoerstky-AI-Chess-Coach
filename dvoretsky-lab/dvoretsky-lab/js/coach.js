@@ -210,7 +210,8 @@
         (t.cpLoss ? ' [cost ' + t.cpLoss + 'cp; engine preferred ' + (t.best || '?') + ']' : ' [sound]'));
     });
     lines.push('');
-    lines.push('Recurring weaknesses across their last 90 days: ' +
+    var span = profile && profile.windowDays ? 'their last ' + profile.windowDays + ' days' : 'all of their loaded games';
+    lines.push('Recurring weaknesses across ' + span + ': ' +
       ((profile && profile.motifs || []).slice(0, 5).map(function (m) { return m.motif + ' (' + m.count + 'x)'; }).join(', ') || 'not yet measured') + '.');
     lines.push('');
     lines.push('Write at most 350 words. Address the thinking, not the moves. Identify the one habit that produced the most damage, quote their own words back to them where it exposes the habit, and end with a single piece of homework. Do not praise reflexively.');

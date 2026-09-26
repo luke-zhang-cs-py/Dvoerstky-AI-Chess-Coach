@@ -46,6 +46,12 @@
 
   <!-- STRENGTH -->
   <section class="panel" id="panel-strength" role="tabpanel">
+    <div class="sheet window-pick">
+      <label for="winDays">Games from</label>
+      <input type="range" id="winDays" min="0" max="9" step="1" aria-describedby="winNote">
+      <b id="winLabel" class="mono">All time</b>
+      <span id="winNote" class="tiny soft"></span>
+    </div>
     <div id="strengthBody"></div>
   </section>
 
@@ -155,10 +161,10 @@
   <section class="panel" id="panel-scout" role="tabpanel">
     <div class="sheet">
       <h3>Read any public profile</h3>
-      <p class="tiny soft">Paste a Lichess profile link or username. The same measurement runs against their last 90 days and returns what that player should work on. Useful for preparing against an opponent, or for coaching someone else.</p>
+      <p class="tiny soft">Paste a Lichess profile link or username. The same measurement runs over the window chosen on the Strength tab and returns what that player should work on. Useful for preparing against an opponent, or for coaching someone else.</p>
       <div class="row">
         <input type="text" id="scoutHandle" placeholder="https://lichess.org/@/someone" style="min-width:20rem">
-        <select id="scoutPerf"><option value="rapid">rapid</option><option value="blitz">blitz</option><option value="classical">classical</option><option value="bullet">bullet</option></select>
+        <select id="scoutPerf"><option value="all">all speeds</option><option value="rapid">rapid</option><option value="blitz">blitz</option><option value="classical">classical</option><option value="bullet">bullet</option></select>
         <button id="scoutBtn" class="primary">Read profile</button>
       </div>
     </div>
@@ -175,7 +181,7 @@
           <select id="setTier"><option value="1">essentials only</option><option value="2">essentials and standard theory</option><option value="3">everything, including the hard ones</option></select></label></p>
         <p class="row"><label>Session starts at <input type="text" id="setHour" size="3"> :00</label></p>
         <p class="row"><label>Time control <select id="setPerf">
-          <option value="rapid">rapid</option><option value="blitz">blitz</option>
+          <option value="all">all (bullet to correspondence)</option><option value="rapid">rapid</option><option value="blitz">blitz</option>
           <option value="classical">classical</option><option value="bullet">bullet</option></select></label></p>
         <button id="saveSettings" class="primary">Save settings</button>
       </div>
@@ -214,7 +220,7 @@
 
     <div class="sheet" style="margin-top:1rem">
       <h3>How the numbers are made</h3>
-      <p class="tiny soft">Measured strength blends three things: a FIDE-style performance rating over the last ninety days, a strength estimate derived from average centipawn loss, and your listed rating as an anchor. The blend leans on results once there are enough of them and on move quality when there are not. The margin shown is the sampling error on the performance rating, so it narrows as you play. Motif labels are produced by geometric rules over the position rather than by a neural classifier: they are reliable for forks, pins, hanging pieces and back-rank patterns, and rougher for deflection and prophylaxis.</p>
+      <p class="tiny soft">Measured strength blends three things: a FIDE-style performance rating over the window chosen at the top of the Strength tab (all time unless you narrow it), a strength estimate derived from average centipawn loss, and your listed rating as an anchor. The blend leans on results once there are enough of them and on move quality when there are not. The margin shown is the sampling error on the performance rating, so it narrows as you play. Motif labels are produced by geometric rules over the position rather than by a neural classifier: they are reliable for forks, pins, hanging pieces and back-rank patterns, and rougher for deflection and prophylaxis.</p>
     </div>
   </section>
 </main>

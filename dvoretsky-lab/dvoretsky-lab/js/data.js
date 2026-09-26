@@ -37,12 +37,18 @@
     return null;
   }
 
-  /* Fetch NDJSON stream of games. Requires network access from the page origin. */
+  // Every standard-chess speed. Lichess's export also carries variants (Chess960,
+  // crazyhouse...) when perfType is left out, and those do not start from the
+  // normal position, so "all" is spelled out rather than omitted.
+  var STANDARD_PERFS = 'ultraBullet,bullet,blitz,rapid,classical,correspondence';
+
+  /* Fetch NDJSON stream of games. Requires network access from the page origin.
+     opts.days: how far back (0 or none = the whole history). opts.perfType: one speed,
+     or 'all' for every standard one. */
   function fetchGames(opts, onProgress) {
     var user = opts.user;
-    var since = opts.since || (Date.now() - 1000 * 60 * 60 * 24 * (opts.days || 90));
+    var since = opts.since || (opts.days ? Date.now() - 1000 * 60 * 60 * 24 * opts.days : 0);
     var params = new URLSearchParams({
-      since: String(Math.floor(since)),
       max: String(opts.max || 300),
       rated: 'true',
       pgnInJson: 'true',
@@ -52,7 +58,8 @@
       accuracy: 'true',
       sort: 'dateDesc'
     });
-    if (opts.perfType) params.set('perfType', opts.perfType);
+    if (since) params.set('since', String(Math.floor(since)));
+    if (opts.perfType) params.set('perfType', opts.perfType === 'all' ? STANDARD_PERFS : opts.perfType);
     var url = 'https://lichess.org/api/games/user/' + encodeURIComponent(user) + '?' + params.toString();
     var headers = { Accept: 'application/x-ndjson' };
     if (opts.token) headers.Authorization = 'Bearer ' + opts.token;

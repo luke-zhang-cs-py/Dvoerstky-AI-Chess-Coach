@@ -6,7 +6,8 @@
 Each check is written to fail on the code before its fix. With --coverage the
 page's precise V8 block coverage is written out for test/coverage_report.py.
 """
-import json, os, sys, tempfile
+import json, os, re, sys, tempfile
+from urllib.parse import parse_qs, urlparse
 from playwright.sync_api import sync_playwright
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -165,6 +166,44 @@ with sync_playwright() as p:
       if (!shown) done({ promo: 'no picker' });
     })""")
     check("board: a promotion asks, and a knight can be chosen", picked.get("promo") == "n", picked)
+
+    # ---- the analysis window: all time by default, a slider to narrow it
+    pg.evaluate("localStorage.setItem('dvor:settings', JSON.stringify({minutes: 60, endgameTier: 2, hour: 19, apiKey: '', perf: 'rapid'}))")
+    reload(); pg.wait_for_timeout(600)
+    st = pg.evaluate("JSON.parse(localStorage.getItem('dvor:settings'))")
+    check("window: settings from before the slider move to all speeds, all time", st.get("perf") == "all" and st.get("windowDays") == 0, st)
+    pg.set_input_files("#importFile", PGN); pg.wait_for_timeout(2500)
+    pg.click("button.tab[data-tab=strength]"); pg.wait_for_timeout(200)
+    cap = lambda: pg.inner_text("#rulerCaption")
+    count = lambda: int(re.search(r":\s*(\d+)\s*games", cap()).group(1))
+    total = count()
+    check("window: the default is all time, and it counts every loaded game",
+          pg.inner_text("#winLabel") == "All time" and cap().startswith("All time")
+          and total == pg.evaluate("document.querySelectorAll('#revGame option').length"), cap()[:40])
+    def slide(i):
+        pg.evaluate("""i => { const r = document.querySelector('#winDays'); r.value = String(i);
+          r.dispatchEvent(new Event('input')); r.dispatchEvent(new Event('change')); }""", i)
+        pg.wait_for_timeout(700)
+    slide(2)   # 30 days
+    narrow = count()
+    check("window: moving the slider to 30 days re-measures on fewer games", pg.inner_text("#winLabel") == "Last 30 days"
+          and cap().startswith("Last 30 days") and narrow < total, "%s -> %d games" % (pg.inner_text("#winLabel"), narrow))
+    check("window: the calibration card names the window", "Performance, last 30 days" in pg.inner_text("#strengthBody"))
+    slide(9)
+    check("window: all the way right is all time again", count() == total and pg.inner_text("#winLabel") == "All time", count())
+    slide(4)   # 90 days
+    reload(); pg.wait_for_timeout(700)
+    check("window: the chosen window survives a reload", pg.inner_text("#winLabel") == "Last 90 days"
+          and pg.input_value("#winDays") == "4", pg.inner_text("#winLabel"))
+    slide(9)
+    asked = []
+    pg.unroute("**/lichess.org/api/games/**")
+    pg.route("**/lichess.org/api/games/**", lambda r: (asked.append(r.request.url), r.fulfill(status=200, body="", content_type="application/x-ndjson")))
+    pg.fill("#handle", "ermactually"); pg.click("#sync"); pg.wait_for_timeout(1500)
+    q = parse_qs(urlparse(asked[0]).query) if asked else {}
+    check("window: sync on all time asks for the whole history, every standard speed, up to 1000 games",
+          "since" not in q and q.get("perfType") == ["ultraBullet,bullet,blitz,rapid,classical,correspondence"]
+          and q.get("max") == ["1000"], {k: v[0][:40] for k, v in q.items() if k in ("since", "perfType", "max")})
 
     # ---- backup: no API key in the file, and a hostile backup cannot run script
     pg.click("button.tab[data-tab=settings]")

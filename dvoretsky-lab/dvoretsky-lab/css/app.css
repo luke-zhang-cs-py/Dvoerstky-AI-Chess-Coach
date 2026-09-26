@@ -403,3 +403,9 @@ td.num, th.num { text-align: right; font-family: var(--mono); }
   .panel { display: block !important; page-break-after: always; }
   .sheet { border-color: #999; break-inside: avoid; }
 }
+
+/* ---------- the analysis window ---------- */
+.window-pick { display: flex; align-items: center; gap: .9rem; flex-wrap: wrap; margin-bottom: 1rem; }
+.window-pick label { font-family: var(--mono); color: var(--ink-soft); }
+.window-pick input[type=range] { flex: 1 1 14rem; max-width: 26rem; accent-color: var(--blue); }
+.window-pick #winLabel { min-width: 8.5rem; }

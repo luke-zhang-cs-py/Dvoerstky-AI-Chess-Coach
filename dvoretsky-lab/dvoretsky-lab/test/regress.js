@@ -184,6 +184,40 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     check('coach: one further loss is not called "two"', !/^Two further/.test(turn) || out.turningPoints.length === 3, turn);
   }
 
+  // ---------------------------------------------------------------- the analysis window
+  {
+    const now = Date.UTC(2026, 8, 26), DAY = 86400000;
+    const g = (id, ageDays, score) => ({ id, date: now - ageDays * DAY, myColor: 'w', score, oppRating: 2000, moves: [] });
+    const games = [g('new', 3, 1), g('mid', 60, 1), g('old', 400, 0)];
+    const all = Analysis.calibrateStrength(games, null, now);
+    check('window: with no window chosen, every game counts', all.windowGames === 3 && all.windowDays === 0,
+          all.windowGames + ' games, windowDays ' + all.windowDays);
+    const d90 = Analysis.calibrateStrength(games, null, now, 90);
+    check('window: a 90-day window leaves out the 400-day-old game', d90.windowGames === 2 && d90.windowDays === 90, d90.windowGames);
+    const d7 = Analysis.buildProfile(games, null, now, { windowDays: 7 });
+    check('window: the whole profile follows the window, not just the rating', d7.calibration.windowGames === 1 && d7.windowDays === 7,
+          d7.calibration.windowGames + ' / ' + d7.windowDays);
+    const pre = [{ date: now - 400 * DAY, phase: 'opening', motifs: [], cpLoss: 200, gameId: 'old' },
+                 { date: now - 3 * DAY, phase: 'opening', motifs: [], cpLoss: 150, gameId: 'new' }];
+    const p = Analysis.buildProfile(games, null, now, { windowDays: 30, errors: pre });
+    check('window: errors mined once can be passed in, and are cut to the window', p.errors.length === 1 && p.errors[0].gameId === 'new',
+          p.errors.map(e => e.gameId).join());
+  }
+  {
+    const urls = [];
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = u => { urls.push(String(u)); return Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve('') }); };
+    await Data.fetchGames({ user: 'x', days: 0, perfType: 'all' });
+    await Data.fetchGames({ user: 'x', days: 30, perfType: 'blitz' });
+    globalThis.fetch = realFetch;
+    const q0 = new URL(urls[0]).searchParams, q1 = new URL(urls[1]).searchParams;
+    check('fetch: "all time" asks Lichess for the whole history', !q0.has('since'), q0.get('since'));
+    check('fetch: "all" time controls means every standard-chess speed, no variants',
+          q0.get('perfType') === 'ultraBullet,bullet,blitz,rapid,classical,correspondence', q0.get('perfType'));
+    check('fetch: a chosen window and speed still pass through', q1.get('perfType') === 'blitz' &&
+          Math.abs(+q1.get('since') - (Date.now() - 30 * 86400000)) < 60000, q1.get('perfType') + ' ' + q1.get('since'));
+  }
+
   console.log('\n' + passed + ' passed, ' + failed + ' failed');
   process.exitCode = failed ? 1 : 0;
 })();

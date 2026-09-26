@@ -62,14 +62,43 @@
     track: cleanTrack(Store.get('track', [])),
     transcripts: Store.get('transcripts', {}),
     completed: Store.get('completed', {}),
-    settings: Store.get('settings', { minutes: 60, endgameTier: 2, hour: 19, apiKey: '', perf: 'rapid',
-      boardTheme: 'cyan', pieceSet: 'glyph', showCoords: true }),
+    settings: Store.get('settings', { minutes: 60, endgameTier: 2, hour: 19, apiKey: '', perf: 'all',
+      boardTheme: 'cyan', pieceSet: 'glyph', showCoords: true, windowDays: 0 }),
     engine: new Engine(),
     spar: null,
     review: null,
     drill: null,
     scout: null
   };
+
+  // Settings saved before the window existed were on the old default of rapid
+  // games from the last 90 days. Move them to the new default once: every
+  // standard speed, all time. A speed picked after this sticks.
+  if (S.settings.windowDays === undefined) {
+    S.settings.windowDays = 0;
+    if (S.settings.perf === 'rapid') S.settings.perf = 'all';
+    Store.set('settings', S.settings);
+  }
+
+  /* ---------- how far back: one window for sync, strength and scout ---------- */
+  var WINDOW_STEPS = [7, 14, 30, 60, 90, 180, 365, 730, 1095, 0];   // 0 = all time
+  function windowLabel(days) {
+    if (!days) return 'All time';
+    if (days % 365 === 0) return 'Last ' + (days === 365 ? 'year' : days / 365 + ' years');
+    return 'Last ' + days + ' days';
+  }
+  function windowPhrase(days) { return days ? 'in the last ' + windowLabel(days).slice(5).toLowerCase() : 'across the whole history'; }
+  function perfLabel(perf) { return !perf || perf === 'all' ? '' : perf + ' '; }
+  // The speed most of these games were played at: the rating to anchor to when syncing "all".
+  function mainPerf(games) {
+    var n = {};
+    games.forEach(function (g) { if (g.perf) n[g.perf] = (n[g.perf] || 0) + 1; });
+    return Object.keys(n).sort(function (a, b) { return n[b] - n[a]; })[0] || 'rapid';
+  }
+  function ratingFor(prof, perf, games) {
+    var key = perf && perf !== 'all' ? perf : mainPerf(games);
+    return prof && prof.perfs && prof.perfs[key] ? prof.perfs[key].rating : null;
+  }
 
   /* ---------- compact persistence (localStorage is small; FENs are recomputable) ---------- */
   function compact(games) {
@@ -152,23 +181,24 @@
     var btn = $('#sync'); btn.disabled = true;
     var orig = btn.textContent; btn.innerHTML = '<span class="spin"></span> Syncing';
 
-    var days = 90;
+    var days = S.settings.windowDays || 0, perf = S.settings.perf || 'all';
     Promise.all([
       Data.fetchProfile(user).catch(function () { return null; }),
-      Data.fetchGames({ user: user, days: days, max: 300, perfType: S.settings.perf || 'rapid' })
+      // a longer window needs a higher cap, or "all time" would quietly mean "the last 300"
+      Data.fetchGames({ user: user, days: days, max: days && days <= 90 ? 300 : 1000, perfType: perf })
     ]).then(function (res) {
       var prof = res[0], games = res[1];
       if (!games.length) {
         // Leave whatever is already loaded (an imported PGN, say) rather than replace it with nothing.
-        flash('No rated ' + (S.settings.perf || 'rapid') + ' games found for <b>' + esc(user) +
-              '</b> in the last ' + days + ' days. Try another time control in Settings, or import a PGN.' +
+        flash('No rated ' + perfLabel(perf) + 'games found for <b>' + esc(user) +
+              '</b> ' + windowPhrase(days) + '. Try a wider window on the Strength tab, another time control in Settings, or import a PGN.' +
               (S.games.length ? ' Your ' + S.games.length + ' loaded games are unchanged.' : ''), 'warn');
         return;
       }
       S.games = games;
+      Store.set('syncedDays', days);
       var stored = saveGames();
-      var rating = prof && prof.perfs && prof.perfs[S.settings.perf || 'rapid']
-        ? prof.perfs[S.settings.perf || 'rapid'].rating : null;
+      var rating = ratingFor(prof, perf, games);
       Store.set('lichessRating', rating);
       rebuild(rating);
       if (!stored) return;   // keep the storage-full warning on screen
@@ -184,15 +214,25 @@
     });
   }
 
-  function rebuild(rating) {
-    rating = rating !== undefined ? rating : Store.get('lichessRating', null);
-    S.profile = Analysis.buildProfile(S.games, rating);
-    S.book = Analysis.buildBook(S.games);
-    var cards = Training.buildDeck(S.profile.errors, S.cardState);
+  /* opts.windowOnly: only the window moved, so the games are the same and the
+     expensive parts (mining errors, the opening book) can be reused. The drill
+     deck and the book always use every loaded game: narrowing the window must not
+     throw away what is due for review, or a repertoire. */
+  function rebuild(rating, opts) {
+    opts = opts || {};
+    rating = rating != null ? rating : Store.get('lichessRating', null);
+    if (!opts.windowOnly || !S.allErrors) {
+      S.allErrors = Analysis.mineErrors(S.games);
+      S.book = Analysis.buildBook(S.games);
+    }
+    S.profile = Analysis.buildProfile(S.games, rating, undefined,
+      { windowDays: S.settings.windowDays || 0, errors: S.allErrors });
+    var cards = Training.buildDeck(S.allErrors, S.cardState);
     S.deck = {};
     cards.forEach(function (c) { S.deck[c.id] = c; });
     persistCards();
-    recordSnapshot();
+    if (!opts.windowOnly) recordSnapshot();   // the trajectory tracks syncs, not slider moves
+    renderWindowNote();
     renderRuler();
     renderStrength();
     renderCalendar();
@@ -369,7 +409,7 @@
 
     var gap = 2200 - cal.trueStrength;
     $('#rulerCaption').innerHTML =
-      '<span>90-day window: <b>' + cal.windowGames + '</b> games</span>' +
+      '<span>' + windowLabel(cal.windowDays) + ': <b>' + cal.windowGames + '</b> games</span>' +
       '<span>Performance rating: <b>' + (cal.performanceRating || '—') + '</b></span>' +
       '<span>Move quality: <b>' + (cal.moveQualityElo || '—') + '</b> at <b>' + (cal.acpl || '—') + '</b> acpl</span>' +
       '<span>' + (gap > 0 ? 'Gap to Candidate Master: <b>' + gap + '</b>' : 'Above the CM line on this measure') + '</span>';
@@ -415,7 +455,7 @@
       '<table><tbody>' +
       row('Measured strength', '<b>' + cal.trueStrength + ' ± ' + cal.marginOfError + '</b>') +
       row('Lichess rating', cal.lichessRating || '—') +
-      row('90-day performance', (cal.performanceRating || '—') + (cal.avgOpp ? ' <span class="soft tiny">vs ' + cal.avgOpp + ' avg, ' + cal.scorePct + '%</span>' : '')) +
+      row('Performance, ' + windowLabel(cal.windowDays).toLowerCase(), (cal.performanceRating || '—') + (cal.avgOpp ? ' <span class="soft tiny">vs ' + cal.avgOpp + ' avg, ' + cal.scorePct + '%</span>' : '')) +
       row('Move-quality estimate', (cal.moveQualityElo || '—') + (cal.acpl ? ' <span class="soft tiny">' + cal.acpl + ' acpl</span>' : '')) +
       row('Weighting', '<span class="tiny mono">results ' + w.results + ' / quality ' + w.moveQuality + ' / anchor ' + w.anchor + '</span>') +
       row('Sample', cal.sample + ' rated, ' + cal.analysedSample + ' analysed') +
@@ -1123,13 +1163,12 @@
     out.innerHTML = '<p class="soft"><span class="spin"></span> Reading ' + esc(user) + '.</p>';
     Promise.all([
       Data.fetchProfile(user).catch(function () { return null; }),
-      Data.fetchGames({ user: user, days: 90, max: 200, perfType: $('#scoutPerf').value })
+      Data.fetchGames({ user: user, days: S.settings.windowDays || 0, max: 500, perfType: $('#scoutPerf').value })
     ]).then(function (res) {
       var prof = res[0], games = res[1];
-      if (!games.length) { out.innerHTML = '<div class="empty">No rated games for ' + esc(user) + ' in that time control in the last 90 days.</div>'; return; }
-      var perfKey = $('#scoutPerf').value;
-      var rating = prof && prof.perfs && prof.perfs[perfKey] ? prof.perfs[perfKey].rating : null;
-      var p = Analysis.buildProfile(games, rating);
+      if (!games.length) { out.innerHTML = '<div class="empty">No rated games for ' + esc(user) + ' in that time control ' + windowPhrase(S.settings.windowDays) + '.</div>'; return; }
+      var rating = ratingFor(prof, $('#scoutPerf').value, games);
+      var p = Analysis.buildProfile(games, rating, undefined, { windowDays: S.settings.windowDays || 0 });
       S.scout = { user: user, profile: p, games: games };
       out.innerHTML = scoutReport(user, p);
     }).catch(function (e) {
@@ -1147,7 +1186,7 @@
     var h = '<div class="sheet"><h3>' + esc(user) + '</h3>' +
       '<p>Measured at <b>' + cal.trueStrength + ' ± ' + cal.marginOfError + '</b>' +
       (cal.lichessRating ? ' against a listed rating of ' + cal.lichessRating : '') +
-      ', from ' + cal.windowGames + ' games in the last 90 days' +
+      ', from ' + cal.windowGames + ' games ' + windowPhrase(cal.windowDays) +
       (cal.analysedSample ? ' (' + cal.analysedSample + ' with engine analysis)' : '') + '.</p>';
     h += '<p>Most expensive phase: <b>' + worstPhase + '</b> at ' + p.phases[worstPhase].acplInPhase + ' centipawns lost per move.</p>';
     if (top.length) {
@@ -1174,7 +1213,7 @@
     var s = S.settings;
     $('#setMinutes').value = s.minutes; $('#setTier').value = s.endgameTier;
     $('#setHour').value = s.hour; $('#setKey').value = s.apiKey || '';
-    $('#setPerf').value = s.perf || 'rapid';
+    $('#setPerf').value = s.perf || 'all';
     $('#setBoardTheme').value = s.boardTheme || 'cyan';
     $('#setPieceSet').value = s.pieceSet || 'glyph';
     $('#setShowCoords').checked = s.showCoords !== false;
@@ -1183,7 +1222,7 @@
         hour: +$('#setHour').value, apiKey: $('#setKey').value, perf: $('#setPerf').value,
         boardTheme: $('#setBoardTheme').value, pieceSet: $('#setPieceSet').value,
         showCoords: $('#setShowCoords').checked,
-        uiScale: S.settings.uiScale || '1' };
+        uiScale: S.settings.uiScale || '1', windowDays: S.settings.windowDays || 0 };
       Store.set('settings', S.settings);
       applyBoardSettings();
       flash('Settings saved.');
@@ -1272,6 +1311,37 @@
     document.documentElement.style.setProperty('--mast-h', m.offsetHeight + 'px');
   }
 
+  function initWindow() {
+    var range = $('#winDays');
+    var at = WINDOW_STEPS.indexOf(S.settings.windowDays || 0);
+    range.max = String(WINDOW_STEPS.length - 1);
+    range.value = String(at < 0 ? WINDOW_STEPS.length - 1 : at);
+    function show() {
+      var d = WINDOW_STEPS[+range.value];
+      $('#winLabel').textContent = windowLabel(d);
+      range.setAttribute('aria-valuetext', windowLabel(d));
+      return d;
+    }
+    show();
+    range.addEventListener('input', show);            // the label follows the thumb
+    range.addEventListener('change', function () {    // the analysis follows the release
+      S.settings.windowDays = show();
+      Store.set('settings', S.settings);
+      if (S.games.length) rebuild(undefined, { windowOnly: true });
+      else renderWindowNote();
+    });
+  }
+
+  // Games only reach back as far as the last sync asked for.
+  function renderWindowNote() {
+    var el = $('#winNote'); if (!el) return;
+    var want = S.settings.windowDays || 0, have = Store.get('syncedDays', null);
+    var short = have != null && have !== 0 && (want === 0 || want > have);
+    el.textContent = short
+      ? 'Loaded games only go back ' + have + ' days. Press Sync to fetch the rest of this window.'
+      : S.games.length ? (S.profile ? S.profile.calibration.windowGames : 0) + ' of ' + S.games.length + ' loaded games are in this window.' : '';
+  }
+
   function initChrome() {
     var sel = $('#uiScale');
     var saved = S.settings.uiScale || '1';
@@ -1312,6 +1382,7 @@
   function boot() {
     applyBoardSettings();
     initChrome();
+    initWindow();
     initTabs();
     initSparring();
     initDrillControls();
