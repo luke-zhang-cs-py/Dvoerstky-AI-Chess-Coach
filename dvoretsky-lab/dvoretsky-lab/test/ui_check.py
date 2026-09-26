@@ -205,6 +205,36 @@ with sync_playwright() as p:
           "since" not in q and q.get("perfType") == ["ultraBullet,bullet,blitz,rapid,classical,correspondence"]
           and q.get("max") == ["1000"], {k: v[0][:40] for k, v in q.items() if k in ("since", "perfType", "max")})
 
+    # ---- the Stockfish reader: a real engine, in a worker, from file://
+    pg.click("button.tab[data-tab=sparring]")
+    pg.select_option("#sparColor", "w"); pg.click("#sparStart")
+    try:
+        pg.wait_for_function("document.querySelector('.sf-eval')", timeout=40000)
+        now = pg.inner_text("#sfNow")
+    except Exception:
+        now = pg.inner_text("#sfNow")
+    check("stockfish: it starts in a worker from file:// and reads the start position",
+          "depth" in now and "Stockfish plays" in now, now.replace("\n", " | ")[:90])
+    pg.click('#sparBoard [data-sq="e2"]'); pg.click('#sparBoard [data-sq="e4"]')
+    pg.wait_for_function("document.querySelectorAll('#sparMoves button').length >= 2", timeout=30000)
+    try:
+        pg.wait_for_function("""(() => { const rows = [...document.querySelectorAll('.sf-log tbody tr')];
+            return rows.length >= 2 && rows.every(r => /good|inaccuracy|mistake|blunder/.test(r.innerText)); })()""", timeout=60000)
+        graded = True
+    except Exception:
+        graded = False
+    check("stockfish: your move and the mirror's reply both get a verdict", graded,
+          pg.inner_text("#sfLog").replace("\n", " | ")[:120])
+    try:
+        pg.wait_for_function("/House engine:/.test(document.querySelector('#sfNow').innerText)", timeout=40000)
+        house = True
+    except Exception:
+        house = False
+    check("stockfish: the house engine's evaluation is shown beside Stockfish's", house, pg.inner_text("#sfNow")[:120])
+    pg.uncheck("#sfOn"); pg.wait_for_timeout(300)
+    check("stockfish: switching it off says so", "Stockfish is off" in pg.inner_text("#sfNow"))
+    pg.check("#sfOn")
+
     # ---- backup: no API key in the file, and a hostile backup cannot run script
     pg.click("button.tab[data-tab=settings]")
     pg.fill("#setKey", "sk-ant-TESTKEY"); pg.click("#saveSettings")

@@ -218,6 +218,53 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
           Math.abs(+q1.get('since') - (Date.now() - 30 * 86400000)) < 60000, q1.get('perfType') + ' ' + q1.get('since'));
   }
 
+  // ---------------------------------------------------------------- the Stockfish reader
+  {
+    const SR = require('../js/stockfish-reader.js');
+    const i = SR.parseInfo('info depth 12 seldepth 17 multipv 1 score cp 114 nodes 110726 nps 30435 hashfull 51 time 3638 pv f1b5 a7a6 b5c6');
+    check('reader: an info line gives depth, score and the line', i && i.depth === 12 && i.kind === 'cp' && i.value === 114 && i.pv.join() === 'f1b5,a7a6,b5c6',
+          JSON.stringify(i));
+    const bmc = SR.parseInfo('info depth 8 seldepth 9 multipv 1 score cp 178 nodes 5512 nps 14505 time 380 pv d2d4 e5d4 f3d4 d7d5 f1b5 bmc 1');
+    check('reader: the trailing "bmc" Stockfish 10 writes does not hide the line', bmc && bmc.pv.join(' ') === 'd2d4 e5d4 f3d4 d7d5 f1b5',
+          bmc && bmc.pv.join(' '));
+    check('reader: a bound from a failed search window is not a score',
+          SR.parseInfo('info depth 12 seldepth 17 multipv 1 score cp 100 lowerbound nodes 1 pv f1b5') === null);
+    check('reader: scores turn to White\'s side when Black is to move', SR.whiteCp({ kind: 'cp', value: 50 }, false) === -50);
+    const m3 = SR.whiteCp({ kind: 'mate', value: 3 }, true);
+    check('reader: mate in 3 reads as #3 on the house engine\'s scale', Sparring.cpDisplay(m3) === '#3', Sparring.cpDisplay(m3));
+    check('reader: being mated now is the bottom of the scale', SR.whiteCp({ kind: 'mate', value: 0 }, true) === -SR.MATE);
+
+    // A scripted stand-in for the worker: answers each "go" for the position it was given.
+    const sent = [];
+    const answers = { 'w': ['info depth 9 multipv 1 score cp 30 pv e2e4 e7e5', 'bestmove e2e4'],
+                      'b': ['info depth 9 multipv 1 score cp 20 pv e7e5', 'bestmove e7e5'] };
+    let side = 'w';
+    class FakeWorker {
+      postMessage(cmd) {
+        sent.push(cmd);
+        const reply = l => setTimeout(() => this.onmessage({ data: l }), 5);
+        if (cmd === 'isready') reply('readyok');
+        if (cmd.startsWith('position fen')) side = cmd.split(' ')[3];
+        if (cmd.startsWith('go')) answers[side].forEach((l, k) => setTimeout(() => this.onmessage({ data: l }), 10 + k));
+      }
+      terminate() {}
+    }
+    const realWorker = globalThis.Worker;
+    globalThis.Worker = FakeWorker;
+    const r = new SR.Reader('/* engine */');
+    await r.start();
+    const g = new Chess(); const f0 = g.fen(); g.move('e4'); const f1 = g.fen();
+    const [a, b] = await Promise.all([r.read(f0, { movetime: 100 }), r.read(f1, { movetime: 100 })]);
+    check('reader: positions are read in order, one at a time', a.best === 'e2e4' && b.best === 'e7e5' &&
+          sent.filter(c => c.startsWith('go')).length === 2, a.best + ' ' + b.best);
+    check('reader: Black-to-move scores come back from White\'s side', a.cp === 30 && b.cp === -20, a.cp + ' ' + b.cp);
+    const dropped = r.read(f0, { movetime: 100 }), queued = r.read(f1, { movetime: 100 });
+    r.clear();
+    const d = await Promise.all([dropped, queued]);
+    check('reader: clear() drops the queue and the position in hand', d[0] === null && d[1] === null, JSON.stringify(d));
+    globalThis.Worker = realWorker;
+  }
+
   console.log('\n' + passed + ' passed, ' + failed + ' failed');
   process.exitCode = failed ? 1 : 0;
 })();

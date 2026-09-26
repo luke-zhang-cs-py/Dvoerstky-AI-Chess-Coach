@@ -62,6 +62,13 @@ habits. Live advice shows the top three candidates for **both** colours at once 
 not to move is evaluated through a null move, which is the same question as *what is he
 threatening*.
 
+**Stockfish reader** — beside the board, Stockfish 10 reads every position in a background
+worker and grades each move, yours and the mirror's, by scoring the move played against its
+own best from the same position. It also shows the house engine's evaluation next to its own,
+and sets what the mirror *meant* to give away against what Stockfish *measured* — a running
+check on the engine this app is built on. Stockfish is GPL-3.0 and vendored unmodified; see
+`js/vendor/README.md`.
+
 **Drills** — puzzles generated only from your own mistakes, scheduled by SM-2 spaced
 repetition, plus a starter endgame curriculum (Lucena, Philidor, Vancura, Saavedra,
 opposition and key squares, the three-pawn breakthrough, Réti, B+N mate, and others) that
@@ -179,6 +186,8 @@ js/training.js      endgame curriculum, SM-2 scheduling, day planner, .ics expor
 js/coach.js         justification rubric, scoring, game summaries, optional LLM call
 js/sparring.js      the mirror opponent and dual-sided advice
 js/board.js         board rendering and interaction
+js/stockfish-reader.js  Stockfish in a Web Worker: UCI parsing, an ordered read queue
+js/vendor/          Stockfish.js 10.0.2 (GPL-3.0), wrapped as a string so file:// can run it
 js/ui.js            all seven workspaces
 test/               perft, engine, analysis, integration, sparring and regression tests (node),
                     a browser check of the UI (ui_check.py) and a coverage report

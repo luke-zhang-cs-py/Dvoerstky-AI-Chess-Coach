@@ -87,6 +87,17 @@
 
         <div id="sparAdvice"></div>
 
+        <div class="sheet" id="sfPanel">
+          <h3>Stockfish reader</h3>
+          <p class="tiny soft">Stockfish 10 reads every position in the background and grades each move &mdash; yours and the mirror&rsquo;s &mdash; against what it would have played. The house engine stays the opponent; Stockfish is the check on it.</p>
+          <div class="row">
+            <label><input type="checkbox" id="sfOn" checked> Read every move</label>
+            <label>Time per position <select id="sfTime"><option value="500">0.5 s</option><option value="1000" selected>1 s</option><option value="3000">3 s</option></select></label>
+          </div>
+          <div id="sfNow"></div>
+          <div id="sfLog"></div>
+        </div>
+
         <div class="sheet">
           <h4>Game text</h4>
           <textarea id="sparPgn" rows="3" readonly aria-label="Moves of the current sparring game"></textarea>
@@ -233,6 +244,8 @@
 <script src="js/coach.js"></script>
 <script src="js/sparring.js"></script>
 <script src="js/board.js"></script>
+<script src="js/vendor/stockfish-src.js"></script>
+<script src="js/stockfish-reader.js"></script>
 <script src="js/ui.js"></script>
 </body>
 </html>

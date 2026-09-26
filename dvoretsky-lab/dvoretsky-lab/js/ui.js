@@ -3,7 +3,8 @@
   'use strict';
   var Chess = window.Chess, Engine = window.Engine, Data = window.Data,
       Analysis = window.Analysis, Training = window.Training, Coach = window.Coach,
-      Sparring = window.Sparring, Board = window.Board, Store = Data.Store;
+      Sparring = window.Sparring, Board = window.Board, Store = Data.Store,
+      StockfishReader = window.StockfishReader;
 
   var $ = function (s, r) { return (r || document).querySelector(s); };
   var $$ = function (s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); };
@@ -592,6 +593,11 @@
     $('#sparHint').addEventListener('click', function () { refreshAdvice(true); });
     $('#sparTakeback').addEventListener('click', takeback);
     $('#sparResign').addEventListener('click', function () { if (S.spar) endSpar('You resigned.'); });
+    $('#sfOn').addEventListener('change', function () {
+      if (!this.checked && sf.reader) { sf.reader.clear(); sf.pending = {}; }
+      readPosition();
+    });
+    renderSf();
   }
 
   function startSpar(color) {
@@ -614,17 +620,21 @@
     $('#sparStatus').textContent = 'Playing as ' + (myColor === 'w' ? 'White' : 'Black') +
       ' against your mirror at ' + S.spar.mirror.targetElo + '.';
     renderSparMoves();
+    if (sf.reader) sf.reader.clear();   // the last game's positions no longer need reading
+    readPosition();
     if (myColor === 'b') setTimeout(mirrorMove, 250);
     else refreshAdvice();
   }
 
   function onSparMove(move, game) {
     if (!S.spar || S.spar.thinking || S.spar.over) return;
-    var san = game.san(move);
+    var san = game.san(move), before = game.fen();
     game.makeMove(move);
-    S.spar.history.push({ san: san, color: move.color === Chess.WHITE ? 'w' : 'b' });
+    S.spar.history.push({ san: san, color: move.color === Chess.WHITE ? 'w' : 'b',
+                          fenBefore: before, fenAfter: game.fen(), uci: uciOf(move) });
     sparBoard.setGame(game, { from: move.fromSq, to: move.toSq });
     renderSparMoves();
+    readPosition();
     if (checkSparEnd()) return;
     S.spar.thinking = true;   // closed from now, not from when the timer fires: no takeback in the gap
     setTimeout(mirrorMove, 120);
@@ -646,9 +656,11 @@
       var san = res.san || sp.game.san(res.move);
       sp.game.makeMove(res.move);
       sp.history.push({ san: san, color: res.move.color === Chess.WHITE ? 'w' : 'b',
-        fromBook: res.fromBook, loss: res.intendedLoss, blunderTurn: res.blunderTurn });
+        fromBook: res.fromBook, loss: res.intendedLoss, blunderTurn: res.blunderTurn,
+        fenBefore: fen, fenAfter: sp.game.fen(), uci: uciOf(res.move) });
       sparBoard.setGame(sp.game, { from: res.move.fromSq, to: res.move.toSq });
       renderSparMoves();
+      readPosition();
       $('#sparStatus').textContent = res.fromBook ? res.note :
         'Played ' + san + (res.blunderTurn ? ' — and that one was a deliberate lapse, at the rate you lapse.' :
           res.intendedLoss > 60 ? ' (giving up ' + res.intendedLoss + ' centipawns, within your own error band)' : '');
@@ -664,6 +676,7 @@
     sparBoard.interactive = true;
     sparBoard.setGame(sp.game);
     renderSparMoves();
+    readPosition();
     // Taking back the mirror's only move as Black leaves it the mirror's turn again.
     if (sp.game.turnColor() !== sp.myColor) { sp.thinking = true; setTimeout(mirrorMove, 120); }
     else refreshAdvice();
@@ -706,9 +719,163 @@
     var fen = sp.game.fen();
     Sparring.dualAdvice(S.engine, sp.game, { depth: 3, budget: 800 }).then(function (adv) {
       if (!stillCurrent(sp, fen)) return;   // advice for a position no longer on the board
+      adv.fen = fen;
       sp.advice = adv;
       renderAdvice(adv);
+      renderSf();   // the house engine's number, next to Stockfish's
     });
+  }
+
+  /* ---------- Stockfish, reading the sparring game ----------
+     Every position the game passes through is read once, in order, in a worker.
+     A move's verdict needs the position before it and the one after; both are
+     read anyway, since each is some move's "after". */
+  var sf = { reader: null, cache: {}, pending: {}, failed: null };
+  function uciOf(m) { return m.fromSq + m.toSq + (m.promo ? Chess.SYM[m.promo] : ''); }
+  var SF_CLASSES = [[300, 'blunder'], [100, 'mistake'], [50, 'inaccuracy'], [0, 'good']];   // cp lost, as Lichess grades
+
+  function sfOn() { return !!$('#sfOn') && $('#sfOn').checked && !sf.failed; }
+
+  function sfReader() {
+    if (!sf.reader) {
+      if (!StockfishReader || !StockfishReader.Reader.available()) {
+        sf.failed = 'This browser cannot start a Web Worker here, so Stockfish is not available.';
+        return null;
+      }
+      sf.reader = new StockfishReader.Reader(window.STOCKFISH_SOURCE);
+    }
+    return sf.reader;
+  }
+
+  /* Two kinds of read, cached by key:
+       fen          -- a full search of a position: Stockfish's best move and score;
+       fen|uciMove  -- the same position searched for that one move only, which is
+                       how the move actually played is scored. Comparing the two
+                       from one position is steadier than comparing the scores of
+                       the positions before and after it, which are separate
+                       searches that reach different depths. */
+  function sfRead(key, fen, opts) {
+    var sp = S.spar;
+    if (sf.cache[key] || sf.pending[key]) return;
+    var r = sfReader();
+    if (!r) return;
+    sf.pending[key] = true;
+    r.start().then(function () { return r.read(fen, Object.assign({ movetime: +$('#sfTime').value || 1000 }, opts)); })
+      .then(function (res) {
+        delete sf.pending[key];
+        if (res) sf.cache[key] = res;
+        if (S.spar === sp) renderSf();
+      }).catch(function (err) {
+        delete sf.pending[key];
+        sf.failed = err.message;
+        renderSf();
+      });
+  }
+
+  // After each move: score the move just played, then read where it left the board.
+  function readPosition() {
+    var sp = S.spar;
+    if (sp && sfOn()) {
+      var last = sp.history[sp.history.length - 1];
+      var known = last && sf.cache[last.fenBefore];
+      // Stockfish's own choice needs no second look: its score is already the full search's
+      if (last && last.fenBefore && last.uci && !(known && known.best === last.uci)) {
+        sfRead(last.fenBefore + '|' + last.uci, last.fenBefore, { searchmoves: [last.uci] });
+      }
+      sfRead(sp.game.fen(), sp.game.fen(), {});
+    }
+    renderSf();
+  }
+
+  // One mate score must not swamp an average: judge on a board clamped to ±10 pawns.
+  function sfCp(res) { return Math.max(-1000, Math.min(1000, res.cp)); }
+
+  function sfVerdict(m) {
+    var best = sf.cache[m.fenBefore];
+    if (!best) return null;
+    var played = best.best === m.uci ? best : sf.cache[m.fenBefore + '|' + m.uci];
+    if (!played) return null;
+    var a = best, b = played;
+    var loss = Math.max(0, Math.round((m.color === 'w' ? 1 : -1) * (sfCp(a) - sfCp(b))));
+    var cls = SF_CLASSES.filter(function (c) { return loss >= c[0]; })[0][1];
+    var preferred = null;
+    if (a.best) {
+      var g = new Chess(m.fenBefore), mv = g.moveFromSan(a.best);
+      if (mv) preferred = g.san(mv);
+    }
+    var same = preferred && preferred.replace(/[+#]/g, '') === m.san.replace(/[+#]/g, '');
+    return { loss: loss, cls: cls, preferred: same ? null : preferred };
+  }
+
+  function sanLine(fen, uciList, n) {
+    var g = new Chess(fen), out = [];
+    uciList.slice(0, n).forEach(function (u) {
+      var mv = g.moveFromSan(u);
+      if (!mv) return;
+      out.push(g.san(mv)); g.makeMove(mv);
+    });
+    return out;
+  }
+
+  function renderSf() {
+    var host = $('#sfNow'), log = $('#sfLog');
+    if (!host) return;
+    var sp = S.spar;
+    if (sf.failed) { host.innerHTML = '<p class="tiny soft">' + esc(sf.failed) + '</p>'; log.innerHTML = ''; return; }
+    if (!$('#sfOn').checked) {
+      host.innerHTML = '<p class="tiny soft">Stockfish is off. Tick the box to have it read every position.</p>'; log.innerHTML = ''; return;
+    }
+    if (!sp) {
+      host.innerHTML = '<p class="tiny soft">Start a game and Stockfish reads every position alongside the house engine.</p>';
+      log.innerHTML = ''; return;
+    }
+
+    var fen = sp.game.fen(), res = sf.cache[fen], h;
+    if (!res) h = '<p class="tiny soft"><span class="spin"></span> Stockfish is reading this position.</p>';
+    else {
+      var line = sanLine(fen, res.pv.length ? res.pv : (res.best ? [res.best] : []), 6);
+      h = '<div class="sf-now"><span class="sf-eval">' + Sparring.cpDisplay(res.cp) + '</span>' +
+        '<span class="tiny soft">White\u2019s view \u00b7 depth ' + res.depth + '</span></div>' +
+        (line.length ? '<p class="tiny">Stockfish plays <b class="mono">' + esc(line[0]) + '</b> ' +
+          '<span class="mono soft">' + esc(line.slice(1).join(' ')) + '</span></p>'
+          : res.best ? '' : '<p class="tiny soft">No legal moves: the game is over.</p>');
+      if (sp.advice && sp.advice.fen === fen) {
+        var diff = Math.round(sp.advice.evalCp - sfCp(res));
+        h += '<p class="tiny soft">House engine: ' + Sparring.cpDisplay(sp.advice.evalCp) + ' \u2014 ' +
+          (Math.abs(diff) < 30 ? 'agrees with Stockfish.' :
+            'more hopeful for ' + (diff > 0 ? 'White' : 'Black') + ' by ' + (Math.abs(diff) / 100).toFixed(2) + '.') + '</p>';
+      }
+    }
+    host.innerHTML = h;
+
+    var rows = [], lost = { you: [], mirror: [] }, intended = [];
+    sp.history.forEach(function (m, i) {
+      if (!m.fenBefore) return;
+      var v = sfVerdict(m), mine = m.color === sp.myColor;
+      if (v && mine) lost.you.push(v.loss);
+      if (v && !mine && !m.fromBook) {
+        lost.mirror.push(v.loss);
+        if (m.loss != null) intended.push(m.loss);
+      }
+      rows.push('<tr class="' + (v ? 'sf-' + v.cls : '') + '"><td class="mono tiny">' + (Math.floor(i / 2) + 1) +
+        (m.color === 'w' ? '.' : '\u2026') + '</td><td class="mono">' + esc(m.san) + '</td><td class="tiny">' +
+        (mine ? 'you' : 'mirror' + (m.fromBook ? ' (book)' : '')) + '</td><td class="num">' +
+        (v ? (v.loss ? '\u2212' + (v.loss / 100).toFixed(2) : '0.00') : '<span class="soft">\u2026</span>') + '</td><td class="tiny">' +
+        (v ? v.cls + (v.preferred ? ' \u00b7 Stockfish: <span class="mono">' + esc(v.preferred) + '</span>' : '') : '') + '</td></tr>');
+    });
+    function avg(a) { return a.length ? Math.round(a.reduce(function (s, x) { return s + x; }, 0) / a.length) : null; }
+    var summary = [];
+    if (lost.mirror.length) {
+      summary.push('Mirror, engine moves: ' + avg(lost.mirror) + ' cp lost per move over ' + lost.mirror.length + ' read' +
+        (intended.length ? ', where it meant to give up ' + avg(intended) + '. ' +
+          (Math.abs(avg(lost.mirror) - avg(intended)) <= 15 ? 'The house engine reads the position about as Stockfish does.'
+            : 'The gap is the house engine misjudging what its own moves cost.') : '.'));
+    }
+    if (lost.you.length) summary.push('You: ' + avg(lost.you) + ' cp lost per move over ' + lost.you.length + ' read.');
+    log.innerHTML = rows.length
+      ? '<p class="tiny">' + summary.map(esc).join('<br>') + '</p><div class="tablewrap sf-log"><table><thead><tr><th></th><th>move</th><th>by</th>' +
+        '<th class="num">cost</th><th>Stockfish says</th></tr></thead><tbody>' + rows.reverse().join('') + '</tbody></table></div>'
+      : '';
   }
 
   function renderAdvice(adv) {
