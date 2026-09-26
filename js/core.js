@@ -418,8 +418,36 @@
     var ms = this.generate();
     if (ms.length === 0) return this.inCheck() ? 'checkmate' : 'stalemate';
     if (this.halfmoves >= 100) return 'fifty';
+    if (this.repetitions() >= 3) return 'repetition';
     if (this.insufficient()) return 'material';
     return null;
+  };
+
+  /* A position, for repetition: where the pieces are, who is to move, the
+     castling rights, and the en passant square -- but only when a capture
+     onto it is actually legal (FIDE 9.2.2). After 1.e4 the FEN names e3 even
+     when no black pawn could take there, and that must not make the
+     position differ from the same one reached without the double push. */
+  Chess.prototype.positionKey = function () {
+    var f = this.fen().split(' ');
+    if (f[3] !== '-' && !this.generate().some(function (m) { return m.flags & FLAG.EP; })) f[3] = '-';
+    return f.slice(0, 4).join(' ');
+  };
+
+  /* How many times the current position has occurred in this game. Only the
+     plies since the last capture or pawn move can match -- those are what the
+     halfmove clock counts -- so it walks back that far, compares, and plays the
+     same moves forward again, leaving the game exactly as it found it. */
+  Chess.prototype.repetitions = function () {
+    var now = this.positionKey(), count = 1, moves = [];
+    var steps = Math.min(this.halfmoves, this.history.length);
+    for (var i = 0; i < steps; i++) {
+      moves.push(this.history[this.history.length - 1].move);
+      this.undoMove();
+      if (this.positionKey() === now) count++;
+    }
+    while (moves.length) this.makeMove(moves.pop());
+    return count;
   };
 
   Chess.prototype.insufficient = function () {
@@ -430,7 +458,17 @@
     }
     if (pieces.length <= 2) return true;
     if (pieces.length === 3 && (pieces.indexOf(BISHOP) > -1 || pieces.indexOf(KNIGHT) > -1)) return true;
-    return false;
+    // Kings and bishops only, every bishop on one colour of square: nobody can
+    // ever be mated (FIDE 5.2.2), however many bishops there are.
+    var colours = {}, onlyBishops = true;
+    for (sq = 0; sq < 128; sq++) {
+      if (sq & 0x88) { sq += 7; continue; }
+      var t = this.board[sq] & TYPE_MASK;
+      if (!t || t === KING) continue;
+      if (t !== BISHOP) { onlyBishops = false; break; }
+      colours[((sq >> 4) + (sq & 7)) % 2] = true;
+    }
+    return onlyBishops && Object.keys(colours).length === 1;
   };
 
   Chess.prototype.turnColor = function () { return this.turn === WHITE ? 'w' : 'b'; };

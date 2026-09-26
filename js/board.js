@@ -19,6 +19,9 @@
     this.allowedColor = this.opts.allowedColor || null; // 'w' | 'b' | null = both
     this.pieceSet = this.opts.pieceSet || 'glyph'; // 'glyph' | 'letters'
     this.showCoords = this.opts.showCoords !== false;
+    // Solid shapes for both sides (colour then comes from CSS): an outline
+    // white king disappears on a light board, as the site themes have.
+    this.solidPieces = !!this.opts.solidPieces;
     this.marks = [];
     this.pendingPromotion = null;   // the four promotion moves, while the picker is open
     this.el.addEventListener('click', this.onClick.bind(this));
@@ -31,6 +34,7 @@
     opts = opts || {};
     if (opts.pieceSet !== undefined) this.pieceSet = opts.pieceSet;
     if (opts.showCoords !== undefined) this.showCoords = opts.showCoords;
+    if (opts.solidPieces !== undefined) this.solidPieces = !!opts.solidPieces;
     this.render();
   };
 
@@ -69,6 +73,9 @@
     if (g.inCheck()) checkSq = Chess.algebraic(g.kings[g.turn]);
 
     var glyphs = this.pieceSet === 'letters' ? GLYPH_LETTERS : GLYPH;
+    // which glyph family a side is drawn from: with solid pieces, white uses the filled shapes too
+    var solid = this.solidPieces && glyphs === GLYPH;
+    function shapeOf(colour) { return solid ? 'b' : colour; }
     var html = '';
     order.forEach(function (rf) {
       var r = rf[0], f = rf[1];
@@ -87,7 +94,7 @@
 
       html += '<div class="' + cls.join(' ') + '" data-sq="' + name + '"' +
         (canMove || targets[name] ? ' tabindex="0" role="button" aria-label="' + name + '"' : '') + '>';
-      if (piece) html += '<span class="piece ' + piece.color + '">' + glyphs[piece.color + piece.type] + '</span>';
+      if (piece) html += '<span class="piece ' + piece.color + '">' + glyphs[shapeOf(piece.color) + piece.type] + '</span>';
       if (targets[name]) html += '<span class="dot"></span>';
       if (mark) html += '<span class="arrowmark"></span>';
       if (self.showCoords) {
@@ -103,7 +110,7 @@
       html += '<div class="promo-pick" role="group" aria-label="Promote to">' + ['q', 'r', 'b', 'n'].map(function (p) {
         return '<button type="button" data-promo="' + p + '" aria-label="' +
           { q: 'Queen', r: 'Rook', b: 'Bishop', n: 'Knight' }[p] + '"><span class="piece ' + colour + '">' +
-          glyphs[colour + p] + '</span></button>';
+          glyphs[shapeOf(colour) + p] + '</span></button>';
       }).join('') + '</div>';
     }
     // Rebuilding the squares drops keyboard focus; put it back where it was.

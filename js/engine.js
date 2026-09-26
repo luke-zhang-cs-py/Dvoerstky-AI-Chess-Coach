@@ -123,19 +123,22 @@
   var CAPTURE_ORDER_SCALE = 10;   // MVV-LVA: rank captures by victim value, break ties by attacker value
   var PROMOTION_ORDER_BONUS = 900;
   var MATE_SCORE = 30000;
+  // The root's window: wider than any score, but finite. With +/-Infinity the
+  // null move's window (beta - 1, beta) is (Infinity, Infinity), and a
+  // "fail high" there returned Infinity up the tree -- from depth 5 on, every
+  // root move scored +Infinity and a mate in one was lost among them.
+  var SCORE_BOUND = MATE_SCORE + 1000;
   var NODE_TIMEOUT_CHECK_MASK = 511;   // check the clock every 512 nodes
   var QUIESCE_MAX_DEPTH = 4;
-  var MATE_DEPTH_OFFSET = 100;   // prefer shorter mates; must exceed any reachable search depth
   var FIFTY_MOVE_RULE_HALFMOVES = 100;
-  // A mate score's "distance to mate" is encoded via the *remaining depth*
-  // of the search call that found it (see MATE_DEPTH_OFFSET above), which
-  // is only meaningful relative to that one call. The transposition table
-  // is keyed on position alone, so the same position can be reached again
-  // at a different depth -- inside the same iterative-deepening pass, from
-  // a null-move-reduced call, or on a later move of the game -- and a
-  // cached mate score would then report the wrong distance, or bias a
-  // choice between two winning lines toward whichever was cached rather
-  // than whichever is actually shorter. Simplest correct fix: never cache
+  // A mate score's "distance to mate" is counted in plies from the root of
+  // the search that found it, which is only meaningful relative to that
+  // root. The transposition table is keyed on position alone and outlives a
+  // search, so the same position can be reached again at another distance --
+  // deeper in the same tree, or on a later move of the game -- and a cached
+  // mate score would then report the wrong distance, or bias a choice
+  // between two winning lines toward whichever was cached rather than
+  // whichever is actually shorter. Simplest correct fix: never cache
   // a mate-range score in the first place, so there is nothing stale to
   // retrieve. (9000 matches the "is this a mate score" threshold used
   // where scores are displayed, e.g. sparring.js's cpDisplay.)
@@ -164,6 +167,23 @@
   // the moves they return describe the same position, so they play on the
   // original unchanged.
   function privateCopy(g) { return new Chess(g.fen()); }
+
+  /* The search walks a copy whose history starts empty, so inside it
+     g.history.length is the distance from the root. keyAt[n] holds the
+     position at that distance on the line being searched, and the positions
+     of the real game before the root sit at negative n -- back to the last
+     capture or pawn move, since nothing older can repeat. Read on the real
+     game before copying it; the walk back is undone at once. */
+  function recordRootKeys(engine, g) {
+    engine.keyAt = { 0: zobristKey(g) };
+    var steps = Math.min(g.halfmoves, g.history.length), moves = [];
+    for (var i = 1; i <= steps; i++) {
+      moves.push(g.history[g.history.length - 1].move);
+      g.undoMove();
+      engine.keyAt[-i] = zobristKey(g);
+    }
+    while (moves.length) g.makeMove(moves.pop());
+  }
 
   // A root move the deadline cut off before its first full depth has no score.
   // Rather than rank it at -Infinity (which reaches the UI and the sparring
@@ -288,11 +308,22 @@
     this.nodes++;
     if (stopAt && (this.nodes & NODE_TIMEOUT_CHECK_MASK) === 0 && Date.now() > stopAt) throw { timeout: true };
     var ms = g.generate();
-    if (ms.length === 0) return g.inCheck() ? -MATE_SCORE + (MATE_DEPTH_OFFSET - depth) : 0;
+    // Mated here: counted from the root, so mate in n scores MATE_SCORE - (2n - 1),
+    // the scale cpDisplay and the Stockfish reader both read as "#n". It used to
+    // count remaining depth, so a mate in one read as #49, and #48 a depth later.
+    if (ms.length === 0) return g.inCheck() ? -MATE_SCORE + g.history.length : 0;
     if (g.halfmoves >= FIFTY_MOVE_RULE_HALFMOVES) return 0;
     if (depth <= 0) return this.quiesce(g, alpha, beta, QUIESCE_MAX_DEPTH);
 
     var key = zobristKey(g);
+    // A position this line or the game has already had, with the same side to
+    // move, is a draw by repetition: score it as one, so the engine takes a
+    // perpetual when losing and steers clear of one when winning.
+    var ply = g.history.length;
+    this.keyAt[ply] = key;
+    for (var back = 2; back <= g.halfmoves; back += 2) {
+      if (this.keyAt[ply - back] === key) return 0;
+    }
     var cached = this.tt.get(key);
     if (cached && cached.depth >= depth) {
       if (cached.flag === TT_EXACT) return cached.score;
@@ -300,7 +331,9 @@
       if (cached.flag === TT_UPPER && cached.score <= alpha) return cached.score;
     }
 
-    if (depth >= NULL_MOVE_MIN_DEPTH && !g.inCheck() && hasNonPawnMaterial(g, g.turn)) {
+    // Not when beta is a mate score: "if I pass and still mate" proves nothing.
+    if (depth >= NULL_MOVE_MIN_DEPTH && !g.inCheck() && Math.abs(beta) < TT_MATE_RANGE &&
+        hasNonPawnMaterial(g, g.turn)) {
       var savedTurn = g.turn, savedEp = g.ep;
       g.turn = savedTurn === W ? B : W;
       g.ep = -1;
@@ -315,6 +348,7 @@
         g.turn = savedTurn;
         g.ep = savedEp;
       }
+      this.keyAt[ply] = key;   // the null move searched at this same distance and overwrote it
       if (nullScore >= beta) return beta;
     }
 
@@ -340,6 +374,7 @@
 
   /* Returns ranked candidate list [{move, san, score, uci}] from side-to-move POV (cp) */
   Engine.prototype.rank = function (g, depth, msBudget) {
+    recordRootKeys(this, g);
     g = privateCopy(g);
     var ms = g.generate();
     if (!ms.length) return [];
@@ -355,7 +390,7 @@
         for (var i = 0; i < results.length; i++) {
           var m = results[i].move;
           g.makeMove(m);
-          var sc = -self.search(g, d - 1, -Infinity, Infinity, stopAt);
+          var sc = -self.search(g, d - 1, -SCORE_BOUND, SCORE_BOUND, stopAt);
           g.undoMove();
           partial.push({ move: m, score: sc });
         }
@@ -382,6 +417,7 @@
      deadline or requested depth is reached. */
   Engine.prototype.rankAsync = async function (g, depth, msBudget, onDepth) {
     var self = this;
+    recordRootKeys(this, g);
     g = privateCopy(g);
     var ms = g.generate();
     if (!ms.length) return [];
@@ -410,7 +446,7 @@
           g.makeMove(m);
           var sc;
           try {
-            sc = -self.search(g, d - 1, -Infinity, Infinity, deadline);
+            sc = -self.search(g, d - 1, -SCORE_BOUND, SCORE_BOUND, deadline);
           } catch (e) {
             while (g.history.length > base) g.undoMove();   // unwind whatever the throw skipped
             if (!e.timeout) throw e;

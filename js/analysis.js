@@ -383,6 +383,15 @@
 
   function clampEval(e) { return Math.max(-1200, Math.min(1200, e)); }
 
+  /* Winning chances from a centipawn score, on -1..1: Lichess's own curve
+     (lila: 2 / (1 + exp(-0.00368208 * cp)) - 1). A mistake is judged by how
+     much of those chances a move throws away, as Lichess judges one: 0.1 an
+     inaccuracy, 0.2 a mistake, 0.3 a blunder. In raw centipawns, going from
+     -8 to mate in a position already lost counted as a 440 cp "mistake" and
+     became a drill; in winning chances it is almost nothing, which is right. */
+  function winningChances(cp) { return 2 / (1 + Math.exp(-0.00368208 * cp)) - 1; }
+  var CHANCE_INACCURACY = 0.1, CHANCE_MISTAKE = 0.2, CHANCE_BLUNDER = 0.3;
+
   function mineErrors(games, opts) {
     opts = opts || {};
     var minLoss = opts.minLoss || 80;
@@ -400,7 +409,9 @@
         if (after == null || before == null) continue;   // a gap: no honest "before" for this move
         if (!isMine) continue;
         var cpLoss = mv.color === 'w' ? (before - after) : (after - before);
-        if (cpLoss < minLoss) continue;
+        var sign = mv.color === 'w' ? 1 : -1;
+        var chanceDrop = winningChances(sign * before) - winningChances(sign * after);
+        if (cpLoss < minLoss || chanceDrop < CHANCE_INACCURACY) continue;
 
         var ply = i + 1;
         var phase = phaseOf(mv.fenBefore, ply, game.openingPly);
@@ -444,7 +455,8 @@
           bestUci: bestUci,
           line: mv.serverLine || null,
           cpLoss: Math.round(cpLoss),
-          severity: cpLoss >= 300 ? 'blunder' : cpLoss >= 150 ? 'mistake' : 'inaccuracy',
+          severity: chanceDrop >= CHANCE_BLUNDER ? 'blunder' : chanceDrop >= CHANCE_MISTAKE ? 'mistake' : 'inaccuracy',
+          chanceDrop: Math.round(chanceDrop * 100) / 100,
           judgment: mv.judgment || null,
           phase: phase,
           motifs: motifs,

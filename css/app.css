@@ -46,6 +46,25 @@
 :root[data-board-theme="amber"] { --sq-light: #2a2013; --sq-dark: #140f08; --sq-from: #3a2c10; --sq-to: #4a3812; --sq-hint: #ffcf5c; }
 :root[data-board-theme="mono"]  { --sq-light: #262b31; --sq-dark: #0e1114; --sq-from: #33383e; --sq-to: #3f454c; --sq-hint: #d7e0e8; }
 
+/* The boards of the big sites: their square colours, their last-move highlight
+   (blended onto each square the way they draw it), their move dots, and
+   coordinates in the opposite square's colour. Colours only -- the pieces stay
+   this app's own, drawn solid with an edge so they read on a light board. */
+:root[data-board-theme="lichess-brown"] { --sq-light: #f0d9b5; --sq-dark: #b58863; --sq-from: #cdd26a; --sq-to: #aaa23a;
+  --sq-hint: #14551e; --coord-on-light: #b58863; --coord-on-dark: #f0d9b5; }
+:root[data-board-theme="lichess-blue"]  { --sq-light: #dee3e6; --sq-dark: #8ca2ad; --sq-from: #c3d887; --sq-to: #92b166;
+  --sq-hint: #14551e; --coord-on-light: #8ca2ad; --coord-on-dark: #dee3e6; }
+:root[data-board-theme="chesscom-green"] { --sq-light: #ebecd0; --sq-dark: #779556; --sq-from: #f5f682; --sq-to: #b9ca43;
+  --sq-hint: #3c3c1e; --coord-on-light: #779556; --coord-on-dark: #ebecd0; }
+:root[data-board-theme="chesscom-brown"] { --sq-light: #edd6b0; --sq-dark: #b88762; --sq-from: #f6eb72; --sq-to: #dcc34b;
+  --sq-hint: #3c2e1e; --coord-on-light: #b88762; --coord-on-dark: #edd6b0; }
+:root[data-board-theme="chesscom-blue"]  { --sq-light: #eae9d2; --sq-dark: #4b7399; --sq-from: #f5f482; --sq-to: #a5b966;
+  --sq-hint: #1e2e3c; --coord-on-light: #4b7399; --coord-on-dark: #eae9d2; }
+:root[data-board-theme^="lichess-"], :root[data-board-theme^="chesscom-"] {
+  --piece-w: #ffffff; --piece-w-edge: 0 0 1px #000, 0 0 1px #000, 0 0 1px #000, 0 1px 1px rgba(0,0,0,.5);
+  --piece-b: #111111; --piece-b-edge: 0 0 1px rgba(255,255,255,.55);
+}
+
 html { font-size: calc(17px * var(--ui-scale)); }
 
 * { box-sizing: border-box; }
@@ -247,15 +266,15 @@ main { padding: 1.3rem 1.25rem 4rem; max-width: 1400px; margin: 0 auto; }
 }
 .sq.occupied .dot { width: 84%; height: 84%; border-radius: 50%; background: transparent; border: 3px solid var(--sq-hint); opacity: .6; }
 .sq .coord { position: absolute; font-family: var(--mono); font-size: var(--fs-xs); font-weight: 600; }
-.sq.light .coord { color: #4A5A68; }
-.sq.dark .coord { color: #2A3644; }
+.sq.light .coord { color: var(--coord-on-light, #4A5A68); }
+.sq.dark .coord { color: var(--coord-on-dark, #2A3644); }
 /* highlighted squares get a coordinate colour that still reads against the accent tint */
 .sq.from .coord, .sq.to .coord, .sq.check .coord { color: rgba(255,255,255,.35); }
 .sq .coord.f { bottom: 1px; right: 3px; }
 .sq .coord.r { top: 1px; left: 3px; }
 .piece { pointer-events: none; }
-.piece.w { color: #F3F7FA; text-shadow: 0 0 1px #04141A, 0 0 1px #04141A, 0 1px 2px rgba(0,0,0,.5); }
-.piece.b { color: #8FA3B3; text-shadow: 0 0 1px #000, 0 0 4px rgba(0,0,0,.6); }
+.piece.w { color: var(--piece-w, #F3F7FA); text-shadow: var(--piece-w-edge, 0 0 1px #04141A, 0 0 1px #04141A, 0 1px 2px rgba(0,0,0,.5)); }
+.piece.b { color: var(--piece-b, #8FA3B3); text-shadow: var(--piece-b-edge, 0 0 1px #000, 0 0 4px rgba(0,0,0,.6)); }
 .sq .arrowmark { position: absolute; inset: 0; border: 2px dashed var(--blue); opacity: .7; pointer-events: none; }
 
 .evalbar { display: flex; height: 8px; border: 1px solid var(--rule); margin-top: .5rem; background: var(--sq-dark); }

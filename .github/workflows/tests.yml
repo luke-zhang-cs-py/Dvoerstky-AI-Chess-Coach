@@ -19,6 +19,8 @@ jobs:
       - name: Node suites (rules, engine, analysis, sparring, regressions)
         run: |
           for t in test/*.js; do
+            # tactics.js scores by the clock, so its number depends on the machine: run it by hand
+            case "$t" in test/tactics.js) continue ;; esac
             echo "::group::$t"
             node "$t" || exit 1
             echo "::endgroup::"

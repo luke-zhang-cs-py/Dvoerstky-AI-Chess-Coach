@@ -1,0 +1,72 @@
+#!/usr/bin/env node
+// The house engine behind the UCI protocol, so cutechess-cli, Arena, or any UCI
+// GUI can play it -- against itself, an older version, or Stockfish.
+//   node tools/uci.js
+//   cutechess-cli -engine cmd=node arg=tools/uci.js -engine cmd=stockfish ...
+globalThis.window = globalThis;
+const path = require('path');
+const Chess = require(path.join(__dirname, '..', 'js', 'core.js'));
+const Engine = require(path.join(__dirname, '..', 'js', 'engine.js'));
+
+const MATE_SHOWN = 9000;          // the engine's mate scores sit above this (engine.js MATE_SCORE 30000)
+let engine = new Engine();
+let game = new Chess();
+const say = line => process.stdout.write(line + '\n');
+
+function setPosition(tokens) {
+  let i = 1;
+  if (tokens[i] === 'startpos') { game = new Chess(); i++; }
+  else if (tokens[i] === 'fen') { game = new Chess(tokens.slice(i + 1, i + 7).join(' ')); i += 7; }
+  if (tokens[i] === 'moves') {
+    for (const uci of tokens.slice(i + 1)) {
+      if (!game.move(uci)) { say('info string illegal move ' + uci); return; }
+    }
+  }
+}
+
+// Time for this move: a fixed movetime, or a slice of the clock.
+function budget(opts, white) {
+  if (opts.movetime) return Math.max(10, opts.movetime - 20);
+  const left = white ? opts.wtime : opts.btime, inc = (white ? opts.winc : opts.binc) || 0;
+  if (left == null) return opts.depth ? 0 : 1000;
+  const moves = opts.movestogo || 30;
+  return Math.max(10, Math.min(left / 2, left / moves + inc * 0.8) - 20);
+}
+
+function go(tokens) {
+  const opts = {};
+  for (let i = 1; i < tokens.length; i++) {
+    const k = tokens[i];
+    if (['depth', 'movetime', 'wtime', 'btime', 'winc', 'binc', 'movestogo', 'nodes'].includes(k)) opts[k] = +tokens[++i];
+  }
+  const t0 = Date.now();
+  const ms = budget(opts, game.turnColor() === 'w');
+  const r = engine.rank(game, opts.depth || 64, ms);
+  if (!r.length) { say('bestmove 0000'); return; }
+  const best = r[0], took = Math.max(1, Date.now() - t0);
+  const score = Math.abs(best.score) > MATE_SHOWN
+    ? 'mate ' + (best.score > 0 ? 1 : -1) * Math.max(1, Math.ceil((30000 - Math.abs(best.score)) / 2))
+    : 'cp ' + Math.round(best.score);
+  say(`info score ${score} nodes ${engine.nodes} nps ${Math.round(engine.nodes / took * 1000)} time ${took} pv ${best.uci}`);
+  say('bestmove ' + best.uci);
+}
+
+let buffer = '';
+process.stdin.setEncoding('utf8');
+process.stdin.on('data', chunk => {
+  buffer += chunk;
+  let nl;
+  while ((nl = buffer.indexOf('\n')) >= 0) {
+    const line = buffer.slice(0, nl).trim(); buffer = buffer.slice(nl + 1);
+    const t = line.split(/\s+/);
+    switch (t[0]) {
+      case 'uci': say('id name Dvoretsky Lab'); say('id author Luke Zhang'); say('uciok'); break;
+      case 'isready': say('readyok'); break;
+      case 'ucinewgame': engine = new Engine(); game = new Chess(); break;
+      case 'position': setPosition(t); break;
+      case 'go': go(t); break;
+      case 'quit': process.exit(0);
+      default: break;          // stop, setoption, ponderhit: the search is synchronous and has no options
+    }
+  }
+});

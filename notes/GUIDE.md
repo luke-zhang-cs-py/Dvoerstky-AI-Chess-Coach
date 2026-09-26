@@ -95,7 +95,9 @@ language model; without one it hands you the prompt to paste elsewhere.
 Useful for preparing against a specific opponent, and for pointing the app at a friend.
 
 **Settings** — minutes per day, endgame difficulty tier, session hour, API
-key, PGN import, full backup export/import, and a delete-everything button.
+key, PGN import, full backup export/import, and a delete-everything button. The board
+theme list includes the Lichess (brown, blue) and Chess.com (green, brown, blue) boards,
+with their square and highlight colours and solid pieces.
 
 ---
 
@@ -116,8 +118,9 @@ key, PGN import, full backup export/import, and a delete-everything button.
   mapping back to 2326. It runs slightly *strong* below about 1800.
 - **The engine is mine, not Stockfish.** Tapered piece-square tables, material, bishop
   pair, pawn structure and mobility, with alpha-beta search, MVV-LVA ordering and
-  quiescence. The move generator is verified correct by perft to depth 4 on six standard
-  positions. But the evaluation is club-strength, not superhuman: for ground truth on
+  quiescence. The move generator is verified by perft on 21 positions, 15 of them edge
+  cases counted by Stockfish 19, and the rules (castling, en passant, promotion, the
+  fifty-move rule, threefold repetition, dead positions) by `test/rules.js`. But the evaluation is club-strength, not superhuman: for ground truth on
   *your own games* the app uses Lichess's analysis, and the local engine is used for
   sparring, drills and live advice where speed matters more than the last 20 centipawns.
 
@@ -193,13 +196,33 @@ js/board.js         board rendering and interaction
 js/stockfish-reader.js  Stockfish in a Web Worker: UCI parsing, an ordered read queue
 js/vendor/          Stockfish.js 10.0.2 (GPL-3.0), wrapped as a string so file:// can run it
 js/ui.js            all seven workspaces
-test/               perft, engine, analysis, integration, sparring and regression tests (node),
+test/               perft, rules, engine, analysis, integration, sparring and regression tests (node),
                     a browser check of the UI (ui_check.py) and a coverage report
+test/bench.js       fixed-depth benchmark: nodes/s and a signature that changes when the search does
+test/tactics.js     an EPD suite (Win at Chess in test/epd/) at a set time per position
+test/stockfish_check.py  the app's claims re-checked against a local Stockfish
+tools/uci.js        the house engine as a UCI engine, for any chess GUI
+tools/sprt.js       engine against engine, stopped by a sequential probability ratio test
 ```
 
-Run the tests with `node test/perft.js`, `node test/integration.js`, `node test/acpl.js`,
-and `node test/regress.js` — one check per bug from the September 2026 audit, each
-written to fail on the code before its fix.
+Run the tests with `node test/perft.js`, `node test/rules.js`, `node test/integration.js`,
+`node test/acpl.js`, and `node test/regress.js` — one check per bug from the September
+2026 audit, each written to fail on the code before its fix.
+
+Strength and speed are measured apart from the pass/fail suites, because they depend on
+the machine:
+
+```bash
+node test/bench.js [depth]                   # nodes/s; the signature must not change for a speed-only edit
+node test/tactics.js [ms]                    # Win at Chess: 104/300 at 500 ms, 127/300 at 2000 ms
+node tools/sprt.js --base <old engine.js> --movetime 60   # until H0 or H1 is accepted
+python test/stockfish_check.py <path to stockfish>
+```
+
+`sprt.js` plays each opening twice with colours swapped and stops on the trinomial
+log-likelihood ratio, as cutechess does (alpha = beta = 0.05). The last run, the
+repetition and mate-score fixes against the engine before them: +161 =123 −114,
++41 ± 28 Elo, H1 accepted.
 
 The UI is checked in a real browser, and coverage is measured across both:
 

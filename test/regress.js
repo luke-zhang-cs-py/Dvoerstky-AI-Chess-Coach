@@ -184,6 +184,26 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     check('coach: one further loss is not called "two"', !/^Two further/.test(turn) || out.turningPoints.length === 3, turn);
   }
 
+  // ---------------------------------------------------------------- mistakes, judged by winning chances
+  {
+    const g = new Chess(); const fens = [];
+    ['e4', 'e5', 'Nf3', 'Nc6'].forEach(s => { fens.push(g.fen()); g.move(s); });
+    const game = (evals) => ({ id: 'wc', myColor: 'w', analysed: true, date: Date.now(), score: 0,
+      moves: ['e4', 'e5', 'Nf3', 'Nc6'].map((san, i) => ({ san, color: i % 2 ? 'b' : 'w', evalAfter: evals[i], fenBefore: fens[i] })) });
+    // Already lost at -7.6: Nf3 walks into mate. Lichess's own judgement: not a mistake, the game was gone.
+    const lost = Analysis.mineErrors([game([-700, -760, -10000, -10000])]);
+    check('mistakes: a move in an already lost position is not mined as a mistake', !lost.some(e => e.played === 'Nf3'),
+          lost.map(e => e.played + ' ' + e.cpLoss + ' ' + e.severity).join());
+    // Throwing away a winning position is exactly what a drill is for.
+    const thrown = Analysis.mineErrors([game([30, 520, 0, 0])]);
+    check('mistakes: throwing away a won position is mined, as a blunder',
+          thrown.length === 1 && thrown[0].played === 'Nf3' && thrown[0].severity === 'blunder',
+          thrown.map(e => e.played + ' ' + e.severity).join());
+    // Near equality nothing changes: 30 -> -90 is 120 cp and a real (small) mistake.
+    const small = Analysis.mineErrors([game([30, 30, -90, -90])]);
+    check('mistakes: near equality a 120 cp slip still counts', small.length === 1, small.map(e => e.severity).join());
+  }
+
   // ---------------------------------------------------------------- the analysis window
   {
     const now = Date.UTC(2026, 8, 26), DAY = 86400000;
@@ -277,6 +297,21 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     const d = await Promise.all([dropped, queued]);
     check('reader: clear() drops the queue and the position in hand', d[0] === null && d[1] === null, JSON.stringify(d));
     globalThis.Worker = realWorker;
+  }
+
+  // ---------------------------------------------------------------- deeper searches
+  {
+    // From depth 5 every root move scored +Infinity: null-move pruning with an
+    // infinite window (beta = +Infinity, so beta - 1 is too) "failed high" on
+    // nothing, and a mate in one was lost among equal infinities.
+    const e = new Engine();
+    const r = e.rank(new Chess('6k1/5ppp/8/8/8/8/5PPP/R5K1 w - - 0 1'), 6, 20000);
+    check('engine: a depth-6 search still plays the mate in one', r[0].san === 'Ra8#', r.slice(0, 2).map(x => x.san + ' ' + x.score).join(' | '));
+    const m = new Engine().rank(new Chess('r1bqk2r/pppp1ppp/2n2n2/2b1p3/2B1P3/2N2N2/PPPP1PPP/R1BQK2R w KQkq - 6 5'), 5, 60000);
+    const shown = [3, 5].map(d => Sparring.cpDisplay(new Engine().rank(new Chess('6k1/5ppp/8/8/8/8/5PPP/R5K1 w - - 0 1'), d, 20000)[0].score));
+    check('engine: a mate in one is shown as #1, whatever the depth', shown.every(s => s === '#1'), shown.join(', '));
+    check('engine: no score from a deep search is infinite', m.every(x => Number.isFinite(x.score)) && r.every(x => Number.isFinite(x.score)),
+          m.filter(x => !Number.isFinite(x.score)).length + ' infinite');
   }
 
   console.log('\n' + passed + ' passed, ' + failed + ' failed');

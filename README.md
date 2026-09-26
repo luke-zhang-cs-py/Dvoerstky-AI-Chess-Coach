@@ -57,10 +57,20 @@ notes/       the full guide
 
 ## Tests
 
-**54 regression checks, 33 browser checks, perft on six reference positions
-(to depth 3 or 4), and 90.5% of 4,000 lines covered**, measured across both Node and
-Chromium by `test/coverage_report.py`. Every bug fixed has a check that failed on
-the code before its fix. The browser checks run the real Stockfish. Setup and the
-three things that will catch you out: [`.github/CONTRIBUTING.md`](.github/CONTRIBUTING.md).
+**60 regression checks, 39 rules checks, 38 browser checks, and perft on 21
+positions**, 15 of them edge cases (en passant out of a pin, castling into check,
+underpromotion) with counts taken from Stockfish 19. Every bug fixed has a check that
+failed on the code before its fix. The browser checks run the real Stockfish.
+
+| strength | |
+|---|---|
+| SPRT against the previous engine (`tools/sprt.js`) | +41 ± 28 Elo, H1 accepted |
+| Win at Chess, 300 tactics (`test/tactics.js`) | 104 at 0.5 s, 127 at 2 s |
+| speed (`test/bench.js`) | 60–110k nodes/s, by machine load; perft 3.4M leaves/s |
+
+`test/stockfish_check.py` re-checks the app's claims against Stockfish 19: every
+endgame study's verdict, the imported evaluations, the mined mistakes and the house
+engine's own choices (93% within 50 cp of best). `tools/uci.js` runs the engine in
+any UCI GUI. Setup: [`.github/CONTRIBUTING.md`](.github/CONTRIBUTING.md).
 
 MIT, except `js/vendor/` (Stockfish.js, GPL-3.0).

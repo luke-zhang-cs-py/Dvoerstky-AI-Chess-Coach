@@ -687,7 +687,8 @@
     if (!over) return false;
     var msg = over === 'checkmate'
       ? (sp.game.turnColor() === sp.myColor ? 'Checkmate. You lost.' : 'Checkmate. You won.')
-      : over === 'stalemate' ? 'Stalemate.' : over === 'fifty' ? 'Drawn by the fifty-move rule.' : 'Drawn, insufficient material.';
+      : over === 'stalemate' ? 'Stalemate.' : over === 'fifty' ? 'Drawn by the fifty-move rule.'
+      : over === 'repetition' ? 'Drawn by threefold repetition.' : 'Drawn: neither side can mate.';
     endSpar(msg);
     return true;
   }
@@ -1547,12 +1548,16 @@
   // S.settings and apply globally: boardTheme via a data-attribute on <html>
   // that css/app.css keys its board-square variables off of, the rest via
   // Board.prototype.setDisplayOptions on whichever boards currently exist.
+  // A theme taken from a chess site draws its pieces solid, as that site does.
+  function siteTheme(theme) { return /^(lichess|chesscom)-/.test(theme || ''); }
   function boardOpts(extra) {
-    return Object.assign({ pieceSet: S.settings.pieceSet || 'glyph', showCoords: S.settings.showCoords !== false }, extra || {});
+    return Object.assign({ pieceSet: S.settings.pieceSet || 'glyph', showCoords: S.settings.showCoords !== false,
+                           solidPieces: siteTheme(S.settings.boardTheme) }, extra || {});
   }
   function applyBoardSettings() {
     document.documentElement.setAttribute('data-board-theme', S.settings.boardTheme || 'cyan');
-    var opts = { pieceSet: S.settings.pieceSet || 'glyph', showCoords: S.settings.showCoords !== false };
+    var opts = { pieceSet: S.settings.pieceSet || 'glyph', showCoords: S.settings.showCoords !== false,
+                 solidPieces: siteTheme(S.settings.boardTheme) };
     [sparBoard, drillBoard, revBoard].forEach(function (b) { if (b) b.setDisplayOptions(opts); });
   }
 

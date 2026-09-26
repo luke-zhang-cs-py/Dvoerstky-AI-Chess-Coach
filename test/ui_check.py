@@ -276,6 +276,33 @@ with sync_playwright() as p:
     check("stockfish: switching it off says so", "Stockfish is off" in pg.inner_text("#sfNow"))
     pg.check("#sfOn")
 
+    # ---- board themes from the chess sites
+    SITE = {"lichess-brown": ("rgb(240, 217, 181)", "rgb(181, 136, 99)"), "lichess-blue": ("rgb(222, 227, 230)", "rgb(140, 162, 173)"),
+            "chesscom-green": ("rgb(235, 236, 208)", "rgb(119, 149, 86)"), "chesscom-brown": ("rgb(237, 214, 176)", "rgb(184, 135, 98)"),
+            "chesscom-blue": ("rgb(234, 233, 210)", "rgb(75, 115, 153)")}
+    groups = pg.evaluate("[...document.querySelectorAll('#setBoardTheme optgroup')].map(g => g.label)")
+    check("themes: the board colours are grouped by site", groups == ["This app", "Lichess", "Chess.com"], groups)
+    looks = {}
+    for theme in SITE:
+        pg.click("button.tab[data-tab=settings]"); pg.select_option("#setBoardTheme", theme); pg.click("#saveSettings")
+        pg.click("button.tab[data-tab=sparring]"); pg.wait_for_timeout(150)
+        looks[theme] = pg.evaluate("""() => { const s = n => document.querySelector('#sparBoard [data-sq=' + n + ']');
+          return [getComputedStyle(s('h1')).backgroundColor, getComputedStyle(s('a1')).backgroundColor,
+                  s('e1').querySelector('.piece').textContent]; }""")
+    check("themes: each site's board has that site's square colours",
+          all(tuple(looks[k][:2]) == v for k, v in SITE.items()), {k: v[:2] for k, v in looks.items() if tuple(v[:2]) != SITE[k]})
+    check("themes: site boards draw white pieces solid, so they read on light squares",
+          all(v[2] == "\u265a" for v in looks.values()), [v[2] for v in looks.values()])
+    pg.click("button.tab[data-tab=settings]"); pg.select_option("#setBoardTheme", "cyan"); pg.click("#saveSettings")
+    pg.click("button.tab[data-tab=sparring]"); pg.wait_for_timeout(150)
+    check("themes: the app's own theme still draws white as outlines", pg.evaluate(
+          "document.querySelector('#sparBoard [data-sq=e1] .piece').textContent") == "\u2654")
+    pg.click("button.tab[data-tab=settings]"); pg.select_option("#setBoardTheme", "lichess-brown"); pg.click("#saveSettings")
+    reload(); pg.wait_for_timeout(600); pg.click("button.tab[data-tab=sparring]"); pg.wait_for_timeout(150)
+    check("themes: the chosen site theme survives a reload", pg.evaluate(
+          "getComputedStyle(document.querySelector('#sparBoard [data-sq=h1]')).backgroundColor") == SITE["lichess-brown"][0])
+    pg.click("button.tab[data-tab=settings]"); pg.select_option("#setBoardTheme", "cyan"); pg.click("#saveSettings")
+
     # ---- backup: no API key in the file, and a hostile backup cannot run script
     pg.click("button.tab[data-tab=settings]")
     pg.fill("#setKey", "sk-ant-TESTKEY"); pg.click("#saveSettings")
