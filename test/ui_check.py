@@ -320,10 +320,20 @@ with sync_playwright() as p:
                     {"day": "2026-09-02", "measured": 1810, "moe": 50,
                      "n": '<img src=x onerror="window.__x=(window.__x||[]).concat(\'track\')">'}]
     bad["cards"] = {"k": {"history": 5}}
+    # settings reach innerHTML as the window's label and the speed in a sync notice, and a
+    # stored justification's rubric numbers as its feedback
+    hostile = lambda tag: '<img src=x onerror="window.__x=(window.__x||[]).concat(\'%s\')">' % tag
+    bad["settings"]["windowDays"] = hostile("window")
+    bad["settings"]["perf"] = hostile("perf")
+    first_ply = "0" if g0["myColor"] == "w" else "1"   # the first move the review asks about
+    bad["transcripts"] = {g0["id"]: {first_ply: {"text": "x", "san": "e4", "cpLoss": 0,
+                                                 "score": {"concreteness": hostile("transcript")}, "notes": []}}}
     pg.set_input_files("#importFile", write_tmp("hostile-backup.json", json.dumps(bad)))
     pg.wait_for_timeout(1500)
     for tab in ["strength", "review", "drills"]:
         pg.click("button.tab[data-tab=%s]" % tab); pg.wait_for_timeout(200)
+    pg.click("button.tab[data-tab=review]"); pg.select_option("#revGame", "0"); pg.click("#revStart"); pg.wait_for_timeout(300)
+    pg.fill("#handle", "ermactually"); pg.click("#sync"); pg.wait_for_timeout(1500)   # no games come back: the notice names the speed
     fired = pg.evaluate("window.__x || null")
     check("backup: markup in an imported backup never runs", fired is None, fired)
     js_links = pg.evaluate("[...document.querySelectorAll('a[href]')].filter(a => /^javascript:/i.test(a.getAttribute('href'))).length")

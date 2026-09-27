@@ -4,6 +4,7 @@ globalThis.window = globalThis;
 require('../js/core.js'); require('../js/engine.js'); require('../js/data.js');
 require('../js/analysis.js'); require('../js/training.js'); require('../js/coach.js');
 require('../js/sparring.js');
+const Games = require('../tools/games.js');
 const { Chess, Engine, Analysis, Training, Coach, Sparring, Data } = globalThis;
 
 let failed = 0, passed = 0;
@@ -338,6 +339,41 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     check('engine: the last depth reported is the answer rank() returns',
           seen.length && seen[seen.length - 1].san === r[0].san && seen[seen.length - 1].score === r[0].score,
           JSON.stringify(seen[seen.length - 1]) + ' vs ' + r[0].san + ' ' + r[0].score);
+  }
+
+  // ---------------------------------------------------------------- two searches on one engine
+  {
+    // The sparring hint and the live advice share one engine. Each rankAsync installed
+    // the positions of its own game on the engine for repetition, and a search that
+    // started while another was between slices replaced them: the first one lost the
+    // game's history, and a queen down it no longer saw ...Ng8 as the draw.
+    const g = new Chess('rnb1kbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1');
+    ['Nf3', 'Nf6', 'Ng1', 'Ng8', 'Nf3', 'Nf6', 'Ng1'].forEach(s => g.move(s));
+    const e = new Engine();
+    const [r] = await Promise.all([e.rankAsync(g, 3, 8000), e.rankAsync(new Chess(), 3, 8000)]);
+    check('engine: a second search on the same engine leaves the first its repetitions',
+          r[0].san === 'Ng8' && r[0].score === 0, r.slice(0, 2).map(x => x.san + ' ' + x.score).join(' | '));
+  }
+
+  // ---------------------------------------------------------------- tools/match.js and tools/sprt.js
+  {
+    // Both loops stopped at ply 200 before asking the rules, so a mate on the last ply was a draw.
+    const mated = { gameOver: () => 'checkmate', turnColor: () => 'b', history: { length: Games.MAX_PLIES } };
+    const end = Games.gameEnd(mated);
+    check('tools: a mate on the last allowed ply is scored as a mate', end && end.result === '1-0', JSON.stringify(end));
+    const quiet = n => ({ gameOver: () => null, turnColor: () => 'w', history: { length: n } });
+    check('tools: the ply limit is a draw, and not a ply before it',
+          Games.gameEnd(quiet(Games.MAX_PLIES)).result === '1/2-1/2' && Games.gameEnd(quiet(Games.MAX_PLIES - 1)) === null);
+
+    // An opponent that exits at once crashed the match with an unhandled EPIPE on its stdin,
+    // instead of aborting that game and reporting it. A relative script path does it: an
+    // engine given by absolute path runs from its own folder, where tools/uci.js is not.
+    const path = require('path');
+    const run = require('child_process').spawnSync(process.execPath, [path.join(__dirname, '..', 'tools', 'match.js'),
+      '--opponent', 'name=Broken cmd=' + process.execPath + ' arg=tools/uci.js', '--games', '2', '--concurrency', '2'],
+      { encoding: 'utf8', timeout: 60000 });
+    check('tools: an engine that dies at the start aborts its games, not the match',
+          run.status === 0 && /2 aborted/.test(run.stdout), 'exit ' + run.status + ' ' + (run.stderr || '').split('\n')[0]);
   }
 
   console.log('\n' + passed + ' passed, ' + failed + ' failed');

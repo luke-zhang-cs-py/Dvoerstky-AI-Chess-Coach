@@ -17,15 +17,7 @@
 // engines for 6 plies running is a win.
 const { Worker, isMainThread, parentPort, workerData } = require('worker_threads');
 const path = require('path');
-
-const OPENINGS = [
-  'e4 e5 Nf3 Nc6 Bb5 a6', 'e4 e5 Nf3 Nc6 Bc4 Bc5', 'e4 e5 Nf3 Nf6 Nxe5 d6', 'e4 c5 Nf3 d6 d4 cxd4',
-  'e4 c5 Nf3 Nc6 d4 cxd4', 'e4 c5 Nc3 Nc6 g3 g6', 'e4 e6 d4 d5 Nc3 Bb4', 'e4 e6 d4 d5 e5 c5',
-  'e4 c6 d4 d5 e5 Bf5', 'e4 c6 d4 d5 Nc3 dxe4', 'e4 d5 exd5 Qxd5 Nc3 Qa5', 'e4 Nf6 e5 Nd5 d4 d6',
-  'd4 d5 c4 e6 Nc3 Nf6', 'd4 d5 c4 c6 Nf3 Nf6', 'd4 d5 c4 dxc4 Nf3 Nf6', 'd4 Nf6 c4 e6 Nc3 Bb4',
-  'd4 Nf6 c4 g6 Nc3 Bg7', 'd4 Nf6 c4 c5 d5 b5', 'd4 f5 g3 Nf6 Bg2 g6', 'c4 e5 Nc3 Nf6 Nf3 Nc6',
-  'c4 c5 Nf3 Nf6 Nc3 Nc6', 'Nf3 d5 g3 Nf6 Bg2 c6', 'Nf3 Nf6 c4 g6 Nc3 d5', 'e4 g6 d4 Bg7 Nc3 d6',
-];
+const { OPENINGS, gameEnd, winAdjudicator } = require('./games.js');
 
 function arg(name, dflt) {
   const i = process.argv.indexOf('--' + name);
@@ -41,22 +33,18 @@ function playGame({ corePath, whitePath, blackPath, opening, movetime }) {
   const engines = { w: new White(), b: new Black() };
   const g = new Chess();
   opening.split(' ').forEach(s => g.move(s));
-  let bigFor = null, bigRun = 0;
-  for (let ply = 0; ply < 200; ply++) {
-    const over = g.gameOver();
-    if (over === 'checkmate') return g.turnColor() === 'w' ? '0-1' : '1-0';
-    if (over) return '1/2-1/2';
+  const won = winAdjudicator();
+  for (;;) {
+    const end = gameEnd(g);
+    if (end) return end.result;
     const side = g.turnColor();
     const r = engines[side].rank(g, 64, movetime);
     if (!r.length) return '1/2-1/2';
     const whitePov = side === 'w' ? r[0].score : -r[0].score;
-    const leader = whitePov > 1000 ? 'w' : whitePov < -1000 ? 'b' : null;
-    bigRun = leader && leader === bigFor ? bigRun + 1 : (leader ? 1 : 0);
-    bigFor = leader;
-    if (bigRun >= 6) return leader === 'w' ? '1-0' : '0-1';
+    const leader = won(whitePov);
+    if (leader) return leader === 'w' ? '1-0' : '0-1';
     g.makeMove(r[0].move);
   }
-  return '1/2-1/2';
 }
 
 if (!isMainThread) {

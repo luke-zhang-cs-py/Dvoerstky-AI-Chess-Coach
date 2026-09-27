@@ -123,7 +123,7 @@
           // on a blunder turn, deliberately favour the plausible-but-bad band
           w = (loss >= 200 && loss <= 900) ? w * 14 + 0.05 : w * 0.25;
         }
-        if (Math.abs(r.score) > 9000) w = loss === 0 ? w * 4 : w * 0.01; // never miss forced mate for self
+        if (Engine.mateIn(r.score) !== null) w = loss === 0 ? w * 4 : w * 0.01; // never miss forced mate for self
         return { r: r, loss: loss, w: Math.max(w, 1e-6) };
       });
 
@@ -206,10 +206,8 @@
 
   // cp is from whichever side's point of view the caller wants shown.
   function cpDisplay(cp) {
-    if (Math.abs(cp) > 9000) {
-      var mateIn = Math.ceil((30000 - Math.abs(cp)) / 2);
-      return (cp > 0 ? '#' : '-#') + Math.max(1, mateIn);
-    }
+    var mate = Engine.mateIn(cp);
+    if (mate !== null) return (mate > 0 ? '#' : '-#') + Math.abs(mate);
     var v = cp / 100;
     return (v > 0 ? '+' : '') + v.toFixed(2);
   }

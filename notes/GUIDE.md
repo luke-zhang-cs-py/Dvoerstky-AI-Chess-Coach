@@ -204,6 +204,7 @@ test/stockfish_check.py  the app's claims re-checked against a local Stockfish
 tools/uci.js        the house engine as a UCI engine, for any chess GUI
 tools/sprt.js       engine against engine, stopped by a sequential probability ratio test
 tools/match.js      head-to-head matches over UCI against reference engines (Stockfish, Lc0 with Maia)
+tools/games.js      what match.js and sprt.js share: the openings and how a game ends
 ```
 
 Run the tests with `node test/perft.js`, `node test/rules.js`, `node test/integration.js`,

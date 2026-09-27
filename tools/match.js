@@ -22,15 +22,7 @@ const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const Chess = require(path.join(__dirname, '..', 'js', 'core.js'));
-
-const OPENINGS = [
-  'e4 e5 Nf3 Nc6 Bb5 a6', 'e4 e5 Nf3 Nc6 Bc4 Bc5', 'e4 e5 Nf3 Nf6 Nxe5 d6', 'e4 c5 Nf3 d6 d4 cxd4',
-  'e4 c5 Nf3 Nc6 d4 cxd4', 'e4 c5 Nc3 Nc6 g3 g6', 'e4 e6 d4 d5 Nc3 Bb4', 'e4 e6 d4 d5 e5 c5',
-  'e4 c6 d4 d5 e5 Bf5', 'e4 c6 d4 d5 Nc3 dxe4', 'e4 d5 exd5 Qxd5 Nc3 Qa5', 'e4 Nf6 e5 Nd5 d4 d6',
-  'd4 d5 c4 e6 Nc3 Nf6', 'd4 d5 c4 c6 Nf3 Nf6', 'd4 d5 c4 dxc4 Nf3 Nf6', 'd4 Nf6 c4 e6 Nc3 Bb4',
-  'd4 Nf6 c4 g6 Nc3 Bg7', 'd4 Nf6 c4 c5 d5 b5', 'd4 f5 g3 Nf6 Bg2 g6', 'c4 e5 Nc3 Nf6 Nf3 Nc6',
-  'c4 c5 Nf3 Nf6 Nc3 Nc6', 'Nf3 d5 g3 Nf6 Bg2 c6', 'Nf3 Nf6 c4 g6 Nc3 d5', 'e4 g6 d4 Bg7 Nc3 d6',
-];
+const { OPENINGS, gameEnd, winAdjudicator } = require('./games.js');
 
 // ---------------------------------------------------------------- arguments
 const argv = process.argv.slice(2);
@@ -76,6 +68,9 @@ class UciEngine {
     this.buf = ''; this.waiters = []; this.lastScore = null; this.dead = false;
     this.proc.on('exit', () => { this.dead = true; this.waiters.forEach(w => w.reject(new Error(spec.name + ' exited'))); this.waiters = []; });
     this.proc.on('error', err => { this.dead = true; this.waiters.forEach(w => w.reject(err)); this.waiters = []; });
+    // An engine that dies before reading its input: writing to it is EPIPE, which unhandled
+    // ended the whole match. The exit handler already aborts this game.
+    this.proc.stdin.on('error', () => { this.dead = true; });
     this.proc.stdout.setEncoding('utf8');
     this.proc.stdout.on('data', d => {
       this.buf += d;
@@ -95,7 +90,9 @@ class UciEngine {
     return new Promise((resolve, reject) => {
       const w = { test: l => re.test(l), resolve, reject };
       this.waiters.push(w);
-      if (ms) setTimeout(() => { if (this.waiters.includes(w)) { this.waiters = this.waiters.filter(x => x !== w); reject(new Error('timeout')); } }, ms);
+      const timer = ms && setTimeout(() => { if (this.waiters.includes(w)) { this.waiters = this.waiters.filter(x => x !== w); reject(new Error('timeout')); } }, ms);
+      const done = f => v => { clearTimeout(timer); f(v); };
+      w.resolve = done(resolve); w.reject = done(reject);
     });
   }
   async start() {
@@ -113,14 +110,13 @@ async function playGame(white, black, opening) {
   for (const s of opening.split(' ')) { const m = g.move(s); uci.push(m.fromSq + m.toSq + (m.promo ? Chess.SYM[m.promo] : '')); san.push(m.san); }
   const engines = { w: new UciEngine(white), b: new UciEngine(black) };
   const clock = { w: BASE, b: BASE };
-  let result = '1/2-1/2', reason = 'adjudicated: 200 plies';
-  let bigFor = null, bigRun = 0;
+  let result = '*', reason = '';
+  const won = winAdjudicator();
   try {
     await Promise.all([engines.w.start(), engines.b.start()]);
-    for (let ply = uci.length; ply < 200; ply++) {
-      const over = g.gameOver();
-      if (over === 'checkmate') { result = g.turnColor() === 'w' ? '0-1' : '1-0'; reason = 'checkmate'; break; }
-      if (over) { reason = over === 'material' ? 'insufficient material' : over === 'fifty' ? 'fifty moves' : over; break; }
+    for (;;) {
+      const end = gameEnd(g);
+      if (end) { ({ result, reason } = end); break; }
       const side = g.turnColor(), e = engines[side];
       e.send('position startpos' + (uci.length ? ' moves ' + uci.join(' ') : ''));
       const limit = e.spec.nodes ? `nodes ${e.spec.nodes}` : e.spec.depth ? `depth ${e.spec.depth}`
@@ -141,10 +137,8 @@ async function playGame(white, black, opening) {
       if (!m) { result = side === 'w' ? '0-1' : '1-0'; reason = `${e.spec.name} played an illegal move (${mv})`; break; }
       uci.push(mv); san.push(m.san);
       const sc = e.lastScore == null ? 0 : (side === 'w' ? e.lastScore : -e.lastScore);   // White's view
-      const leader = sc > 1000 ? 'w' : sc < -1000 ? 'b' : null;
-      bigRun = leader && leader === bigFor ? bigRun + 1 : (leader ? 1 : 0);
-      bigFor = leader;
-      if (bigRun >= 6) { result = leader === 'w' ? '1-0' : '0-1'; reason = 'adjudicated: both engines agree it is won'; break; }
+      const leader = won(sc);
+      if (leader) { result = leader === 'w' ? '1-0' : '0-1'; reason = 'adjudicated: both engines agree it is won'; break; }
     }
   } catch (err) {
     reason = 'aborted: ' + err.message;

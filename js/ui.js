@@ -53,6 +53,46 @@
     });
     return out;
   }
+  // What a justification the Review tab wrote looks like; the rubric numbers and
+  // the notes reach innerHTML, and a missing notes list would throw on render.
+  var RUBRIC_NUMBERS = ['words', 'lines', 'concreteness', 'candidates', 'opponentAwareness', 'evaluation', 'quality'];
+  var RUBRIC_FLAGS = ['hedging', 'sawBest', 'sawRefutation'];
+  function cleanTranscripts(all) {
+    var out = {};
+    if (!isObj(all)) return out;
+    Object.keys(all).forEach(function (id) {
+      if (!isObj(all[id])) return;
+      var game = out[id] = {};
+      Object.keys(all[id]).forEach(function (ply) {
+        var e = all[id][ply];
+        if (!/^\d+$/.test(ply) || !isObj(e)) return;
+        var raw = isObj(e.score) ? e.score : {}, score = {};
+        RUBRIC_NUMBERS.forEach(function (k) { score[k] = numOrNull(raw[k]) || 0; });
+        RUBRIC_FLAGS.forEach(function (k) { score[k] = !!raw[k]; });
+        game[ply] = { text: String(e.text == null ? '' : e.text), san: String(e.san == null ? '' : e.san),
+          score: score, cpLoss: numOrNull(e.cpLoss) || 0, best: strOrNull(e.best),
+          notes: Array.isArray(e.notes) ? e.notes.map(String) : [], at: numOrNull(e.at) };
+      });
+    });
+    return out;
+  }
+  // Settings reach innerHTML too (the window's label, the speed in a sync notice):
+  // keep each key the app knows, as the value the app itself would have stored.
+  var PERFS = ['all', 'ultraBullet', 'bullet', 'blitz', 'rapid', 'classical', 'correspondence'];
+  var WINDOW_STEPS = [7, 14, 30, 60, 90, 180, 365, 730, 1095, 0];   // days, for sync, strength and scout; 0 = all time
+  function cleanSettings(v) {
+    var out = {};
+    if (!isObj(v)) return out;
+    ['minutes', 'endgameTier', 'hour'].forEach(function (k) { if (numOrNull(v[k]) != null) out[k] = +v[k]; });
+    ['apiKey', 'model'].forEach(function (k) { if (typeof v[k] === 'string') out[k] = v[k]; });
+    if ('perf' in v) out.perf = PERFS.indexOf(v.perf) > -1 ? v.perf : 'all';
+    if ('boardTheme' in v) out.boardTheme = /^[a-z]+(-[a-z]+)?$/.test(v.boardTheme) ? v.boardTheme : 'cyan';
+    if ('pieceSet' in v) out.pieceSet = v.pieceSet === 'letters' ? 'letters' : 'glyph';
+    if ('showCoords' in v) out.showCoords = v.showCoords !== false;
+    if ('uiScale' in v) out.uiScale = numOrNull(v.uiScale) ? String(+v.uiScale) : '1';
+    if ('windowDays' in v) out.windowDays = WINDOW_STEPS.indexOf(+v.windowDays) > -1 ? +v.windowDays : 0;
+    return out;
+  }
 
   var S = {
     handle: Store.get('handle', ''),
@@ -61,10 +101,10 @@
     deck: {},
     cardState: cleanCards(Store.get('cards', {})),
     track: cleanTrack(Store.get('track', [])),
-    transcripts: Store.get('transcripts', {}),
+    transcripts: cleanTranscripts(Store.get('transcripts', {})),
     completed: Store.get('completed', {}),
-    settings: Store.get('settings', { minutes: 60, endgameTier: 2, hour: 19, apiKey: '', perf: 'all',
-      boardTheme: 'cyan', pieceSet: 'glyph', showCoords: true, windowDays: 0 }),
+    settings: cleanSettings(Store.get('settings', { minutes: 60, endgameTier: 2, hour: 19, apiKey: '', perf: 'all',
+      boardTheme: 'cyan', pieceSet: 'glyph', showCoords: true, windowDays: 0 })),
     engine: new Engine(),
     spar: null,
     review: null,
@@ -82,7 +122,6 @@
   }
 
   /* ---------- how far back: one window for sync, strength and scout ---------- */
-  var WINDOW_STEPS = [7, 14, 30, 60, 90, 180, 365, 730, 1095, 0];   // 0 = all time
   function windowLabel(days) {
     if (!days) return 'All time';
     if (days % 365 === 0) return 'Last ' + (days === 365 ? 'year' : days / 365 + ' years');
@@ -1416,12 +1455,12 @@
             if (Array.isArray(d.games)) { S.games = hydrate(d.games.filter(isObj)); saveGames(); }
             if (isObj(d.cards)) { S.cardState = cleanCards(d.cards); Store.set('cards', S.cardState); }
             if (d.track) { S.track = cleanTrack(d.track); Store.set('track', S.track); }
-            if (isObj(d.transcripts)) { S.transcripts = d.transcripts; Store.set('transcripts', d.transcripts); }
+            if (isObj(d.transcripts)) { S.transcripts = cleanTranscripts(d.transcripts); Store.set('transcripts', S.transcripts); }
             if (isObj(d.completed)) { S.completed = d.completed; Store.set('completed', d.completed); }
             if (typeof d.handle === 'string') { S.handle = d.handle; Store.set('handle', d.handle); $('#handle').value = d.handle; }
             if (isObj(d.settings)) {
               var keep = S.settings.apiKey;   // never in a backup; keep the one already here
-              S.settings = Object.assign({}, S.settings, d.settings, { apiKey: keep });
+              S.settings = Object.assign({}, S.settings, cleanSettings(d.settings), { apiKey: keep });
               Store.set('settings', S.settings); applyBoardSettings();
             }
             if (d.lichessRating != null) Store.set('lichessRating', numOrNull(d.lichessRating));

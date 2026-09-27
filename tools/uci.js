@@ -8,7 +8,6 @@ const path = require('path');
 const Chess = require(path.join(__dirname, '..', 'js', 'core.js'));
 const Engine = require(path.join(__dirname, '..', 'js', 'engine.js'));
 
-const MATE_SHOWN = 9000;          // the engine's mate scores sit above this (engine.js MATE_SCORE 30000)
 let engine = new Engine();
 let moveOverhead = 50;            // ms kept back for the GUI and the pipes (UCI "Move Overhead")
 let game = new Chess();
@@ -46,9 +45,8 @@ function go(tokens) {
   const r = engine.rank(game, opts.depth || 64, ms);
   if (!r.length) { say('bestmove 0000'); return; }
   const best = r[0], took = Math.max(1, Date.now() - t0);
-  const score = Math.abs(best.score) > MATE_SHOWN
-    ? 'mate ' + (best.score > 0 ? 1 : -1) * Math.max(1, Math.ceil((30000 - Math.abs(best.score)) / 2))
-    : 'cp ' + Math.round(best.score);
+  const mate = Engine.mateIn(best.score);
+  const score = mate !== null ? 'mate ' + mate : 'cp ' + Math.round(best.score);
   say(`info score ${score} nodes ${engine.nodes} nps ${Math.round(engine.nodes / took * 1000)} time ${took} pv ${best.uci}`);
   say('bestmove ' + best.uci);
 }

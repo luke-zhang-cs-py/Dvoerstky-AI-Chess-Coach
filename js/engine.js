@@ -145,8 +145,8 @@
   // between two winning lines toward whichever was cached rather than
   // whichever is actually shorter. Simplest correct fix: never cache
   // a mate-range score in the first place, so there is nothing stale to
-  // retrieve. (9000 matches the "is this a mate score" threshold used
-  // where scores are displayed, e.g. sparring.js's cpDisplay.)
+  // retrieve. (9000 is also where Engine.mateIn starts reading a score
+  // as a mate, for every display.)
   var TT_MATE_RANGE = 9000;
 
   // complexity() tuning weights
@@ -178,16 +178,21 @@
      position at that distance on the line being searched, and the positions
      of the real game before the root sit at negative n -- back to the last
      capture or pawn move, since nothing older can repeat. Read on the real
-     game before copying it; the walk back is undone at once. */
-  function recordRootKeys(engine, g) {
-    engine.keyAt = { 0: zobristKey(g) };
+     game before copying it; the walk back is undone at once.
+     The table belongs to one search, not to the engine: rankAsync hands it
+     back to the engine at the start of every slice, because another search on
+     the same engine (the sparring hint beside the live advice) may have
+     installed its own between two slices. */
+  function rootKeys(g) {
+    var keyAt = { 0: zobristKey(g) };
     var steps = Math.min(g.halfmoves, g.history.length), moves = [];
     for (var i = 1; i <= steps; i++) {
       moves.push(g.history[g.history.length - 1].move);
       g.undoMove();
-      engine.keyAt[-i] = zobristKey(g);
+      keyAt[-i] = zobristKey(g);
     }
     while (moves.length) g.makeMove(moves.pop());
+    return keyAt;
   }
 
   // A root move the deadline cut off before its first full depth has no score.
@@ -227,10 +232,9 @@
   // astronomically unlikely for a normal browser session.
   //
   // Covers piece placement, side to move, castling rights, and the en
-  // passant file -- NOT the halfmove clock, so (like most simple engines)
-  // this ignores fifty-move-rule proximity when reusing a cached score.
-  // core.js has no threefold-repetition detection either, so that's not a
-  // new limitation this introduces.
+  // passant file -- NOT the halfmove clock or the moves that led here, so
+  // (like most simple engines) a cached score knows nothing of fifty-move
+  // proximity or of a repetition draw found on another path.
   var ZOBRIST_SQ = {};
   [W, B].forEach(function (color) {
     ZOBRIST_SQ[color] = {};
@@ -381,7 +385,7 @@
   // onDepth(d, ranked), optional: called after each completed depth, as rankAsync does
   // (the EPD suites use it to time when the right move was found).
   Engine.prototype.rank = function (g, depth, msBudget, onDepth) {
-    recordRootKeys(this, g);
+    this.keyAt = rootKeys(g);
     g = privateCopy(g);
     var ms = g.generate();
     if (!ms.length) return [];
@@ -425,7 +429,7 @@
      deadline or requested depth is reached. */
   Engine.prototype.rankAsync = async function (g, depth, msBudget, onDepth) {
     var self = this;
-    recordRootKeys(this, g);
+    var keyAt = rootKeys(g);
     g = privateCopy(g);
     var ms = g.generate();
     if (!ms.length) return [];
@@ -448,6 +452,7 @@
       var partial = [], i = 0;
       while (i < results.length) {
         var sliceEnd = Math.min(results.length, i + ROOT_SLICE);
+        self.keyAt = keyAt;   // this search's positions, whatever ran in the last yield
         for (; i < sliceEnd; i++) {
           var m = results[i].move;
           var base = g.history.length;
@@ -497,6 +502,13 @@
     var spread = 0;
     if (ms && ms.length > 2) spread = Math.min(COMPLEXITY_SPREAD_CAP, Math.abs(ms[0].score - ms[Math.min(3, ms.length - 1)].score));
     return Math.min(COMPLEXITY_MAX, Math.round(legal.length * COMPLEXITY_LEGAL_WEIGHT + captures * COMPLEXITY_CAPTURE_WEIGHT + checks * COMPLEXITY_CHECK_WEIGHT + spread / COMPLEXITY_SPREAD_DIVISOR));
+  };
+
+  // Moves to mate in a search score (negative: being mated), or null for an
+  // ordinary score. The one reading of the mate scale, for every display.
+  Engine.mateIn = function (score) {
+    if (!(Math.abs(score) > TT_MATE_RANGE)) return null;
+    return (score > 0 ? 1 : -1) * Math.max(1, Math.ceil((MATE_SCORE - Math.abs(score)) / 2));
   };
 
   Engine.MG_VAL = MG_VAL;
