@@ -10,6 +10,7 @@ const Engine = require(path.join(__dirname, '..', 'js', 'engine.js'));
 
 const MATE_SHOWN = 9000;          // the engine's mate scores sit above this (engine.js MATE_SCORE 30000)
 let engine = new Engine();
+let moveOverhead = 50;            // ms kept back for the GUI and the pipes (UCI "Move Overhead")
 let game = new Chess();
 const say = line => process.stdout.write(line + '\n');
 
@@ -24,13 +25,14 @@ function setPosition(tokens) {
   }
 }
 
-// Time for this move: a fixed movetime, or a slice of the clock.
+// Time for this move: a fixed movetime, or a slice of the clock, less the overhead,
+// and never more than the clock can pay for.
 function budget(opts, white) {
-  if (opts.movetime) return Math.max(10, opts.movetime - 20);
+  if (opts.movetime) return Math.max(10, opts.movetime - moveOverhead);
   const left = white ? opts.wtime : opts.btime, inc = (white ? opts.winc : opts.binc) || 0;
   if (left == null) return opts.depth ? 0 : 1000;
   const moves = opts.movestogo || 30;
-  return Math.max(10, Math.min(left / 2, left / moves + inc * 0.8) - 20);
+  return Math.max(10, Math.min(left / 2, left / moves + inc * 0.8, left - 2 * moveOverhead) - moveOverhead);
 }
 
 function go(tokens) {
@@ -60,13 +62,20 @@ process.stdin.on('data', chunk => {
     const line = buffer.slice(0, nl).trim(); buffer = buffer.slice(nl + 1);
     const t = line.split(/\s+/);
     switch (t[0]) {
-      case 'uci': say('id name Dvoretsky Lab'); say('id author Luke Zhang'); say('uciok'); break;
+      case 'uci':
+        say('id name Dvoretsky Lab'); say('id author Luke Zhang');
+        say('option name Move Overhead type spin default 50 min 0 max 5000'); say('uciok'); break;
+      case 'setoption': {
+        const m = line.match(/^setoption name (.+?) value (.+)$/i);
+        if (m && /^move overhead$/i.test(m[1])) moveOverhead = Math.max(0, Math.min(5000, +m[2] || 0));
+        break;
+      }
       case 'isready': say('readyok'); break;
       case 'ucinewgame': engine = new Engine(); game = new Chess(); break;
       case 'position': setPosition(t); break;
       case 'go': go(t); break;
       case 'quit': process.exit(0);
-      default: break;          // stop, setoption, ponderhit: the search is synchronous and has no options
+      default: break;          // stop, ponderhit: the search is synchronous
     }
   }
 });

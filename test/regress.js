@@ -314,6 +314,32 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
           m.filter(x => !Number.isFinite(x.score)).length + ' infinite');
   }
 
+  // ---------------------------------------------------------------- timing a solution (test/tactics.js)
+  {
+    // The EPD suites time when the engine found its move from rank()'s onDepth. rankAsync
+    // yields with setTimeout, which Windows rounds up to ~15 ms: nine times slower at depth 1.
+    const seen = [];
+    const fen = 'r1bqk2r/pppp1ppp/2n2n2/2b1p3/2B1P3/2N2N2/PPPP1PPP/R1BQK2R w KQkq - 6 5';
+    const r = new Engine().rank(new Chess(fen), 3, 0, (d, rs) => seen.push({ d, san: rs[0].san, score: rs[0].score }));
+    check('engine: rank() reports each completed depth, in order', seen.map(s => s.d).join() === '1,2,3', seen.map(s => s.d).join());
+    // The deadline was checked only when the shared node count hit a multiple of 512 on
+    // entering search(); quiescence counts nodes without checking, so searches ran up to
+    // 400 ms late and the engine lost fast games on time. Counted in nodes, not ms, so the
+    // check doesn't depend on the machine: with the deadline already past, how far does it go?
+    const epd = require('fs').readFileSync(require('path').join(__dirname, 'epd', 'wac.epd'), 'utf8').split('\n').filter(Boolean);
+    let past = 0;
+    epd.slice(0, 60).forEach(line => {
+      const e = new Engine();
+      e.keyAt = {};
+      try { e.search(new Chess(line.split(' ').slice(0, 4).join(' ') + ' 0 1'), 6, -32000, 32000, 1); } catch (x) { if (!x.timeout) throw x; }
+      past = Math.max(past, e.nodes);
+    });
+    check('engine: a search past its deadline stops within 1,000 nodes', past < 1000, past + ' nodes');
+    check('engine: the last depth reported is the answer rank() returns',
+          seen.length && seen[seen.length - 1].san === r[0].san && seen[seen.length - 1].score === r[0].score,
+          JSON.stringify(seen[seen.length - 1]) + ' vs ' + r[0].san + ' ' + r[0].score);
+  }
+
   console.log('\n' + passed + ' passed, ' + failed + ' failed');
   process.exitCode = failed ? 1 : 0;
 })();

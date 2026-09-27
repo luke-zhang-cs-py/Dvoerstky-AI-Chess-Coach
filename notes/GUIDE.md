@@ -199,10 +199,11 @@ js/ui.js            all seven workspaces
 test/               perft, rules, engine, analysis, integration, sparring and regression tests (node),
                     a browser check of the UI (ui_check.py) and a coverage report
 test/bench.js       fixed-depth benchmark: nodes/s and a signature that changes when the search does
-test/tactics.js     an EPD suite (Win at Chess in test/epd/) at a set time per position
+test/tactics.js     EPD suites in test/epd/ (Win at Chess, Bratko-Kopec, BT2630, STS), timed to the move found
 test/stockfish_check.py  the app's claims re-checked against a local Stockfish
 tools/uci.js        the house engine as a UCI engine, for any chess GUI
 tools/sprt.js       engine against engine, stopped by a sequential probability ratio test
+tools/match.js      head-to-head matches over UCI against reference engines (Stockfish, Lc0 with Maia)
 ```
 
 Run the tests with `node test/perft.js`, `node test/rules.js`, `node test/integration.js`,
@@ -214,10 +215,32 @@ the machine:
 
 ```bash
 node test/bench.js [depth]                   # nodes/s; the signature must not change for a speed-only edit
-node test/tactics.js [ms]                    # Win at Chess: 104/300 at 500 ms, 127/300 at 2000 ms
+node test/tactics.js 500 wac sts             # Win at Chess and STS at 500 ms a position
+node test/tactics.js 10000 bk bt2630         # Bratko-Kopec and BT2630 at 10 s
 node tools/sprt.js --base <old engine.js> --movetime 60   # until H0 or H1 is accepted
+node tools/match.js --tc 30+0.3 --opponent "name=SF-1800 elo=1800 cmd=stockfish.exe \
+    opt.Threads=1 \"opt.Move Overhead=100\" opt.UCI_LimitStrength=true opt.UCI_Elo=1800" \
+    --opponent "name=Maia-1500 elo=1500 cmd=lc0.exe arg=--weights=maia-1500.pb.gz nodes=1"
 python test/stockfish_check.py <path to stockfish>
 ```
+
+The suites score different things. Win at Chess is 300 tactics. Bratko-Kopec is 24
+positions, half of them positional. BT2630 is 30 hard positions and gives a rating,
+2630 minus the total seconds taken over 30, an unsolved one counting its full 15 minutes:
+run at 10 s a position the number is a floor, not a rating. STS is 1,500 quiet positions
+in 15 themes, and every reasonable move is worth points (the best 10), so it measures
+judgement rather than tactics. Each suite prints a solve time for every position (when
+the engine found the move and kept it) and a signature of which positions it solved.
+
+`match.js` plays reference engines over UCI, each opening twice with colours swapped, with
+the rules checked by `js/core.js` rather than trusted to the engines. Stockfish plays at
+a set rating (`UCI_LimitStrength`, `UCI_Elo`); Maia is Lc0 with networks trained on Lichess
+games at a given rating, played at one node as its authors intend, so it plays like a
+human of that rating. It prints the Elo difference against each with a 95% margin and a
+performance rating fitted across them. Two things to know: keep games at once no more than
+half the physical cores (each game runs two engines, and a descheduled engine runs past its
+own clock), and give Stockfish a Move Overhead of 100 ms, since a limited Stockfish at fast
+time controls spends its clock to the last few milliseconds and pipe latency then flags it.
 
 `sprt.js` plays each opening twice with colours swapped and stops on the trinomial
 log-likelihood ratio, as cutechess does (alpha = beta = 0.05). The last run, the

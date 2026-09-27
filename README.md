@@ -57,16 +57,23 @@ notes/       the full guide
 
 ## Tests
 
-**60 regression checks, 39 rules checks, 38 browser checks, and perft on 21
+**63 regression checks, 39 rules checks, 38 browser checks, and perft on 21
 positions**, 15 of them edge cases (en passant out of a pin, castling into check,
 underpromotion) with counts taken from Stockfish 19. Every bug fixed has a check that
 failed on the code before its fix. The browser checks run the real Stockfish.
 
 | strength | |
 |---|---|
+| matches against Stockfish 19 (set to 1500, 1800, 2100) and Maia 1500, 1900 (`tools/match.js`, 30+0.3) | performance about 1730 over 66 games |
 | SPRT against the previous engine (`tools/sprt.js`) | +41 ± 28 Elo, H1 accepted |
-| Win at Chess, 300 tactics (`test/tactics.js`) | 104 at 0.5 s, 127 at 2 s |
+| Win at Chess, 300 tactics (`test/tactics.js`) | 87 at 0.5 s |
+| Bratko-Kopec, 24 positions | 6 at 10 s |
+| BT2630, 30 hard positions | 3 at 10 s: a rating floor of 1820 |
+| STS, 1,500 strategic positions | 41.9% of the points at 0.5 s |
 | speed (`test/bench.js`) | 60–110k nodes/s, by machine load; perft 3.4M leaves/s |
+
+Stockfish 19 through the same suites and scorer: WAC 276 at 1 s, Bratko-Kopec 20, BT2630
+24, STS 86.2%, so the answer keys and the scoring hold up.
 
 `test/stockfish_check.py` re-checks the app's claims against Stockfish 19: every
 endgame study's verdict, the imported evaluations, the mined mistakes and the house

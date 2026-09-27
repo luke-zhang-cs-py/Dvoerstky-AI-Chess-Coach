@@ -41,6 +41,7 @@
 
   function Engine() {
     this.nodes = 0;   // public: node count from the most recent rank()/rankAsync() call
+    this.clockTicks = 0;   // search() calls, for the deadline check
     this.tt = new Map();   // Zobrist key -> {depth, score, flag}, persists across calls
   }
 
@@ -128,7 +129,11 @@
   // "fail high" there returned Infinity up the tree -- from depth 5 on, every
   // root move scored +Infinity and a mate in one was lost among them.
   var SCORE_BOUND = MATE_SCORE + 1000;
-  var NODE_TIMEOUT_CHECK_MASK = 511;   // check the clock every 512 nodes
+  // Check the clock every 128 calls to search(). It used to test the shared node count
+  // (every 512 nodes), but quiescence moves that count too without checking, so search()
+  // landed on a multiple of 512 only about once in 2,500 nodes: 40 ms and more past a
+  // deadline, enough to lose on time in fast games.
+  var TIMEOUT_CHECK_MASK = 127;
   var QUIESCE_MAX_DEPTH = 4;
   var FIFTY_MOVE_RULE_HALFMOVES = 100;
   // A mate score's "distance to mate" is counted in plies from the root of
@@ -306,7 +311,7 @@
   // synchronous fixed-budget search and rankAsync()'s per-slice deadline alike).
   Engine.prototype.search = function (g, depth, alpha, beta, stopAt) {
     this.nodes++;
-    if (stopAt && (this.nodes & NODE_TIMEOUT_CHECK_MASK) === 0 && Date.now() > stopAt) throw { timeout: true };
+    if (stopAt && (++this.clockTicks & TIMEOUT_CHECK_MASK) === 0 && Date.now() > stopAt) throw { timeout: true };
     var ms = g.generate();
     // Mated here: counted from the root, so mate in n scores MATE_SCORE - (2n - 1),
     // the scale cpDisplay and the Stockfish reader both read as "#n". It used to
@@ -373,7 +378,9 @@
   };
 
   /* Returns ranked candidate list [{move, san, score, uci}] from side-to-move POV (cp) */
-  Engine.prototype.rank = function (g, depth, msBudget) {
+  // onDepth(d, ranked), optional: called after each completed depth, as rankAsync does
+  // (the EPD suites use it to time when the right move was found).
+  Engine.prototype.rank = function (g, depth, msBudget, onDepth) {
     recordRootKeys(this, g);
     g = privateCopy(g);
     var ms = g.generate();
@@ -396,6 +403,7 @@
         }
         partial.sort(function (a, b) { return b.score - a.score; });
         results = partial;
+        if (onDepth) onDepth(d, results.map(function (r) { return formatResult(g, ms, r); }));
       }
     } catch (e) {
       while (g.history.length > base) g.undoMove();   // the throw skipped the undos
