@@ -30,6 +30,13 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Engine over UCI (1,000-position legality, mates, games against baselines)
+        run: |
+          pip install chess
+          python test/engine_gauntlet.py legality
+          python test/engine_gauntlet.py mates --movetime 300
+          python test/engine_gauntlet.py random --games 20
+
       - name: Browser checks (index.html in Chromium, Stockfish included)
         run: |
           pip install playwright

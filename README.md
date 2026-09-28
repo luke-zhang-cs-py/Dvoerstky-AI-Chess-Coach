@@ -62,6 +62,21 @@ positions**, 15 of them edge cases (en passant out of a pin, castling into check
 underpromotion) with counts taken from Stockfish 19. Every bug fixed has a check that
 failed on the code before its fix. The browser checks run the real Stockfish.
 
+**From the outside** (`test/engine_gauntlet.py`): the engine driven over UCI the way a
+GUI drives it, with python-chess as a referee that shares no code with `js/core.js`.
+
+| check | result |
+|---|---|
+| legality: 1,000 positions (random games, EPD suites, random valid placements, 18 edge cases) plus 2 game-over positions | 1,002 of 1,002 legal, well-formed and on time; median 83 ms, slowest 99 ms at 100 ms a move |
+| mate in 1: 100 positions, screened by Stockfish and proved by brute force | 100 of 100 at 1 s |
+| mate in 2: 100 positions, any forced line accepted | 100 of 100 at 1 s |
+| 100 games against a random mover, 50 against a greedy capturer | 150 wins, no draws, no freezes, no games run to the ply cap; median win in 31 plies |
+| 20 games against Stockfish 19 at 0.1 s a move (house engine also 0.1 s) | 0.5 of 20 (one perpetual), as expected. Median first blunder (200+ cp by a depth-12 referee) at move 8 after the opening; really down material from move 14 |
+
+On Windows the harness switches off power throttling for the engines it starts: a
+windowless child otherwise runs at about half speed (66k against 127k nodes/s here),
+and mate in 2 fell to 95–97 of 100 because depth 3 no longer fit in the second.
+
 | strength | |
 |---|---|
 | matches against Stockfish 19 (set to 1500, 1800, 2100) and Maia 1500, 1900 (`tools/match.js`, 30+0.3) | performance about 1730 over 66 games |

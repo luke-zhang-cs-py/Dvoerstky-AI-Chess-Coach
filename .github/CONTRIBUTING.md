@@ -9,6 +9,12 @@ node test/perft.js && node test/regress.js     # plus the other test/*.js suites
 pip install playwright && playwright install chromium
 python test/ui_check.py                         # drives index.html in Chromium
 python test/coverage_report.py --out coverage.html
+
+pip install chess                                   # the engine from the outside, over UCI
+python test/engine_gauntlet.py legality             # 1,000 positions, every answer legal
+python test/engine_gauntlet.py mates                # test/epd/mate1.epd and mate2.epd
+python test/engine_gauntlet.py random               # 100 games vs random, 50 vs greedy
+python test/engine_gauntlet.py stockfish --stockfish path/to/stockfish   # 20 games at 0.1 s
 ```
 
 ## Three things that will catch you out
