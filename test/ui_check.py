@@ -29,7 +29,7 @@ def movable(pg, board):
     return pg.evaluate("document.querySelectorAll('#%s .sq.movable').length" % board)
 
 with sync_playwright() as p:
-    b = p.chromium.launch()
+    b = p.chromium.launch(channel=os.environ.get("PW_CHANNEL") or None)   # PW_CHANNEL=msedge uses an installed Edge
     ctx = b.new_context(viewport={"width": 1280, "height": 900}, accept_downloads=True)
     pg = ctx.new_page()
     errors = []
@@ -245,6 +245,38 @@ with sync_playwright() as p:
     check("window: sync on all time asks for the whole history, every standard speed, up to 1000 games",
           "since" not in q and q.get("perfType") == ["ultraBullet,bullet,blitz,rapid,classical,correspondence"]
           and q.get("max") == ["1000"], {k: v[0][:40] for k, v in q.items() if k in ("since", "perfType", "max")})
+
+    # ---- strength: compared with titled players (CM to GM), on the same Lichess scale
+    pg.click("button.tab[data-tab=strength]"); pg.wait_for_timeout(300)
+    rows = lambda: pg.evaluate(r"[...document.querySelectorAll('#titledBody .cmp-row')].map(r => r.innerText.replace(/\s+/g, ' ').trim())")
+    shown = rows()
+    check("titled: one CM, FM, IM and GM are shown by default, beside you and your measured strength",
+          all(any(n in r for r in shown) for n in ["Tryfon Gavriel", "Nate Solon", "Eric Rosen", "Magnus Carlsen"])
+          and shown[0].startswith("You") and any(r.startswith("Measured strength") for r in shown), shown)
+    check("titled: Magnus is shown at his bullet rating, never at a placeholder 1500",
+          any("Magnus Carlsen" in r and r.endswith("3243") for r in shown) and not any("1500" in r for r in shown), [r for r in shown if "Magnus" in r])
+    check("titled: the FIDE title floors are drawn", pg.evaluate("[...document.querySelectorAll('.cmp-floor b')].map(b => b.textContent).join()") == "CM,FM,IM,GM")
+    pg.select_option("#cmpSpeed", "rapid"); pg.wait_for_timeout(200)
+    rapid = pg.inner_text("#titledSheet")
+    check("titled: one speed shows that speed, and names who has no established rating there",
+          "No established rapid rating on Lichess:" in rapid and "Magnus Carlsen" in rapid.split("No established rapid rating on Lichess:")[1]
+          and any("Eric Rosen" in r and r.endswith("2574") for r in rows()), rows())
+    pg.check('[data-pick="AnishGiri"]'); pg.uncheck('[data-pick="Kingscrusher-YouTube"]'); pg.wait_for_timeout(200)
+    focused = pg.evaluate("document.activeElement && document.activeElement.dataset && document.activeElement.dataset.pick")
+    check("titled: choosing players changes the chart, and focus stays on the checkbox",
+          "Anish Giri" in pg.inner_text("#titledSheet") and not any("Tryfon Gavriel" in r for r in rows()) and focused == "Kingscrusher-YouTube", focused)
+    reload(); pg.wait_for_timeout(700); pg.click("button.tab[data-tab=strength]"); pg.wait_for_timeout(300)
+    check("titled: the chosen players and speed survive a reload", pg.input_value("#cmpSpeed") == "rapid"
+          and pg.is_checked('[data-pick="AnishGiri"]') and not pg.is_checked('[data-pick="Kingscrusher-YouTube"]'))
+    asked_users = []
+    pg.route("**/lichess.org/api/users", lambda r: (asked_users.append(r.request.post_data), r.fulfill(status=200, content_type="application/json",
+             body=json.dumps([{"username": "EricRosen", "title": "IM", "perfs": {"rapid": {"rating": 2611, "games": 2000}}}]))))
+    pg.click("#cmpRefresh")
+    pg.wait_for_function("document.querySelector('#cmpStatus') && /Live ratings/.test(document.querySelector('#cmpStatus').textContent)", timeout=20000)
+    check("titled: refresh reads the chosen players from Lichess and shows the live numbers",
+          asked_users and "EricRosen" in asked_users[0] and "AnishGiri" in asked_users[0]
+          and any("Eric Rosen" in r and r.endswith("2611") for r in rows()), [asked_users[:1], [r for r in rows() if "Rosen" in r]])
+    pg.select_option("#cmpSpeed", "all"); pg.check('[data-pick="Kingscrusher-YouTube"]'); pg.uncheck('[data-pick="AnishGiri"]')
 
     # ---- the Stockfish reader: a real engine, in a worker, from file://
     pg.click("button.tab[data-tab=sparring]")

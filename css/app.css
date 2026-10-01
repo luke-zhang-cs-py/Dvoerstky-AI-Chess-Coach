@@ -446,3 +446,38 @@ td.num, th.num { text-align: right; font-family: var(--mono); }
 .sf-log tr.sf-inaccuracy td:nth-child(n+4) { color: var(--amber); }
 .sf-log tr.sf-mistake td:nth-child(n+4) { color: var(--red); }
 .sf-log tr.sf-blunder td { color: var(--red); font-weight: 600; }
+
+/* ---------- compared with titled players (Strength tab) ---------- */
+.cmp-controls { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1rem; margin: .6rem 0 .8rem; }
+.cmp-picks { border: 1px solid var(--rule); padding: .5rem .8rem .7rem; margin: 0 0 1rem; }
+.cmp-picks legend { padding: 0 .3rem; color: var(--ink-soft); }
+.cmp-group { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem 1rem; margin-top: .35rem; }
+.cmp-group .tag { min-width: 2.4rem; text-align: center; }
+.cmp-pick { display: inline-flex; align-items: center; gap: .35rem; font-size: var(--fs-sm); cursor: pointer; }
+.cmp-chart { position: relative; }
+.cmp-axis { position: relative; height: 2.2rem; margin-left: 13.5rem; margin-right: 6.5rem; border-bottom: 1px solid var(--rule); }
+.cmp-tick { position: absolute; bottom: .2rem; transform: translateX(-50%); font: var(--fs-xs) var(--mono); color: var(--ink-soft); }
+.cmp-floor { position: absolute; top: 0; height: 45%; border-left: 1px dashed var(--amber); }
+.cmp-floor b { position: absolute; top: 0; left: .25rem; font: 600 var(--fs-xs) var(--mono); color: var(--amber); }
+.cmp-rows { list-style: none; margin: 0; padding: 0; }
+.cmp-row { display: grid; grid-template-columns: 13.5rem 1fr 6.5rem; align-items: center; min-height: 2.4rem; border-bottom: 1px solid var(--rule-soft); }
+.cmp-who { display: flex; flex-direction: column; align-items: flex-start; font-size: var(--fs-sm); padding-right: .6rem; overflow-wrap: anywhere; }
+.cmp-name .tag { margin-right: .3rem; }
+.cmp-guide { position: absolute; top: 0; bottom: 0; border-left: 1px dashed rgba(255, 207, 92, .32); }
+.cmp-track { position: relative; height: 1.6rem; }
+.cmp-bar { position: absolute; top: .55rem; height: .5rem; background: var(--blue-tint); border: 1px solid var(--blue); }
+.cmp-dot { position: absolute; top: .1rem; transform: translateX(-50%); min-width: 1.15rem; height: 1.15rem; line-height: 1.15rem;
+  text-align: center; font: 600 .68rem var(--mono); color: var(--paper); background: var(--blue); border-radius: 50%; }
+.cmp-dot.now { top: .45rem; min-width: .7rem; height: .7rem; }
+.cmp-row.you .cmp-bar { background: var(--olive-tint); border-color: var(--olive); }
+.cmp-row.you .cmp-dot { background: var(--olive); }
+.cmp-row.measured .cmp-bar { background: transparent; border: 1px dashed var(--olive); }
+.cmp-row.measured .cmp-dot { background: var(--olive); }
+.cmp-val { text-align: right; font-size: var(--fs-sm); color: var(--ink-soft); }
+@media (max-width: 720px) {
+  .cmp-axis { margin-left: 0; margin-right: 0; }
+  .cmp-row { grid-template-columns: 1fr auto; grid-template-areas: "who val" "track track"; padding: .35rem 0; }
+  .cmp-who { grid-area: who; }
+  .cmp-val { grid-area: val; }
+  .cmp-track { grid-area: track; }
+}

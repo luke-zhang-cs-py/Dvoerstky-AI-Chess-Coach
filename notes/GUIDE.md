@@ -59,6 +59,24 @@ structure you keep entering and then misplaying, as opposed to a single bad open
 — when in the game things go wrong, your ten most expensive moves (each with a button that
 opens it as a drill), and the trajectory chart described below.
 
+**Compared with titled players**, on the Strength tab under the calibration cards:
+- **Who:** well-known CMs, FMs, IMs and GMs on Lichess (Tryfon Gavriel, Nate Solon, Eric
+  Rosen, John Bartholomew, Christof Sielecki, Magnus Carlsen, Alireza Firouzja, Anish Giri,
+  Nihal Sarin, Andrew Tang, Sergei Zhigalko, Oleksandr Bortnyk, Simon Williams). Pick who to
+  show; one of each title is on by default.
+- **Same scale:** they sit on one chart with your own Lichess ratings and your measured
+  strength.
+- **All speeds:** each bar runs from a player's lowest to highest *established* rating across
+  bullet, blitz, rapid and classical. Established means not provisional and at least 20
+  games, so a GM who never plays rapid on Lichess is not drawn at a placeholder 1500.
+- **One speed:** each player's current rating there, with the low and high over their most
+  recent 12 months where their rating history is public.
+- **Title floors:** the dashed lines are FIDE's rating floors for each title (CM 2200,
+  FM 2300, IM 2400, GM 2500). Lichess ratings run higher than FIDE, so they are context, not a
+  conversion.
+- **Data:** ratings ship as a dated snapshot (`js/titled.js`) so this works offline;
+  **Refresh from Lichess** reads the live numbers, one request at a time.
+
 **Sparring** — an opponent modelled on you. It plays your own opening book first (built
 from your games, both colours), then a move-selection model tuned so its realised
 centipawn loss matches a target strength, with blunder frequency taken from your actual
@@ -189,6 +207,7 @@ js/core.js          0x88 chess rules: move generation, SAN, FEN, PGN parsing
 js/engine.js        evaluation, alpha-beta search, quiescence, complexity scoring
 js/data.js          Lichess API, PGN import, localStorage wrapper
 js/analysis.js      calibration, motif classification, error mining, profile building
+js/titled.js        titled players (CM to GM): snapshot, established ranges, live refresh
 js/training.js      endgame curriculum, SM-2 scheduling, day planner, .ics export
 js/coach.js         justification rubric, scoring, game summaries, optional LLM call
 js/sparring.js      the mirror opponent and dual-sided advice

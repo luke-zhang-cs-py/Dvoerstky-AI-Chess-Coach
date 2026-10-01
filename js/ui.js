@@ -240,6 +240,7 @@
       var stored = saveGames();
       var rating = ratingFor(prof, perf, games);
       Store.set('lichessRating', rating);
+      rememberMyRatings(user, prof);
       rebuild(rating);
       if (!stored) return;   // keep the storage-full warning on screen
       var an = games.filter(function (g) { return g.analysed; }).length;
@@ -470,6 +471,7 @@
     h.push(phaseCard(p));
     h.push(clockCard(p));
     h.push('</div>');
+    h.push(titledSheet());
 
     h.push('<div class="grid2" style="margin-top:1.1rem">');
     h.push('<div class="sheet"><h3>What the mistakes have in common</h3><div class="tablewrap">' + motifTable(p) + '</div></div>');
@@ -485,6 +487,174 @@
     host.innerHTML = h.join('');
     $$('[data-jump]', host).forEach(function (b) {
       b.addEventListener('click', function () { openErrorInDrill(b.dataset.jump); });
+    });
+    renderTitled();
+  }
+
+  /* ---------- compared with titled players ---------- */
+  var SPEED_LABEL = { all: 'All speeds', bullet: 'Bullet', blitz: 'Blitz', rapid: 'Rapid', classical: 'Classical' };
+  var SPEED_KEY = { bullet: 'B', blitz: 'Z', rapid: 'R', classical: 'C' };
+
+  function titledPicks() {
+    var known = Titled.PLAYERS.map(function (p) { return p.user; });
+    var saved = Store.get('titledPicks', null);
+    var picks = Array.isArray(saved) ? saved.filter(function (u) { return known.indexOf(u) > -1; }) : Titled.DEFAULT_PICKS.slice();
+    return picks;
+  }
+  function titledSpeed() {
+    var v = Store.get('titledSpeed', 'all');
+    return v === 'all' || Titled.SPEEDS.indexOf(v) > -1 ? v : 'all';
+  }
+  function titledLive() {
+    var v = Store.get('titledLive', null);
+    return v && typeof v.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v.date) && v.players && typeof v.players === 'object' ? v : null;
+  }
+  function myRatings() {
+    var v = Store.get('myRatings', null);
+    if (!v || !v.rows || typeof v.rows !== 'object') return null;
+    return { user: typeof v.user === 'string' ? v.user : '', date: typeof v.date === 'string' ? v.date : '', rows: Titled.cleanRows(v.rows) };
+  }
+
+  // Your established ratings and 12-month ranges, kept beside the games after each sync.
+  function rememberMyRatings(user, prof) {
+    if (!prof || !prof.perfs) return;
+    var rows = Titled.rowsFromPerfs(prof.perfs);
+    Store.set('myRatings', { user: user, date: new Date().toISOString().slice(0, 10), rows: rows });
+    Data.fetchRatingHistory(user).then(function (hist) {
+      Store.set('myRatings', { user: user, date: new Date().toISOString().slice(0, 10),
+        rows: Titled.withHistory(rows, Titled.historyRanges(hist)) });
+      if ($('#titledBody')) renderTitled();
+    });
+  }
+
+  function titledSheet() {
+    return '<div class="sheet" style="margin-top:1.1rem" id="titledSheet"><h3>Compared with titled players</h3>' +
+      '<p class="tiny soft">Well-known CMs, FMs, IMs and GMs on Lichess, on the same scale as your own Lichess ratings. Choose who to show, and one speed or all of them.</p>' +
+      '<div id="titledBody"></div></div>';
+  }
+
+  function rangeText(r) { return !r ? '—' : r.lo === r.hi ? String(r.lo) : r.lo + '–' + r.hi; }
+
+  function titledRow(label, sub, r, speed, cls) {
+    var sc = S._titledScale;
+    var h = '<li class="cmp-row ' + (cls || '') + '"><div class="cmp-who"><span class="cmp-name">' + label + '</span>' + (sub ? '<span class="tiny soft">' + sub + '</span>' : '') + '</div>';
+    h += '<div class="cmp-track" aria-hidden="true">';
+    // the FIDE floors run down through every row, so a bar can be read against them
+    Titled.TITLE_FLOORS.forEach(function (f) { h += '<span class="cmp-guide" style="left:' + sc.pos(f.rating) + '%"></span>'; });
+    if (r) {
+      h += '<span class="cmp-bar" style="left:' + sc.pos(r.lo) + '%;width:' + Math.max(0.6, sc.pos(r.hi) - sc.pos(r.lo)) + '%"></span>';
+      if (speed === 'all') {
+        r.points.forEach(function (p) {
+          h += '<span class="cmp-dot" style="left:' + sc.pos(p.rating) + '%" title="' + SPEED_LABEL[p.speed] + ' ' + p.rating + '">' + SPEED_KEY[p.speed] + '</span>';
+        });
+      } else {
+        h += '<span class="cmp-dot now" style="left:' + sc.pos(r.rating) + '%" title="Current ' + r.rating + '"></span>';
+      }
+    }
+    h += '</div><div class="cmp-val mono">' + rangeText(r) + '</div></li>';
+    return h;
+  }
+
+  function renderTitled() {
+    var host = $('#titledBody');
+    if (!host) return;
+    var speed = titledSpeed(), picks = titledPicks(), live = titledLive(), mine = myRatings();
+    var all = Titled.players(live);
+    var shown = all.filter(function (p) { return picks.indexOf(p.user) > -1; });
+    var measured = S.profile && S.profile.calibration;
+    var measuredBand = measured ? { lo: measured.trueStrength - measured.marginOfError, hi: measured.trueStrength + measured.marginOfError,
+      rating: measured.trueStrength, points: [] } : null;
+    var yourLichess = mine ? Titled.range(mine.rows, speed) : null;
+    var you = yourLichess || measuredBand;   // the gap is measured from your Lichess range, else your measured strength
+    var ranges = shown.map(function (p) { return Titled.range(p.rows, speed); });
+    var withYou = ranges.concat([yourLichess, measuredBand]);
+    S._titledScale = Titled.scale(withYou);
+    var sc = S._titledScale;
+
+    var h = [];
+    h.push('<div class="cmp-controls">');
+    h.push('<label for="cmpSpeed" class="tiny">Speed</label> <select id="cmpSpeed">' + ['all'].concat(Titled.SPEEDS).map(function (k) {
+      return '<option value="' + k + '"' + (k === speed ? ' selected' : '') + '>' + SPEED_LABEL[k] + '</option>'; }).join('') + '</select>');
+    h.push('<button type="button" id="cmpRefresh">Refresh from Lichess</button>');
+    h.push('<span class="tiny soft" id="cmpStatus" role="status" aria-live="polite">' + (live ? 'Live ratings, fetched ' + live.date + '.' : 'Ratings as of ' + Titled.SNAPSHOT.date + '.') + '</span>');
+    h.push('</div>');
+
+    h.push('<fieldset class="cmp-picks"><legend class="tiny">Players</legend>');
+    Titled.TITLE_ORDER.forEach(function (t) {
+      var group = all.filter(function (p) { return p.title === t; });
+      if (!group.length) return;
+      h.push('<div class="cmp-group"><span class="tag">' + t + '</span>');
+      group.forEach(function (p) {
+        h.push('<label class="cmp-pick"><input type="checkbox" data-pick="' + esc(p.user) + '"' + (picks.indexOf(p.user) > -1 ? ' checked' : '') + '> ' + esc(p.name) + '</label>');
+      });
+      h.push('</div>');
+    });
+    h.push('</fieldset>');
+
+    h.push('<div class="cmp-chart"><div class="cmp-axis" aria-hidden="true">');
+    for (var v = sc.lo; v <= sc.hi; v += 100) {
+      if ((v - sc.lo) % ((sc.hi - sc.lo) > 1200 ? 200 : 100) !== 0) continue;
+      h.push('<span class="cmp-tick" style="left:' + sc.pos(v) + '%">' + v + '</span>');
+    }
+    Titled.TITLE_FLOORS.forEach(function (f) {
+      h.push('<span class="cmp-floor" style="left:' + sc.pos(f.rating) + '%"><b>' + f.title + '</b></span>');
+    });
+    h.push('</div><ul class="cmp-rows">');
+    h.push(titledRow('<b>You</b>', mine ? 'Lichess, ' + esc(mine.user) : 'sync to add your Lichess ratings', yourLichess, speed, 'you'));
+    if (measuredBand) h.push(titledRow('Measured strength', '± ' + measured.marginOfError, measuredBand, 'one', 'measured'));
+    var missing = [];
+    shown.forEach(function (p, i) {
+      if (!ranges[i]) { missing.push(p); return; }
+      h.push(titledRow('<span class="tag">' + esc(p.title || '?') + '</span> ' + esc(p.name),
+        '<a href="https://lichess.org/@/' + encodeURIComponent(p.user) + '" target="_blank" rel="noopener">@' + esc(p.user) + '</a>', ranges[i], speed));
+    });
+    h.push('</ul></div>');
+    if (missing.length) {
+      h.push('<p class="tiny soft">No established ' + (speed === 'all' ? '' : SPEED_LABEL[speed].toLowerCase() + ' ') + 'rating on Lichess: ' +
+        missing.map(function (p) { return esc(p.name); }).join(', ') + '.</p>');
+    }
+
+    // The same numbers as a table, with how far each sits from you.
+    h.push('<div class="tablewrap" tabindex="0" role="region" aria-label="Titled players compared with you"><table><thead><tr><th>Player</th><th>Title</th><th class="num">' +
+      (speed === 'all' ? 'Range across speeds' : SPEED_LABEL[speed] + ' (12-month range)') + '</th><th class="num">Gap above you</th></tr></thead><tbody>');
+    shown.forEach(function (p, i) {
+      var r = ranges[i], g = Titled.gap(you, r);
+      var detail = r && speed !== 'all' ? (r.history ? ' <span class="tiny soft">now ' + r.rating + (r.last ? ', last played ' + r.last : '') + '</span>'
+        : ' <span class="tiny soft">history not public</span>') : '';
+      h.push('<tr><td>' + esc(p.name) + '</td><td>' + esc(p.title || '?') + '</td><td class="num">' + rangeText(r) + detail + '</td>' +
+        '<td class="num">' + (g == null ? '—' : g > 0 ? '+' + g : 'overlaps you') + '</td></tr>');
+    });
+    h.push('</tbody></table></div>');
+    h.push('<p class="tiny soft">Gap: from the top of ' + (yourLichess ? 'your Lichess range' : 'your measured strength (sync to use your Lichess ratings)') +
+      ' to the bottom of theirs.</p>');
+    h.push('<p class="tiny soft">Ranges use established ratings only (not provisional, at least ' + Titled.MIN_GAMES +
+      ' games), so a GM who never plays rapid on Lichess is not shown at a placeholder 1500. One speed shows the current rating and, where the player\'s rating history is public, the low and high over their most recent 12 months there. The dashed lines are FIDE\'s rating floors for each title; Lichess ratings run higher than FIDE, so treat them as context, not a conversion. Letters on the bars: B bullet, Z blitz, R rapid, C classical.</p>');
+
+    host.innerHTML = h.join('');
+    $('#cmpSpeed', host).addEventListener('change', function (e) { Store.set('titledSpeed', e.target.value); renderTitled(); });
+    $$('[data-pick]', host).forEach(function (cb) {
+      cb.addEventListener('change', function () {
+        var next = $$('[data-pick]', host).filter(function (x) { return x.checked; }).map(function (x) { return x.dataset.pick; });
+        Store.set('titledPicks', next);
+        renderTitled();
+        var again = $('[data-pick="' + cb.dataset.pick + '"]', host);
+        if (again) again.focus();
+      });
+    });
+    $('#cmpRefresh', host).addEventListener('click', function () {
+      var btn = $('#cmpRefresh', host);
+      btn.disabled = true;
+      $('#cmpStatus', host).textContent = 'Reading ' + picks.length + ' players from Lichess, one at a time…';
+      Titled.refresh(picks.length ? picks : Titled.DEFAULT_PICKS).then(function (got) {
+        var prev = titledLive();
+        var merged = { date: got.date, players: Object.assign({}, prev ? prev.players : {}, got.players) };
+        Store.set('titledLive', merged);
+        renderTitled();
+        $('#cmpStatus').textContent = 'Live ratings, fetched ' + got.date + '.';
+      }).catch(function (e) {
+        btn.disabled = false;
+        $('#cmpStatus', host).textContent = 'Could not reach Lichess (' + e.message + '). Showing the ' + (live ? 'last fetched' : Titled.SNAPSHOT.date) + ' ratings.';
+      });
     });
   }
 
