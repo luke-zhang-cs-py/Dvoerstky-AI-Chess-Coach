@@ -228,7 +228,8 @@ tools/games.js      what match.js and sprt.js share: the openings and how a game
 
 Run the tests with `node test/perft.js`, `node test/rules.js`, `node test/integration.js`,
 `node test/acpl.js`, and `node test/regress.js` — one check per bug from the September
-2026 audit, each written to fail on the code before its fix.
+and October 2026 audits, each written to fail on the code before its fix (`node test/titled.js` for
+the titled-player comparison). The October audit is written up in `notes/CODE_AUDIT_2026-10.md`.
 
 Strength and speed are measured apart from the pass/fail suites, because they depend on
 the machine:

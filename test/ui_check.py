@@ -1,4 +1,4 @@
-"""Drive index.html in Chromium and check the UI fixes from the September 2026 audit.
+"""Drive index.html in Chromium and check the UI fixes from the September and October 2026 audits.
 
     pip install playwright && playwright install chromium
     python test/ui_check.py [--coverage out.json]
@@ -272,11 +272,29 @@ with sync_playwright() as p:
     pg.route("**/lichess.org/api/users", lambda r: (asked_users.append(r.request.post_data), r.fulfill(status=200, content_type="application/json",
              body=json.dumps([{"username": "EricRosen", "title": "IM", "perfs": {"rapid": {"rating": 2611, "games": 2000}}}]))))
     pg.click("#cmpRefresh")
+    pg.wait_for_timeout(100); pg.select_option("#cmpSpeed", "blitz"); pg.wait_for_timeout(100)   # the sheet redrawn mid-refresh
+    check("titled: while a refresh is reading Lichess, a redrawn sheet cannot start a second one",
+          pg.is_disabled("#cmpRefresh"), pg.inner_text("#cmpStatus"))
+    pg.select_option("#cmpSpeed", "rapid")
     pg.wait_for_function("document.querySelector('#cmpStatus') && /Live ratings/.test(document.querySelector('#cmpStatus').textContent)", timeout=20000)
     check("titled: refresh reads the chosen players from Lichess and shows the live numbers",
           asked_users and "EricRosen" in asked_users[0] and "AnishGiri" in asked_users[0]
           and any("Eric Rosen" in r and r.endswith("2611") for r in rows()), [asked_users[:1], [r for r in rows() if "Rosen" in r]])
-    pg.select_option("#cmpSpeed", "all"); pg.check('[data-pick="Kingscrusher-YouTube"]'); pg.uncheck('[data-pick="AnishGiri"]')
+    check("titled: when Lichess answers for some of the players, the status says which numbers are live",
+          "1 of 4 players" in pg.inner_text("#cmpStatus"), pg.inner_text("#cmpStatus"))
+    for u in ["CheckRaiseMate", "EricRosen", "DrNykterstein", "AnishGiri"]: pg.uncheck('[data-pick="%s"]' % u)
+    pg.click("#cmpRefresh"); pg.wait_for_timeout(100)
+    reading = pg.inner_text("#cmpStatus")
+    pg.wait_for_function("!document.querySelector('#cmpRefresh').disabled", timeout=20000)
+    check("titled: with nobody chosen, refresh says how many players it reads (the defaults)", "Reading 4 players" in reading, reading)
+    for u in ["Kingscrusher-YouTube", "CheckRaiseMate", "EricRosen", "DrNykterstein"]: pg.check('[data-pick="%s"]' % u)
+    pg.select_option("#cmpSpeed", "all")
+    pg.evaluate("""localStorage.setItem('dvor:titledLive', JSON.stringify({ date: '2026-10-01',
+                   players: { EricRosen: { t: 'NM', s: { blitz: [2550, 9400, 0] } } } }))""")
+    reload(); pg.wait_for_timeout(700); pg.click("button.tab[data-tab=strength]"); pg.wait_for_timeout(300)
+    check("titled: a player whose live title is not CM to GM can still be unchecked",
+          pg.evaluate("document.querySelectorAll('[data-pick=\"EricRosen\"]').length") == 1 and any("Eric Rosen" in r for r in rows()), rows())
+    pg.evaluate("localStorage.removeItem('dvor:titledLive')")
 
     # ---- the Stockfish reader: a real engine, in a worker, from file://
     pg.click("button.tab[data-tab=sparring]")
@@ -372,6 +390,80 @@ with sync_playwright() as p:
     check("backup: no javascript: link survives import", js_links == 0, js_links)
     check("backup: settings and the key survive a restore", pg.evaluate(
         "JSON.parse(localStorage.getItem('dvor:settings')).apiKey") == "sk-ant-TESTKEY")
+
+    # ---- October 2026 audit: storage read back raw, set-up positions, local days, ratings of the right account
+    # each tampered key on its own reload, so one failure cannot hide another
+    def tampered(key, value, tabs):
+        seen = len(errors)
+        pg.evaluate("([k, v]) => localStorage.setItem(k, v)", [key, value])
+        reload(); pg.wait_for_timeout(1500)
+        for tab in tabs:
+            pg.click("button.tab[data-tab=%s]" % tab); pg.wait_for_timeout(300)
+        return errors[seen:]
+    tampered("dvor:lichessRating", json.dumps('<img src=x onerror="window.__r=1">'), ["strength"])
+    check("storage: a tampered saved rating never runs as markup", pg.evaluate("window.__r || null") is None)
+    pg.evaluate("localStorage.setItem('dvor:lichessRating', '1800')")
+    new_errors = tampered("dvor:track", '{"x":1}', ["strength"])
+    check("storage: a tampered trajectory does not break the next measurement",
+          not new_errors and pg.evaluate("Array.isArray(JSON.parse(localStorage.getItem('dvor:track')))"), new_errors[:2])
+    pg.evaluate("localStorage.setItem('dvor:track', '[]')")
+    new_errors = tampered("dvor:completed", "null", ["calendar"])
+    check("storage: a tampered record of days done does not break the calendar",
+          not new_errors and pg.evaluate("document.querySelectorAll('button.day[data-day]').length") > 0, new_errors[:2])
+    pg.evaluate("localStorage.setItem('dvor:completed', '{}')")
+
+    # A game set up from a position, imported in the evening: it survives a reload as itself,
+    # and the trajectory's mark is dated by the local day, not by UTC's.
+    tzs = ctx.new_cdp_session(pg); tzs.send("Emulation.setTimezoneOverride", {"timezoneId": "America/Toronto"})
+    pg.clock.set_fixed_time("2026-10-02T01:30:00Z")   # 21:30 on 1 October in Toronto
+    fen_pgn = ('[Event "x"]\n[Site "https://lichess.org/fenstart1"]\n[White "fenwhite"]\n[Black "fenblack"]\n[Result "*"]\n'
+               '[SetUp "1"]\n[FEN "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1"]\n\n1... e5 2. Nf3 Nc6 *\n')
+    pg.set_input_files("#importFile", write_tmp("fen.pgn", fen_pgn)); pg.wait_for_timeout(2000)
+    days = pg.evaluate("(JSON.parse(localStorage.getItem('dvor:track')) || []).map(p => p.day)")
+    check("trajectory: an evening sync is marked on that day, not on tomorrow's UTC date",
+          days and days[-1] == "2026-10-01" and "2026-10-02" not in days, days[-3:])
+    reload(); pg.wait_for_timeout(1500)
+    pg.click("button.tab[data-tab=settings]")
+    with pg.expect_download() as dl:
+        pg.click("#exportAll")
+    saved = [g for g in json.load(open(dl.value.path(), encoding="utf-8"))["games"] if g.get("id") == "fenstart1"]
+    sans = [m[0] for m in saved[0]["m"]] if saved else None
+    check("games: a game set up from a FEN is still that game after a reload",
+          sans == ["e5", "Nf3", "Nc6"] and saved[0].get("fen", "").startswith("rnbqkbnr/pppppppp/8/8/4P3"), sans)
+
+    # Your Lichess ratings beside the titled players belong to the account just synced.
+    held = []
+    def user_api(route):
+        url = route.request.url
+        name = urlparse(url).path.split("/")[3]
+        if url.endswith("/rating-history"):
+            if name == "alice": held.append(route); return   # answered late, after bob's sync
+            return route.fulfill(status=200, content_type="application/json", body="[]")
+        if name == "carol": return route.fulfill(status=404, content_type="application/json", body="{}")
+        route.fulfill(status=200, content_type="application/json",
+                      body=json.dumps({"perfs": {"blitz": {"rating": {"alice": 1900, "bob": 1700}.get(name, 1500), "games": 500}}}))
+    def games_api(route):
+        name = urlparse(route.request.url).path.split("/")[-1]
+        g = {"id": "sync" + name, "rated": True, "speed": "blitz", "perf": "blitz", "createdAt": 1790000000000,
+             "status": "resign", "winner": "white", "moves": "e4 e5 Nf3",
+             "players": {"white": {"user": {"name": name}, "rating": 1800}, "black": {"user": {"name": "opp"}, "rating": 1800}}}
+        route.fulfill(status=200, content_type="application/x-ndjson", body=json.dumps(g) + "\n")
+    pg.unroute("**/lichess.org/api/games/**"); pg.route("**/lichess.org/api/games/**", games_api)
+    pg.unroute("**/lichess.org/api/user/**"); pg.route("**/lichess.org/api/user/**", user_api)
+    you = lambda: pg.evaluate(r"((document.querySelector('#titledBody .cmp-row.you') || {}).innerText || '').replace(/\s+/g, ' ')")
+    pg.click("button.tab[data-tab=strength]")
+    for name in ["alice", "bob"]:
+        pg.fill("#handle", name); pg.click("#sync"); pg.wait_for_timeout(1500)
+    if held: held[0].fulfill(status=200, content_type="application/json", body=json.dumps([{"name": "Blitz", "points": [[2026, 8, 1, 1950]]}]))
+    pg.wait_for_timeout(800)
+    row = you()
+    check("titled: a late rating history for the last account does not replace the one just synced",
+          "bob" in row and "1700" in row and "alice" not in row, row)
+    pg.fill("#handle", "carol"); pg.click("#sync"); pg.wait_for_timeout(1500)
+    row = you()
+    check("titled: after a sync whose profile lookup failed, another account's ratings are not shown as yours",
+          row.startswith("You") and "bob" not in row and "alice" not in row, row)
+
     check("page: no uncaught errors throughout", not errors, errors[:3])
 
     if COV:

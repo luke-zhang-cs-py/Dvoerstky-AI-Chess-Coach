@@ -4,7 +4,7 @@
   var Chess = window.Chess, Engine = window.Engine, Data = window.Data,
       Analysis = window.Analysis, Training = window.Training, Coach = window.Coach,
       Sparring = window.Sparring, Board = window.Board, Store = Data.Store,
-      StockfishReader = window.StockfishReader;
+      StockfishReader = window.StockfishReader, Titled = window.Titled;
 
   var $ = function (s, r) { return (r || document).querySelector(s); };
   var $$ = function (s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); };
@@ -76,6 +76,8 @@
     });
     return out;
   }
+  // Days logged as done: read as day -> truthy, and written to, so anything but an object is none.
+  function cleanCompleted(v) { return isObj(v) ? v : {}; }
   // Settings reach innerHTML too (the window's label, the speed in a sync notice):
   // keep each key the app knows, as the value the app itself would have stored.
   var PERFS = ['all', 'ultraBullet', 'bullet', 'blitz', 'rapid', 'classical', 'correspondence'];
@@ -102,7 +104,7 @@
     cardState: cleanCards(Store.get('cards', {})),
     track: cleanTrack(Store.get('track', [])),
     transcripts: cleanTranscripts(Store.get('transcripts', {})),
-    completed: Store.get('completed', {}),
+    completed: cleanCompleted(Store.get('completed', {})),
     settings: cleanSettings(Store.get('settings', { minutes: 60, endgameTier: 2, hour: 19, apiKey: '', perf: 'all',
       boardTheme: 'cyan', pieceSet: 'glyph', showCoords: true, windowDays: 0 })),
     engine: new Engine(),
@@ -152,16 +154,19 @@
                 mv.serverBest || '', mv.clock == null ? '' : Math.round(mv.clock), mv.serverLine || '',
                 mv.mateAfter == null ? '' : mv.mateAfter];
       });
+      // a game set up from a position (a PGN with a [FEN] tag) is replayed from that position
+      var start = g.moves && g.moves[0] && g.moves[0].fenBefore;
+      if (start && start !== Chess.START) c.fen = start;
       return c;
     });
   }
   function hydrate(compacted) {
     return compacted.map(function (c) {
-      var g = new Chess(), moves = [];
-      (c.m || []).forEach(function (row, i) {
+      var g = startPosition(c.fen), moves = [];
+      (Array.isArray(c.m) ? c.m : []).every(function (row, i) {
         var before = g.fen();
-        var mv = g.move(row[0]);
-        if (!mv) return;
+        var mv = Array.isArray(row) && g.move(row[0]);
+        if (!mv) return false;   // the rest of the game no longer follows from this position
         moves.push({
           san: mv.san, ply: i + 1, color: mv.color === Chess.WHITE ? 'w' : 'b',
           fenBefore: before, fenAfter: g.fen(),
@@ -170,10 +175,16 @@
           clock: row[4] === '' ? null : +row[4], serverLine: row[5] || null,
           mateAfter: row[6] == null || row[6] === '' ? null : +row[6]
         });
+        return true;
       });
-      var out = Object.assign({}, c); delete out.m; out.moves = moves;
+      var out = Object.assign({}, c); delete out.m; delete out.fen; out.moves = moves;
       return cleanGame(out);
     });
+  }
+  // A stored start position is untrusted like the rest: one that does not load is the initial one.
+  function startPosition(fen) {
+    if (typeof fen === 'string') { try { return new Chess(fen); } catch (e) { /* fall through */ } }
+    return new Chess();
   }
 
   function saveGames() {
@@ -261,7 +272,7 @@
      throw away what is due for review, or a repertoire. */
   function rebuild(rating, opts) {
     opts = opts || {};
-    rating = rating != null ? rating : Store.get('lichessRating', null);
+    rating = rating != null ? rating : storedRating();
     if (!opts.windowOnly || !S.allErrors) {
       S.allErrors = Analysis.mineErrors(S.games);
       S.book = Analysis.buildBook(S.games);
@@ -281,6 +292,9 @@
     renderReviewHome();
   }
 
+  // The rating saved at the last sync reaches innerHTML (the ruler, the calibration card): a number or nothing.
+  function storedRating() { return numOrNull(Store.get('lichessRating', null)); }
+
   function persistCards() {
     var slim = {};
     Object.keys(S.deck).forEach(function (k) {
@@ -299,8 +313,8 @@
     if (!S.profile || !S.profile.calibration) return;
     var cal = S.profile.calibration;
     if (!cal.sample) return;
-    var track = Store.get('track', []);
-    var day = new Date().toISOString().slice(0, 10);
+    var track = S.track.slice();   // cleaned on load and on import; storage itself is not re-read raw
+    var day = Training.dateKey(new Date());   // the local day: an evening sync is not tomorrow's mark
     var entry = { day: day, measured: cal.trueStrength, moe: cal.marginOfError,
       rating: cal.lichessRating || null, acpl: cal.acpl || null, n: cal.sample };
     var last = track[track.length - 1];
@@ -334,7 +348,7 @@
   }
 
   function trajectoryCard() {
-    var track = S.track || Store.get('track', []);
+    var track = S.track;
     if (track.length < 2) {
       return '<p class="soft">One mark so far. Sync again after a week or two of play and this becomes a line: ' +
         'measured strength over time, next to the rating, with an estimate of when the two reach 2200. ' +
@@ -395,7 +409,7 @@
           ? 'You are already measuring at or above 2200; the rating should follow if you keep playing rated games.'
           : 'At that rate 2200 arrives in roughly <b>' + (months < 1 ? 'under a month' :
              months.toFixed(months < 3 ? 1 : 0) + ' months') + '</b> — around ' +
-             new Date(Date.now() + months * 30 * 86400000).toISOString().slice(0, 7) + '. ') +
+             Training.dateKey(new Date(Date.now() + months * 30 * 86400000)).slice(0, 7) + '. ') +
         '<span class="soft tiny">Extrapolation from ' + t.n + ' readings. Improvement is rarely linear; treat this as a direction, not a date.</span></p>';
     }
     var legend = '<p class="tiny soft"><span class="key olive"></span> measured strength' +
@@ -494,12 +508,15 @@
   /* ---------- compared with titled players ---------- */
   var SPEED_LABEL = { all: 'All speeds', bullet: 'Bullet', blitz: 'Blitz', rapid: 'Rapid', classical: 'Classical' };
   var SPEED_KEY = { bullet: 'B', blitz: 'Z', rapid: 'R', classical: 'C' };
+  var ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
+  var AXIS_WIDE = 1200;    // a scale wider than this is labelled every 200 points, not every 100
+  var MIN_BAR = 0.6;       // % of the track: a single rating still draws as a visible bar
+  var titledFetch = null;  // { count } while a refresh is reading Lichess: a re-render must not start a second one
 
   function titledPicks() {
     var known = Titled.PLAYERS.map(function (p) { return p.user; });
     var saved = Store.get('titledPicks', null);
-    var picks = Array.isArray(saved) ? saved.filter(function (u) { return known.indexOf(u) > -1; }) : Titled.DEFAULT_PICKS.slice();
-    return picks;
+    return Array.isArray(saved) ? saved.filter(function (u) { return known.indexOf(u) > -1; }) : Titled.DEFAULT_PICKS.slice();
   }
   function titledSpeed() {
     var v = Store.get('titledSpeed', 'all');
@@ -507,23 +524,28 @@
   }
   function titledLive() {
     var v = Store.get('titledLive', null);
-    return v && typeof v.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v.date) && v.players && typeof v.players === 'object' ? v : null;
+    return isObj(v) && typeof v.date === 'string' && ISO_DAY.test(v.date) && isObj(v.players) ? v : null;
   }
+  // Your Lichess ratings from the last sync, when they belong to the account now in the box.
+  // Ratings left from another account (a later sync whose profile lookup failed, a restored
+  // backup with another handle) are not yours.
   function myRatings() {
     var v = Store.get('myRatings', null);
-    if (!v || !v.rows || typeof v.rows !== 'object') return null;
-    return { user: typeof v.user === 'string' ? v.user : '', date: typeof v.date === 'string' ? v.date : '', rows: Titled.cleanRows(v.rows) };
+    if (!isObj(v) || !isObj(v.rows) || typeof v.user !== 'string') return null;
+    if (!v.user || v.user.toLowerCase() !== String(S.handle || '').toLowerCase()) return null;
+    return { user: v.user, rows: Titled.cleanRows(v.rows) };
   }
 
   // Your established ratings and 12-month ranges, kept beside the games after each sync.
   function rememberMyRatings(user, prof) {
     if (!prof || !prof.perfs) return;
     var rows = Titled.rowsFromPerfs(prof.perfs);
-    Store.set('myRatings', { user: user, date: new Date().toISOString().slice(0, 10), rows: rows });
+    Store.set('myRatings', { user: user, rows: rows });
     Data.fetchRatingHistory(user).then(function (hist) {
-      Store.set('myRatings', { user: user, date: new Date().toISOString().slice(0, 10),
-        rows: Titled.withHistory(rows, Titled.historyRanges(hist)) });
-      if ($('#titledBody')) renderTitled();
+      var now = Store.get('myRatings', null);
+      if (!isObj(now) || now.user !== user) return;   // a later sync, for another account, replaced them
+      Store.set('myRatings', { user: user, rows: Titled.withHistory(rows, Titled.historyRanges(hist)) });
+      renderTitled();
     });
   }
 
@@ -535,15 +557,45 @@
 
   function rangeText(r) { return !r ? '—' : r.lo === r.hi ? String(r.lo) : r.lo + '–' + r.hi; }
 
-  function titledRow(label, sub, r, speed, cls) {
-    var sc = S._titledScale;
-    var h = '<li class="cmp-row ' + (cls || '') + '"><div class="cmp-who"><span class="cmp-name">' + label + '</span>' + (sub ? '<span class="tiny soft">' + sub + '</span>' : '') + '</div>';
+  // Everything the sheet shows, read once from storage and the profile.
+  function titledView() {
+    var speed = titledSpeed(), picks = titledPicks(), live = titledLive(), mine = myRatings();
+    var all = Titled.players(live);
+    var shown = all.filter(function (p) { return picks.indexOf(p.user) > -1; });
+    var cal = S.profile && S.profile.calibration;
+    var measured = cal ? { lo: cal.trueStrength - cal.marginOfError, hi: cal.trueStrength + cal.marginOfError,
+      rating: cal.trueStrength, moe: cal.marginOfError } : null;
+    var yours = mine ? Titled.range(mine.rows, speed) : null;
+    var ranges = shown.map(function (p) { return Titled.range(p.rows, speed); });
+    return { speed: speed, picks: picks, live: live, mine: mine, all: all, shown: shown, ranges: ranges,
+      measured: measured, yours: yours,
+      you: yours || measured,   // the gap is measured from your Lichess range, else your measured strength
+      scale: Titled.scale(ranges.concat([yours, measured])) };
+  }
+
+  // Where the numbers come from: the snapshot, a refresh, or some of each.
+  function titledStatus(v) {
+    if (titledFetch) return 'Reading ' + titledFetch.count + ' players from Lichess, one at a time…';
+    if (!v.live) return 'Ratings as of ' + Titled.SNAPSHOT.date + '.';
+    var fresh = v.shown.filter(function (p) { return p.live; }).length;
+    if (!v.shown.length || fresh === v.shown.length) return 'Live ratings, fetched ' + v.live.date + '.';
+    if (!fresh) return 'Ratings as of ' + Titled.SNAPSHOT.date + '.';
+    return 'Live ratings for ' + fresh + ' of ' + v.shown.length + ' players, fetched ' + v.live.date +
+      '; the rest as of ' + Titled.SNAPSHOT.date + '.';
+  }
+
+  // One bar on the shared scale. A range across speeds has a dot per speed; one speed, or the
+  // measured band, has one dot at the current value.
+  function titledRow(sc, row) {
+    var r = row.range;
+    var h = '<li class="cmp-row ' + (row.cls || '') + '"><div class="cmp-who"><span class="cmp-name">' + row.label + '</span>' +
+      (row.sub ? '<span class="tiny soft">' + row.sub + '</span>' : '') + '</div>';
     h += '<div class="cmp-track" aria-hidden="true">';
     // the FIDE floors run down through every row, so a bar can be read against them
     Titled.TITLE_FLOORS.forEach(function (f) { h += '<span class="cmp-guide" style="left:' + sc.pos(f.rating) + '%"></span>'; });
     if (r) {
-      h += '<span class="cmp-bar" style="left:' + sc.pos(r.lo) + '%;width:' + Math.max(0.6, sc.pos(r.hi) - sc.pos(r.lo)) + '%"></span>';
-      if (speed === 'all') {
+      h += '<span class="cmp-bar" style="left:' + sc.pos(r.lo) + '%;width:' + Math.max(MIN_BAR, sc.pos(r.hi) - sc.pos(r.lo)) + '%"></span>';
+      if (r.points) {
         r.points.forEach(function (p) {
           h += '<span class="cmp-dot" style="left:' + sc.pos(p.rating) + '%" title="' + SPEED_LABEL[p.speed] + ' ' + p.rating + '">' + SPEED_KEY[p.speed] + '</span>';
         });
@@ -555,82 +607,85 @@
     return h;
   }
 
-  function renderTitled() {
-    var host = $('#titledBody');
-    if (!host) return;
-    var speed = titledSpeed(), picks = titledPicks(), live = titledLive(), mine = myRatings();
-    var all = Titled.players(live);
-    var shown = all.filter(function (p) { return picks.indexOf(p.user) > -1; });
-    var measured = S.profile && S.profile.calibration;
-    var measuredBand = measured ? { lo: measured.trueStrength - measured.marginOfError, hi: measured.trueStrength + measured.marginOfError,
-      rating: measured.trueStrength, points: [] } : null;
-    var yourLichess = mine ? Titled.range(mine.rows, speed) : null;
-    var you = yourLichess || measuredBand;   // the gap is measured from your Lichess range, else your measured strength
-    var ranges = shown.map(function (p) { return Titled.range(p.rows, speed); });
-    var withYou = ranges.concat([yourLichess, measuredBand]);
-    S._titledScale = Titled.scale(withYou);
-    var sc = S._titledScale;
+  function titledControls(v) {
+    return '<div class="cmp-controls">' +
+      '<label for="cmpSpeed" class="tiny">Speed</label> <select id="cmpSpeed">' + ['all'].concat(Titled.SPEEDS).map(function (k) {
+        return '<option value="' + k + '"' + (k === v.speed ? ' selected' : '') + '>' + SPEED_LABEL[k] + '</option>'; }).join('') + '</select>' +
+      '<button type="button" id="cmpRefresh"' + (titledFetch ? ' disabled' : '') + '>Refresh from Lichess</button>' +
+      '<span class="tiny soft" id="cmpStatus" role="status" aria-live="polite">' + esc(titledStatus(v)) + '</span>' +
+      '</div>';
+  }
 
-    var h = [];
-    h.push('<div class="cmp-controls">');
-    h.push('<label for="cmpSpeed" class="tiny">Speed</label> <select id="cmpSpeed">' + ['all'].concat(Titled.SPEEDS).map(function (k) {
-      return '<option value="' + k + '"' + (k === speed ? ' selected' : '') + '>' + SPEED_LABEL[k] + '</option>'; }).join('') + '</select>');
-    h.push('<button type="button" id="cmpRefresh">Refresh from Lichess</button>');
-    h.push('<span class="tiny soft" id="cmpStatus" role="status" aria-live="polite">' + (live ? 'Live ratings, fetched ' + live.date + '.' : 'Ratings as of ' + Titled.SNAPSHOT.date + '.') + '</span>');
-    h.push('</div>');
-
-    h.push('<fieldset class="cmp-picks"><legend class="tiny">Players</legend>');
-    Titled.TITLE_ORDER.forEach(function (t) {
-      var group = all.filter(function (p) { return p.title === t; });
+  function titledPicker(v) {
+    var h = ['<fieldset class="cmp-picks"><legend class="tiny">Players</legend>'];
+    // a live title outside CM to GM (or none) still gets a checkbox, so the player can be unchecked
+    Titled.TITLE_ORDER.concat(['Other']).forEach(function (t) {
+      var group = v.all.filter(function (p) { return t === 'Other' ? Titled.TITLE_ORDER.indexOf(p.title) < 0 : p.title === t; });
       if (!group.length) return;
       h.push('<div class="cmp-group"><span class="tag">' + t + '</span>');
       group.forEach(function (p) {
-        h.push('<label class="cmp-pick"><input type="checkbox" data-pick="' + esc(p.user) + '"' + (picks.indexOf(p.user) > -1 ? ' checked' : '') + '> ' + esc(p.name) + '</label>');
+        h.push('<label class="cmp-pick"><input type="checkbox" data-pick="' + esc(p.user) + '"' + (v.picks.indexOf(p.user) > -1 ? ' checked' : '') + '> ' + esc(p.name) + '</label>');
       });
       h.push('</div>');
     });
     h.push('</fieldset>');
+    return h.join('');
+  }
 
-    h.push('<div class="cmp-chart"><div class="cmp-axis" aria-hidden="true">');
-    for (var v = sc.lo; v <= sc.hi; v += 100) {
-      if ((v - sc.lo) % ((sc.hi - sc.lo) > 1200 ? 200 : 100) !== 0) continue;
-      h.push('<span class="cmp-tick" style="left:' + sc.pos(v) + '%">' + v + '</span>');
-    }
+  function titledChart(v) {
+    var sc = v.scale, step = sc.hi - sc.lo > AXIS_WIDE ? 200 : 100;
+    var h = ['<div class="cmp-chart"><div class="cmp-axis" aria-hidden="true">'];
+    for (var x = sc.lo; x <= sc.hi; x += step) h.push('<span class="cmp-tick" style="left:' + sc.pos(x) + '%">' + x + '</span>');
     Titled.TITLE_FLOORS.forEach(function (f) {
       h.push('<span class="cmp-floor" style="left:' + sc.pos(f.rating) + '%"><b>' + f.title + '</b></span>');
     });
     h.push('</div><ul class="cmp-rows">');
-    h.push(titledRow('<b>You</b>', mine ? 'Lichess, ' + esc(mine.user) : 'sync to add your Lichess ratings', yourLichess, speed, 'you'));
-    if (measuredBand) h.push(titledRow('Measured strength', '± ' + measured.marginOfError, measuredBand, 'one', 'measured'));
+    h.push(titledRow(sc, { label: '<b>You</b>', sub: v.mine ? 'Lichess, ' + esc(v.mine.user) : 'sync to add your Lichess ratings',
+      range: v.yours, cls: 'you' }));
+    if (v.measured) h.push(titledRow(sc, { label: 'Measured strength', sub: '± ' + v.measured.moe, range: v.measured, cls: 'measured' }));
     var missing = [];
-    shown.forEach(function (p, i) {
-      if (!ranges[i]) { missing.push(p); return; }
-      h.push(titledRow('<span class="tag">' + esc(p.title || '?') + '</span> ' + esc(p.name),
-        '<a href="https://lichess.org/@/' + encodeURIComponent(p.user) + '" target="_blank" rel="noopener">@' + esc(p.user) + '</a>', ranges[i], speed));
+    v.shown.forEach(function (p, i) {
+      if (!v.ranges[i]) { missing.push(p); return; }
+      h.push(titledRow(sc, { label: '<span class="tag">' + esc(p.title || '?') + '</span> ' + esc(p.name),
+        sub: '<a href="https://lichess.org/@/' + encodeURIComponent(p.user) + '" target="_blank" rel="noopener">@' + esc(p.user) + '</a>',
+        range: v.ranges[i] }));
     });
     h.push('</ul></div>');
     if (missing.length) {
-      h.push('<p class="tiny soft">No established ' + (speed === 'all' ? '' : SPEED_LABEL[speed].toLowerCase() + ' ') + 'rating on Lichess: ' +
+      h.push('<p class="tiny soft">No established ' + (v.speed === 'all' ? '' : SPEED_LABEL[v.speed].toLowerCase() + ' ') + 'rating on Lichess: ' +
         missing.map(function (p) { return esc(p.name); }).join(', ') + '.</p>');
     }
+    return h.join('');
+  }
 
-    // The same numbers as a table, with how far each sits from you.
-    h.push('<div class="tablewrap" tabindex="0" role="region" aria-label="Titled players compared with you"><table><thead><tr><th>Player</th><th>Title</th><th class="num">' +
-      (speed === 'all' ? 'Range across speeds' : SPEED_LABEL[speed] + ' (12-month range)') + '</th><th class="num">Gap above you</th></tr></thead><tbody>');
-    shown.forEach(function (p, i) {
-      var r = ranges[i], g = Titled.gap(you, r);
-      var detail = r && speed !== 'all' ? (r.history ? ' <span class="tiny soft">now ' + r.rating + (r.last ? ', last played ' + r.last : '') + '</span>'
+  // The same numbers as a table, with how far each sits from you.
+  function titledTable(v) {
+    var h = ['<div class="tablewrap" tabindex="0" role="region" aria-label="Titled players compared with you"><table><thead><tr><th>Player</th><th>Title</th><th class="num">' +
+      (v.speed === 'all' ? 'Range across speeds' : SPEED_LABEL[v.speed] + ' (12-month range)') + '</th><th class="num">Gap above you</th></tr></thead><tbody>'];
+    v.shown.forEach(function (p, i) {
+      var r = v.ranges[i], g = Titled.gap(v.you, r);
+      var detail = r && v.speed !== 'all' ? (r.history ? ' <span class="tiny soft">now ' + r.rating + (r.last ? ', last played ' + r.last : '') + '</span>'
         : ' <span class="tiny soft">history not public</span>') : '';
       h.push('<tr><td>' + esc(p.name) + '</td><td>' + esc(p.title || '?') + '</td><td class="num">' + rangeText(r) + detail + '</td>' +
         '<td class="num">' + (g == null ? '—' : g > 0 ? '+' + g : 'overlaps you') + '</td></tr>');
     });
     h.push('</tbody></table></div>');
-    h.push('<p class="tiny soft">Gap: from the top of ' + (yourLichess ? 'your Lichess range' : 'your measured strength (sync to use your Lichess ratings)') +
+    h.push('<p class="tiny soft">Gap: from the top of ' + (v.yours ? 'your Lichess range' : 'your measured strength (sync to use your Lichess ratings)') +
       ' to the bottom of theirs.</p>');
     h.push('<p class="tiny soft">Ranges use established ratings only (not provisional, at least ' + Titled.MIN_GAMES +
       ' games), so a GM who never plays rapid on Lichess is not shown at a placeholder 1500. One speed shows the current rating and, where the player\'s rating history is public, the low and high over their most recent 12 months there. The dashed lines are FIDE\'s rating floors for each title; Lichess ratings run higher than FIDE, so treat them as context, not a conversion. Letters on the bars: B bullet, Z blitz, R rapid, C classical.</p>');
+    return h.join('');
+  }
 
-    host.innerHTML = h.join('');
+  function renderTitled() {
+    var host = $('#titledBody');
+    if (!host) return;
+    var v = titledView();
+    host.innerHTML = titledControls(v) + titledPicker(v) + titledChart(v) + titledTable(v);
+    bindTitled(host, v);
+  }
+
+  function bindTitled(host, v) {
     $('#cmpSpeed', host).addEventListener('change', function (e) { Store.set('titledSpeed', e.target.value); renderTitled(); });
     $$('[data-pick]', host).forEach(function (cb) {
       cb.addEventListener('change', function () {
@@ -642,18 +697,21 @@
       });
     });
     $('#cmpRefresh', host).addEventListener('click', function () {
-      var btn = $('#cmpRefresh', host);
-      btn.disabled = true;
-      $('#cmpStatus', host).textContent = 'Reading ' + picks.length + ' players from Lichess, one at a time…';
-      Titled.refresh(picks.length ? picks : Titled.DEFAULT_PICKS).then(function (got) {
+      if (titledFetch) return;
+      var users = v.picks.length ? v.picks : Titled.DEFAULT_PICKS;
+      titledFetch = { count: users.length };
+      renderTitled();
+      Titled.refresh(users).then(function (got) {
         var prev = titledLive();
-        var merged = { date: got.date, players: Object.assign({}, prev ? prev.players : {}, got.players) };
-        Store.set('titledLive', merged);
+        Store.set('titledLive', { date: got.date, players: Object.assign({}, prev ? prev.players : {}, got.players) });
+        titledFetch = null;
         renderTitled();
-        $('#cmpStatus').textContent = 'Live ratings, fetched ' + got.date + '.';
-      }).catch(function (e) {
-        btn.disabled = false;
-        $('#cmpStatus', host).textContent = 'Could not reach Lichess (' + e.message + '). Showing the ' + (live ? 'last fetched' : Titled.SNAPSHOT.date) + ' ratings.';
+      }, function (e) {
+        titledFetch = null;
+        renderTitled();
+        var status = $('#cmpStatus');
+        if (status) status.textContent = 'Could not reach Lichess (' + e.message + '). Showing the ' +
+          (titledLive() ? 'last fetched' : Titled.SNAPSHOT.date) + ' ratings.';
       });
     });
   }
@@ -1610,7 +1668,7 @@
       download('dvoretsky-lab-backup.json', JSON.stringify({
         handle: S.handle, games: compact(S.games), cards: S.cardState,
         transcripts: S.transcripts, completed: S.completed, settings: settings,
-        track: S.track, lichessRating: Store.get('lichessRating', null)
+        track: S.track, lichessRating: storedRating()
       }), 'application/json');
     });
     $('#importFile').addEventListener('change', function (e) {

@@ -57,7 +57,7 @@ notes/       the full guide
 
 ## Tests
 
-**67 regression checks, 39 rules checks, 34 titled-player checks, 45 browser checks, and perft on 21
+**68 regression checks, 39 rules checks, 37 titled-player checks, 56 browser checks, and perft on 21
 positions**, 15 of them edge cases (en passant out of a pin, castling into check,
 underpromotion) with counts taken from Stockfish 19. Every bug fixed has a check that
 failed on the code before its fix. The browser checks run the real Stockfish.

@@ -1,4 +1,4 @@
-// Regression checks for bugs found in the September 2026 audit. One check per
+// Regression checks for bugs found in the September and October 2026 audits. One check per
 // bug, each written to fail on the code before its fix. Run: node test/regress.js
 globalThis.window = globalThis;
 require('../js/core.js'); require('../js/engine.js'); require('../js/data.js');
@@ -374,6 +374,19 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       { encoding: 'utf8', timeout: 60000 });
     check('tools: an engine that dies at the start aborts its games, not the match',
           run.status === 0 && /2 aborted/.test(run.stdout), 'exit ' + run.status + ' ' + (run.stderr || '').split('\n')[0]);
+  }
+
+  // ================================================================ October 2026 audit
+  {
+    // A PGN set up from a position (a [FEN] tag) where White is already a rook down: the first
+    // move is quiet and the eval does not move, so nothing was lost on it.
+    const pgn = '[White "me"]\n[Black "them"]\n[Result "*"]\n[SetUp "1"]\n[FEN "r3k3/8/8/8/8/8/8/4K3 w - - 0 1"]\n\n' +
+      '1. Kd2 { [%eval -5.0] } Ke7 { [%eval -5.0] } *\n';
+    const games = Data.importPGN(pgn, 'me');
+    const errs = Analysis.mineErrors(games), prof = Analysis.buildProfile(games, null, Date.now());
+    const lost = prof.phases.opening.totalLoss + prof.phases.middlegame.totalLoss + prof.phases.endgame.totalLoss;
+    check('analysis: a game set up from a FEN is not judged against the opening\'s +0.2',
+      games.length === 1 && errs.length === 0 && lost === 0, errs.map(e => e.played + ' ' + e.cpLoss).join() + ' / ' + lost);
   }
 
   console.log('\n' + passed + ' passed, ' + failed + ' failed');

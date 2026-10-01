@@ -122,6 +122,28 @@ const byUser = Object.fromEntries(Titled.players().map((p) => [p.user, p]));
   check('refresh: a failed history request keeps the current rating', flaky.players.EricRosen.s.blitz[0] === 2550
     && flaky.players.EricRosen.s.blitz[3] === null, flaky.players.EricRosen);
 
+  // ---------------------------------------------------------------- October 2026 audit
+  const users = [{ username: 'EricRosen', perfs: { blitz: { rating: 2550, games: 9400 } } },
+    { username: 'Fins', perfs: { blitz: { rating: 2700, games: 3000 } } }];
+  const asked = [];
+  const garbled = await Titled.refresh(['EricRosen', 'Fins'], { pause: 1, today, fetch: async (url) => {
+    asked.push(url);
+    if (url.endsWith('/api/users')) return { ok: true, json: async () => users };
+    if (url.includes('EricRosen')) return { ok: true, json: async () => { throw new SyntaxError('Unexpected token <'); } };
+    return { ok: true, json: async () => [{ name: 'Blitz', points: [[2026, 8, 1, 2650]] }] };
+  } });
+  check('refresh: a garbled history keeps that player, and the next player\'s history is still read',
+    Object.keys(garbled.players).join() === 'EricRosen,Fins' && garbled.players.EricRosen.s.blitz[0] === 2550
+      && asked.some((u) => /Fins\/rating-history$/.test(u)) && garbled.players.Fins.s.blitz[3] === 2650, [asked.length, garbled.players]);
+  let notList = null;
+  await Titled.refresh(['EricRosen'], { pause: 1, fetch: async () => ({ ok: true, json: async () => ({ error: 'Not found' }) }) })
+    .catch((e) => { notList = e.message; });
+  check('refresh: an answer that is not a list of players is a plain error, not a TypeError',
+    !!notList && !/is not a function/.test(notList), notList);
+  const mixed = Titled.players({ date: '2026-10-01', players: { EricRosen: { t: 'IM', s: { blitz: [2600, 9400, 0] } } } });
+  check('players say whether their numbers are live or from the snapshot',
+    mixed.find((p) => p.user === 'EricRosen').live === true && mixed.find((p) => p.user === 'Fins').live === false);
+
   console.log('\n' + passed + ' passed, ' + failed + ' failed');
   process.exit(failed ? 1 : 0);
 })();

@@ -147,13 +147,14 @@
     return !speed || speed === 'all' ? rangeAcross(rows) : rangeAt(rows, speed);
   }
 
-  // The players, each with their rows: the live ones when refreshed, else the snapshot.
+  // The players, each with their rows: the live ones when refreshed (live: true), else the snapshot.
   function players(live) {
     var snap = SNAPSHOT.players;
     return PLAYERS.map(function (p) {
-      var l = live && live.players && live.players[p.user];
-      var s = l && typeof l === 'object' ? { t: cleanTitle(l.t), s: cleanRows(l.s) } : snap[p.user] || { t: null, s: {} };
-      return { user: p.user, name: p.name, title: s.t, rows: s.s };
+      var l = live && live.players && Object.prototype.hasOwnProperty.call(live.players, p.user) ? live.players[p.user] : null;
+      var fresh = !!l && typeof l === 'object';
+      var s = fresh ? { t: cleanTitle(l.t), s: cleanRows(l.s) } : snap[p.user] || { t: null, s: {} };
+      return { user: p.user, name: p.name, title: s.t, rows: s.s, live: fresh };
     }).sort(function (a, b) {
       return TITLE_ORDER.indexOf(a.title) - TITLE_ORDER.indexOf(b.title) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
     });
@@ -189,19 +190,25 @@
     return get('https://lichess.org/api/users', { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: users.join(',') })
       .then(function (r) { if (!r.ok) throw new Error('Lichess answered ' + r.status + '.'); return r.json(); })
       .then(function (list) {
+        if (!Array.isArray(list)) throw new Error('Lichess sent an answer this page does not understand.');
         var out = { date: iso(today), players: {} };
         var byName = {};
-        (list || []).forEach(function (u) { if (u && u.username && !u.closed && !u.disabled) byName[u.username.toLowerCase()] = u; });
+        list.forEach(function (u) { if (u && typeof u.username === 'string' && !u.closed && !u.disabled) byName[u.username.toLowerCase()] = u; });
         var chain = Promise.resolve();
         users.forEach(function (name) {
           var u = byName[name.toLowerCase()];
           if (!u) return;
-          chain = chain.then(function () { return wait(pause); })
-            .then(function () { return get('https://lichess.org/api/user/' + encodeURIComponent(name) + '/rating-history'); })
-            .then(function (r) { return r.ok ? r.json() : []; }, function () { return []; })
-            .then(function (hist) {
-              out.players[name] = { t: u.title || null, s: withHistory(rowsFromPerfs(u.perfs), historyRanges(hist, today)) };
-            });
+          // Each player's history stands alone: a failed or garbled one keeps that player's
+          // current rating and does not touch the next player's request.
+          chain = chain.then(function () {
+            return wait(pause)
+              .then(function () { return get('https://lichess.org/api/user/' + encodeURIComponent(name) + '/rating-history'); })
+              .then(function (r) { return r.ok ? r.json() : []; })
+              .catch(function () { return []; })
+              .then(function (hist) {
+                out.players[name] = { t: u.title || null, s: withHistory(rowsFromPerfs(u.perfs), historyRanges(hist, today)) };
+              });
+          });
         });
         return chain.then(function () { return out; });
       });

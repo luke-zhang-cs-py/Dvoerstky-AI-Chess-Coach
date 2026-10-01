@@ -392,26 +392,38 @@
   function winningChances(cp) { return 2 / (1 + Math.exp(-0.00368208 * cp)) - 1; }
   var CHANCE_INACCURACY = 0.1, CHANCE_MISTAKE = 0.2, CHANCE_BLUNDER = 0.3;
 
+  var OPENING_EDGE = 20;   // cp: White's small edge in the starting position
+  var START_KEY = Chess.START.split(' ').slice(0, 4).join(' ');
+
+  /* Calls fn(move, index, before, after) for each of my moves with an honest eval on both
+     sides, in centipawns from White's side, clamped. A move after a gap in the evals has no
+     "before" and is skipped. The first move's "before" is the opening edge only when the
+     game starts from the initial position: a game set up from a FEN has no known eval yet. */
+  function eachScoredMove(game, fn) {
+    var moves = game.moves || [];
+    var first = moves[0] && moves[0].fenBefore;
+    var prev = !first || first.split(' ').slice(0, 4).join(' ') === START_KEY ? OPENING_EDGE : null;
+    moves.forEach(function (mv, i) {
+      var after = (typeof mv.evalAfter === 'number') ? clampEval(mv.evalAfter) : null;
+      var before = prev;
+      prev = after;
+      if (after == null || before == null || mv.color !== game.myColor) return;
+      fn(mv, i, before, after);
+    });
+  }
+
   function mineErrors(games, opts) {
     opts = opts || {};
     var minLoss = opts.minLoss || 80;
     var out = [];
     games.forEach(function (game) {
       if (!game.moves || !game.moves.length) return;
-      var prevEval = 20; // white's small first-move edge
       var total = game.moves.length;
-      for (var i = 0; i < total; i++) {
-        var mv = game.moves[i];
-        var isMine = (mv.color === game.myColor);
-        var after = (typeof mv.evalAfter === 'number') ? clampEval(mv.evalAfter) : null;
-        var before = prevEval;
-        prevEval = after;
-        if (after == null || before == null) continue;   // a gap: no honest "before" for this move
-        if (!isMine) continue;
+      eachScoredMove(game, function (mv, i, before, after) {
         var cpLoss = mv.color === 'w' ? (before - after) : (after - before);
         var sign = mv.color === 'w' ? 1 : -1;
         var chanceDrop = winningChances(sign * before) - winningChances(sign * after);
-        if (cpLoss < minLoss || chanceDrop < CHANCE_INACCURACY) continue;
+        if (cpLoss < minLoss || chanceDrop < CHANCE_INACCURACY) return;
 
         var ply = i + 1;
         var phase = phaseOf(mv.fenBefore, ply, game.openingPly);
@@ -465,7 +477,7 @@
           timePressure: timePressure,
           progress: +(ply / total).toFixed(2)
         });
-      }
+      });
     });
     return out.sort(function (a, b) { return b.cpLoss - a.cpLoss; });
   }
@@ -559,12 +571,7 @@
 
     games.forEach(function (g) {
       if (!g.analysed) return;
-      var prev = 20;
-      (g.moves || []).forEach(function (mv, i) {
-        var after = (typeof mv.evalAfter === 'number') ? clampEval(mv.evalAfter) : null;
-        var before = prev; prev = after;
-        if (after == null || before == null) return;   // same gap rule as mineErrors
-        if (mv.color !== g.myColor) return;
+      eachScoredMove(g, function (mv, i, before, after) {
         var ph = phaseOf(mv.fenBefore, i + 1, g.openingPly);
         var loss = Math.max(0, mv.color === 'w' ? (before - after) : (after - before));
         phases[ph].plies++;
