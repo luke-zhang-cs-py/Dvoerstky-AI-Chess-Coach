@@ -206,7 +206,8 @@
     lines.push('The student wrote a justification before each of their moves. Their notes, with the engine verdict they had not yet seen:');
     Object.keys(transcript).sort(function (a, b) { return a - b; }).forEach(function (ply) {
       var t = transcript[ply];
-      lines.push('- Move ' + Math.ceil(ply / 2) + ' (' + t.san + '): "' + (t.text || '').replace(/"/g, "'") + '"' +
+      // ply is 0-based (the index into game.moves), as the review screen numbers it
+      lines.push('- Move ' + Math.ceil((+ply + 1) / 2) + ' ('+ t.san + '): "' + (t.text || '').replace(/"/g, "'") + '"' +
         (t.cpLoss ? ' [cost ' + t.cpLoss + 'cp; engine preferred ' + (t.best || '?') + ']' : ' [sound]'));
     });
     lines.push('');
@@ -237,8 +238,10 @@
       if (!r.ok) return r.text().then(function (t) { throw new Error('API ' + r.status + ': ' + t.slice(0, 200)); });
       return r.json();
     }).then(function (d) {
-      return (d.content || []).filter(function (b) { return b.type === 'text'; })
+      var text = (d.content || []).filter(function (b) { return b.type === 'text'; })
         .map(function (b) { return b.text; }).join('\n');
+      if (!text.trim()) throw new Error('The model sent no text (stop reason: ' + (d.stop_reason || 'none given') + ').');
+      return text;
     });
   }
 

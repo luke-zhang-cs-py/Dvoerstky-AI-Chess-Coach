@@ -389,6 +389,48 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       games.length === 1 && errs.length === 0 && lost === 0, errs.map(e => e.played + ' ' + e.cpLoss).join() + ' / ' + lost);
   }
 
+  // ================================================================ 5 October 2026 audit
+  {
+    // chess.com exports put "Chess.com" in Site (the game's page is in Link); other tools write
+    // "?" or a city. The id was Site's last segment, so every game in such a file had one id:
+    // the second file imported was all "already loaded", and transcripts and drills keyed by id
+    // ran games together.
+    const game = (white, black, moves, tags) => '[Event "Live Chess"]\n' + (tags || '[Site "Chess.com"]\n') +
+      '[White "' + white + '"]\n[Black "' + black + '"]\n[Result "*"]\n\n' + moves + ' *\n';
+    const a = Data.importPGN(game('me', 'x', '1. e4 e5 2. Nf3') + '\n' + game('y', 'me', '1. d4 d5'), 'me');
+    // The game-end test was /\b(...|\*)\s*$/, and there is no \b between a space and "*": a
+    // game with an unknown result ("*", an unfinished or set-up game) swallowed the next one.
+    check('pgn: a game ending "*" does not swallow the game after it',
+      a.length === 2 && a[0].moves.length === 3 && a[1].moves.length === 2, a.map(g => g.moves.length).join());
+    const b = Data.importPGN(game('me', 'z', '1. c4 e5'), 'me');
+    const ids = a.concat(b).map(g => g.id);
+    check('pgn: games from a file whose Site is not a link get an id each',
+      ids.length === 3 && new Set(ids).size === 3, ids.join());
+    const again = Data.importPGN(game('me', 'z', '1. c4 e5'), 'me');
+    check('pgn: ...and the same game imported again has the same id', again[0].id === b[0].id, again[0].id);
+    const linked = Data.importPGN(game('me', 'x', '1. e4', '[Site "Chess.com"]\n[Link "https://www.chess.com/game/live/123456"]\n'), 'me');
+    check('pgn: a chess.com game is known by its Link', linked[0].id === '123456' && /chess\.com\/game/.test(linked[0].url), linked[0].id);
+    const li = Data.importPGN(game('me', 'x', '1. e4', '[Site "https://lichess.org/AbCd1234"]\n'), 'me');
+    check('pgn: a Lichess game keeps its id from Site', li[0].id === 'AbCd1234' && li[0].url === 'https://lichess.org/AbCd1234', li[0].id);
+  }
+  {
+    // The transcript is keyed by the 0-based ply. The prompt numbered moves Math.ceil(ply / 2),
+    // so White's first move was "Move 0" and every White move one behind the board.
+    const g = { myColor: 'w', result: '1-0', openingName: 'x', moves: [] };
+    const t = { 0: { san: 'e4', text: 'a' }, 1: { san: 'e5', text: 'b' }, 2: { san: 'Nf3', text: 'c' }, 3: { san: 'Nc6', text: 'd' } };
+    const nums = Coach.buildPrompt(g, t, {}, null).split('\n').filter(l => /^- Move/.test(l)).map(l => l.match(/Move (\d+)/)[1]);
+    check('coach: the prompt numbers moves as the board does', nums.join() === '1,1,2,2', nums.join());
+  }
+  {
+    // An answer with no text (a refusal, a max_tokens stop before any text) was shown as an
+    // empty verdict box.
+    const keep = globalThis.fetch;
+    globalThis.fetch = () => Promise.resolve({ ok: true, json: () => Promise.resolve({ content: [], stop_reason: 'refusal' }) });
+    const msg = await Coach.callLLM('p', { apiKey: 'k' }).then(t => 'resolved ' + JSON.stringify(t), e => e.message);
+    globalThis.fetch = keep;
+    check('coach: an answer with no text is an error that says why, not an empty verdict', /refusal/.test(msg), msg);
+  }
+
   console.log('\n' + passed + ' passed, ' + failed + ' failed');
   process.exitCode = failed ? 1 : 0;
 })();

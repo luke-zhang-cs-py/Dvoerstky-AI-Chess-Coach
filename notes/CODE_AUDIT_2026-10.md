@@ -1,3 +1,112 @@
+# Code audit, 5 October 2026
+
+Scope: the files the two earlier passes read least, `js/coach.js` (65.9% of lines covered,
+`respond` and `callLLM` never run by any suite), `js/data.js`'s PGN import, `js/sparring.js`,
+`js/training.js`, `js/board.js` and `js/stockfish-reader.js`, plus a sweep of `ui.js` for
+markup and links built from untrusted text. The earlier passes, below, were not redone.
+
+Baseline before any change: every Node suite green (regress 68/68, rules 39/39, titled 37/37,
+the rest print and exit 0), `ui_check.py` 56/56 in Chrome, the UCI gauntlet's legality run
+1,002/1,002 legal. After: regress 75/75, the new `test/coach.js` 12/12, the rest unchanged,
+`ui_check.py` 56/56.
+
+## Bugs fixed
+
+| # | Class | What was wrong | Fix | Check |
+|---|---|---|---|---|
+| 1 | Functional (out of bounds, numbering) | The prompt for the written verdict numbered moves `Math.ceil(ply / 2)` over a 0-based ply, so White's first move was "Move 0" and every White move sat one behind the board the review screen shows. | `Math.ceil((ply + 1) / 2)`, the review screen's own formula. | regress.js: "the prompt numbers moves as the board does" |
+| 2 | Logic (regex) | `importPGN` found the end of a game with `/\b(1-0\|0-1\|1\/2-1\/2\|\*)\s*$/`. There is no word boundary between a space and `*`, so a game whose result is unknown (an unfinished or set-up game) never ended, and the next game in the file was glued onto it: two games in, one game out. | `(^\|\s)` instead of `\b`. | regress.js: "a game ending "*" does not swallow the game after it" |
+| 3 | Integration (identity) | A PGN game's id was the last segment of `Site`. chess.com writes `Site "Chess.com"` (the game's page is in `Link`), and other tools write `"?"` or a city, so every game in such a file had the same id: the second file imported was all "already loaded", and transcripts, drill cards (`id:ply`) and the review list ran different games together. | `gameUrl()` takes the game's page from `Site` or `Link`; with neither, `pgnId()` hashes players, date, round, start position and moves, so the same game re-imported keeps its id and two games never share one. Lichess ids are unchanged. | regress.js: four "pgn:" checks |
+| 4 | Functional | An answer from the API with no text in it (a refusal, a stop before any text) was shown as an empty verdict box. | `callLLM` rejects with the stop reason, which the existing `.catch` already shows. | regress.js: "an answer with no text is an error that says why" |
+
+Each check was run against the code before its fix and failed there (bug 2 also made the id
+checks fail, which is how it was found).
+
+## Checklist
+
+**Dispensables.** Fixed: `Sparring.assemble`'s `fmt(list, side, pos)` took two arguments it never
+read, and `dualAdvice` kept a `threats` variable that was only ever `null`; both gone, the
+`null` passed directly with a comment saying when. Nothing stale found in the comments read.
+Left: `Board.flip` and `Board.onKey` (keyboard moves) are reached by no suite; they are live
+UI, not dead code.
+
+**Bloaters.** Left: `ui.js` is still one 1,800-line file around the `S` state object (the
+reasons are in the October section below). `summarizeGame` is about 90 lines, but it reads as
+one narrative in order and splitting it would only move the sentences apart.
+
+**Abusers.** Nothing new. `respond`'s chain of `if`s is a rubric where each rule reads the
+score differently, not a switch over one value.
+
+**Couplers.** Nothing new. `coach.js` reads the error objects `analysis.js` produces, which is
+its job.
+
+**Change preventers.** The move-number formula existed in `ui.js` (twice) and `coach.js`, and the
+copy in `coach.js` was the wrong one (bug 1). Left as three short expressions, now identical,
+with a comment at the odd one out; a shared helper would mean a new dependency between the
+modules for one line.
+
+**Global data, magic numbers, naming.** Nothing new. The coach's rubric weights (0.3, 0.2, 0.75,
+...) are the model, and its comment says so.
+
+**Security.** Swept every `innerHTML` and `href` in `ui.js`: names, results, openings and URLs
+go through `esc`, links through `cleanGame`'s `https?://` filter (which the new `url` from
+`Link` also passes through). The API key goes only to `api.anthropic.com` in a header, never
+in a backup (checked by `ui_check.py`). `experiments/move_predictor/ermactually_games.pgn` is
+one public Lichess account's games, committed as training data; it holds no more than the
+public Lichess profile does. No secrets found in tracked files.
+
+## Coverage
+
+`python test/coverage_report.py` (Node 24.21.0, `ui_check.py` driven in Chrome via
+`PW_CHANNEL=chrome`). Line coverage; the report has no branch figure, and "partial" counts
+lines that ran with some code on them skipped.
+
+| file | lines before | lines after | functions before | functions after |
+|---|---|---|---|---|
+| coach.js | 65.9% of 214 | 93.5% of 216 | 27/32 | 35/37 |
+| data.js | 81.9% of 226 | 82.7% of 237 | 26/29 | 30/33 |
+| sparring.js | 98.9% of 178 | 100.0% of 177 | 23/23 | 23/23 |
+| analysis.js, engine.js, titled.js | 100.0% | 100.0% | all | all |
+| core.js | 99.8% of 483 | 99.8% of 483 | 33/34 | 33/34 |
+| training.js | 98.2% of 279 | 98.2% of 279 | 34/35 | 34/35 |
+| board.js | 92.5% of 173 | 92.5% of 173 | 15/18 | 15/18 |
+| stockfish-reader.js | 90.8% of 119 | 90.8% of 119 | 16/20 | 16/20 |
+| ui.js | 88.1% of 1,662 | 88.1% of 1,662 | 239/267 | 239/267 |
+| **total** | **92.3% of 4,460** | **93.7% of 4,472** | **581/626** | **593/635** |
+
+`coach.js`'s remaining gap is the two `fetch` callbacks' error shapes that only a real network
+produces. `data.js`'s is `fetchGames` and `fetchProfile` against the live API, which the browser
+check stubs at the route level. `sparring.js` reached 100% this run because the time-limited
+search happened to take the one branch it missed last time; it is not a new test.
+
+## Maintenance
+
+- **Corrective:** bugs 1 to 4.
+- **Adaptive:** `callLLM` defaults to `claude-sonnet-4-6` with `anthropic-version: 2023-06-01`.
+  Both are still served; a newer default model would be a product choice (cost, and newer models
+  think by default, which a 1,000-token cap may cut short), so it is left for the owner.
+  `actions/checkout@v4`, `setup-node@v4`, `setup-python@v5` in CI are current majors.
+- **Perfective:** chess.com and other non-Lichess PGN exports now import as separate games, and
+  an empty model answer says why.
+- **Preventive:** `test/coach.js` runs `respond` and `callLLM` (no key, success, HTTP error) for
+  the first time; CI picks it up with the other `test/*.js` files.
+
+## Left for later
+
+- Games already stored from a non-Lichess PGN keep the shared id they were given; importing that
+  file again adds them once more under their new ids. Clearing local data and importing again
+  gives clean ids.
+- `importPGN` still splits a file on a blank line before `[`; a PGN whose comments contain a
+  blank line followed by `[` would split mid-game. Not seen in Lichess or chess.com exports.
+- The review screen and the prompt number moves from 1 even for a game set up from a FEN whose
+  move number is not 1.
+- `ui_check.py` never drives the justification review (`submitJustification`, `finishReview`,
+  `askLLM`) or the scout sheet (`scout`, `scoutReport`); their pure halves are now covered in
+  Node, the DOM wiring is not. `Store.del`, `Store.keys` (the "delete all data" button) and the
+  Stockfish worker's failure paths (`failAll`, `terminate`, `onerror`) are not run either.
+
+---
+
 # Code audit, October 2026
 
 Scope: the newest code first (`js/titled.js` and the "Compared with titled players" sheet in

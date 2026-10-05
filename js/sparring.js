@@ -155,7 +155,6 @@
     var depth = opts.depth || 3, budget = opts.budget || 700;
     var mover = g.turnColor();
     return engine.rankAsync(g, depth, budget).then(function (mine) {
-      var threats = null;
       if (!g.inCheck()) {
         var fen = g.fen().split(' ');
         fen[1] = mover === 'w' ? 'b' : 'w';
@@ -169,12 +168,12 @@
             });
         }
       }
-      return assemble(g, mover, mine, threats, engine);
+      return assemble(g, mover, mine, null, engine);   // in check, or no null-move position: no threats
     });
   }
 
   function assemble(g, mover, mine, theirs, engine) {
-    function fmt(list, side, pos) {
+    function fmt(list) {
       if (!list) return [];
       return list.slice(0, 3).map(function (r, i) {
         return {
@@ -189,8 +188,8 @@
       sideToMove: mover,
       evalCp: mine.length ? (mover === 'w' ? mine[0].score : -mine[0].score) : 0,
       complexity: engine.complexity(g, mine),
-      white: mover === 'w' ? fmt(mine, 'w') : fmt(theirs, 'w'),
-      black: mover === 'b' ? fmt(mine, 'b') : fmt(theirs, 'b'),
+      white: fmt(mover === 'w' ? mine : theirs),
+      black: fmt(mover === 'b' ? mine : theirs),
       threatNote: null
     };
     if (theirs && theirs.length) {

@@ -166,7 +166,8 @@
     var joined = [], buf = '';
     chunks.forEach(function (c) {
       buf += (buf ? '\n\n' : '') + c;
-      if (/\b(1-0|0-1|1\/2-1\/2|\*)\s*$/.test(c.trim())) { joined.push(buf); buf = ''; }
+      // not \b: there is no word boundary between a space and "*"
+      if (/(^|\s)(1-0|0-1|1\/2-1\/2|\*)$/.test(c.trim())) { joined.push(buf); buf = ''; }
     });
     if (buf.trim()) joined.push(buf);
 
@@ -196,9 +197,10 @@
         parsed.result === '1-0' ? (myColor === 'w' ? 1 : 0) :
         parsed.result === '0-1' ? (myColor === 'b' ? 1 : 0) : 0.5;
       var d = Date.parse((t.UTCDate || t.Date || '').replace(/\./g, '-') + 'T' + (t.UTCTime || '12:00:00') + 'Z');
+      var url = gameUrl(t);
       out.push({
-        id: t.Site ? (t.Site.split('/').pop() || 'pgn' + i) : 'pgn' + i,
-        source: 'pgn', url: t.Site && /^http/.test(t.Site) ? t.Site : null,
+        id: url ? url.replace(/[\/?#]+$/, '').split('/').pop() : pgnId(t, parsed.moves),
+        source: 'pgn', url: url,
         speed: guessSpeed(t.TimeControl), perf: guessSpeed(t.TimeControl), rated: true,
         date: isNaN(d) ? Date.now() - i * 86400000 : d,
         endedAt: isNaN(d) ? Date.now() - i * 86400000 : d,
@@ -217,6 +219,22 @@
       });
     });
     return out;
+  }
+
+  // The game's own page: Lichess puts it in Site, chess.com in Link. A Site that is
+  // not a link ("Chess.com", "?", a city) names a place every game in the file shares.
+  function gameUrl(t) {
+    return [t.Site, t.Link].filter(function (u) { return /^https?:\/\/[^\/]+\/./.test(u || ''); })[0] || null;
+  }
+
+  // With no link, the id is a hash of who, when and the moves: the same game imported
+  // twice has the same id, and two games from one file never share one.
+  function pgnId(t, moves) {
+    var s = [t.Event, t.White, t.Black, t.Date, t.UTCDate, t.UTCTime, t.Round, t.FEN].join('|') + '|' +
+      moves.map(function (m) { return m.san; }).join(' ');
+    var h = 5381;
+    for (var i = 0; i < s.length; i++) h = ((h * 33) ^ s.charCodeAt(i)) >>> 0;
+    return 'pgn-' + h.toString(36) + '-' + moves.length;
   }
 
   function attachPgnEvals(moves) {
