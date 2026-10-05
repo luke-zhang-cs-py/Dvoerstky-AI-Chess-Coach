@@ -6,7 +6,13 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # Pinned, not ubuntu-latest: that label moves to Ubuntu 26 on 19 October
+    # 2026, and a runner image changing under the job is a failure with no
+    # code change behind it. Move this on purpose, after a green run.
+    runs-on: ubuntu-24.04
+    # Well past what this job takes; a stuck run fails here instead of
+    # after GitHub's six-hour default.
+    timeout-minutes: 30
     env:
       TZ: America/Toronto   # the plan tests step across a real clock change
     steps:
