@@ -51,36 +51,66 @@
     this.ep = -1; this.halfmoves = 0; this.movenumber = 1; this.history = [];
   };
 
+  /* Reads a FEN, and throws an Error saying what is wrong with one that is not
+     a position: a rank that is not 8 squares, an unknown piece, a side to move
+     other than w or b, an en passant field that is not a square, a halfmove
+     clock that is not a whole number, anything but one king a side. Missing
+     fields default (a bare board is White to move, no rights, clocks 0 and 1).
+     Two claims the board contradicts are dropped rather than refused: a
+     castling right whose king or rook is not on its home square, and an en
+     passant square no pawn can just have passed (the generator would otherwise
+     "capture" an empty square, or a piece of the mover's own). */
   Chess.prototype.load = function (fen) {
     this.clear();
     var parts = String(fen).trim().split(/\s+/);
     var rows = parts[0].split('/');
     if (rows.length !== 8) throw new Error('FEN needs 8 ranks, got ' + rows.length + ': ' + fen);
-    var sq = 0;
+    var sq = 0, kingCount = { 8: 0, 16: 0 };
     for (var r = 0; r < 8; r++) {
-      var row = rows[r]; sq = r * 16;
+      var row = rows[r], width = 0; sq = r * 16;
       for (var i = 0; i < row.length; i++) {
         var c = row[i];
-        if (/[1-8]/.test(c)) { sq += parseInt(c, 10); }
+        if (/[1-8]/.test(c)) { sq += parseInt(c, 10); width += parseInt(c, 10); }
         else {
           var color = c === c.toUpperCase() ? WHITE : BLACK;
           var type = FROM_SYM[c.toLowerCase()];
           if (!type) throw new Error('FEN has an unknown piece "' + c + '": ' + fen);
-          if (sq > r * 16 + 7) throw new Error('FEN rank ' + (8 - r) + ' is longer than 8 squares: ' + fen);
+          if (width >= 8) throw new Error('FEN rank ' + (8 - r) + ' is longer than 8 squares: ' + fen);
           this.board[sq] = type | color;
-          if (type === KING) this.kings[color] = sq;
-          sq++;
+          if (type === KING) { this.kings[color] = sq; kingCount[color]++; }
+          sq++; width++;
         }
       }
+      if (width !== 8) throw new Error('FEN rank ' + (8 - r) + ' has ' + width + ' squares, not 8: ' + fen);
     }
-    this.turn = parts[1] === 'b' ? BLACK : WHITE;   // a bare board (no field) is White to move
-    var cst = parts[2] || '-';
-    if (cst.indexOf('K') > -1) this.castling[WHITE] |= FLAG.KSIDE;
-    if (cst.indexOf('Q') > -1) this.castling[WHITE] |= FLAG.QSIDE;
-    if (cst.indexOf('k') > -1) this.castling[BLACK] |= FLAG.KSIDE;
-    if (cst.indexOf('q') > -1) this.castling[BLACK] |= FLAG.QSIDE;
-    this.ep = (!parts[3] || parts[3] === '-') ? -1 : sq0x88(parts[3]);
-    this.halfmoves = parseInt(parts[4], 10) || 0;
+    if (kingCount[WHITE] !== 1 || kingCount[BLACK] !== 1) {
+      throw new Error('FEN needs one king a side, has ' + kingCount[WHITE] + ' white and ' + kingCount[BLACK] + ' black: ' + fen);
+    }
+    if (parts[1] !== undefined && parts[1] !== 'w' && parts[1] !== 'b') {
+      throw new Error('FEN side to move must be w or b, not "' + parts[1] + '": ' + fen);
+    }
+    this.turn = parts[1] === 'b' ? BLACK : WHITE;
+    var cst = parts[2] || '-', b = this.board, self = this;
+    // A right counts only with the king on e1/e8 and that rook in its corner.
+    [WHITE, BLACK].forEach(function (col) {
+      if (b[col === WHITE ? 116 : 4] !== (KING | col)) return;
+      if (cst.indexOf(col === WHITE ? 'K' : 'k') > -1 && b[ROOK_HOME[col].k] === (ROOK | col)) self.castling[col] |= FLAG.KSIDE;
+      if (cst.indexOf(col === WHITE ? 'Q' : 'q') > -1 && b[ROOK_HOME[col].q] === (ROOK | col)) self.castling[col] |= FLAG.QSIDE;
+    });
+    var ep = parts[3] || '-';
+    if (ep !== '-' && !/^[a-h][1-8]$/.test(ep)) throw new Error('FEN en passant square "' + ep + '" is not a square: ' + fen);
+    this.ep = ep === '-' ? -1 : sq0x88(ep);
+    if (this.ep !== -1) {
+      // White to move: the square is on the 6th rank, it and the 7th-rank square
+      // behind it are empty, and a black pawn stands in front of it on the 5th.
+      var them = this.turn === WHITE ? BLACK : WHITE, fwd = this.turn === WHITE ? 16 : -16;
+      if (rank(this.ep) !== (this.turn === WHITE ? 2 : 5) || b[this.ep] || b[this.ep - fwd] ||
+          b[this.ep + fwd] !== (PAWN | them)) this.ep = -1;
+    }
+    if (parts[4] !== undefined && !/^\d+$/.test(parts[4])) {
+      throw new Error('FEN halfmove clock must be a whole number, not "' + parts[4] + '": ' + fen);
+    }
+    this.halfmoves = parts[4] !== undefined ? parseInt(parts[4], 10) : 0;
     this.movenumber = parseInt(parts[5], 10) || 1;
     return this;
   };
@@ -228,7 +258,7 @@
             if (rank(cap) === promoRank) {
               [QUEEN, ROOK, BISHOP, KNIGHT].forEach(function (pc) { moves.push(mk(b, sq, cap, FLAG.PROMO | FLAG.CAPTURE, pc)); });
             } else moves.push(mk(b, sq, cap, FLAG.CAPTURE));
-          } else if (cap === this.ep) {
+          } else if (cap === this.ep && b[cap - dir] === (PAWN | them)) {   // the pawn that just passed
             moves.push(mk(b, sq, cap, FLAG.EP | FLAG.CAPTURE));
           }
         }
@@ -382,11 +412,24 @@
   Chess.prototype.moveFromSan = function (san) {
     var clean = san.replace(/[+#?!]+$/, '').replace(/[!?]/g, '').trim()
       .replace(/^0-0-0$/, 'O-O-O').replace(/^0-0$/, 'O-O')     // zeros, as some programs write castling
-      .replace(/^([a-h](?:x[a-h])?[18])([QRBN])$/, '$1=$2');    // a8Q for a8=Q
+      // a8Q and a8=q for a8=Q
+      .replace(/^([a-h](?:x[a-h])?[18])=?([QRBNqrbn])$/, function (_, sq, pc) { return sq + '=' + pc.toUpperCase(); });
     var ms = this.generate();
     for (var i = 0; i < ms.length; i++) {
       var s = this.san(ms[i], ms).replace(/[+#]/g, '');
       if (s === clean) return ms[i];
+    }
+    // long algebraic, with the from-square: Ng1f3, Ng1-f3, Bf1xb5, e7e8=Q
+    var lan = clean.match(/^([NBRQK])?([a-h][1-8])[-x]?([a-h][1-8])(?:=?([QRBNqrbn]))?$/);
+    if (lan) {
+      var piece = lan[1] ? FROM_SYM[lan[1].toLowerCase()] : 0;
+      for (var k = 0; k < ms.length; k++) {
+        var mv = ms[k];
+        if (mv.fromSq !== lan[2] || mv.toSq !== lan[3]) continue;
+        if (piece ? mv.piece !== piece : (lan[4] && mv.piece !== PAWN)) continue;
+        if (lan[4] ? SYM[mv.promo] !== lan[4].toLowerCase() : mv.promo && mv.promo !== QUEEN) continue;
+        return mv;
+      }
     }
     // lenient: try uci
     var uci = clean.match(/^([a-h][1-8])([a-h][1-8])([qrbn])?$/i);
@@ -487,44 +530,81 @@
   };
 
   /* ---------- PGN ---------- */
-  function parsePgnTags(text) {
-    var tags = {}, re = /\[(\w+)\s+"([^"]*)"\]/g, m;
-    while ((m = re.exec(text))) tags[m[1]] = m[2];
-    return tags;
+  /* PGN text -> tokens, in one pass, so each kind of text is read by its own
+     rule wherever it appears: {brace comments} (which may hold [%eval ...] and
+     ";" without either meaning anything), "; to the end of the line" comments,
+     "%" escape lines (a % in the first column), [Tag "value"] pairs, the
+     parentheses of variations, and words (move numbers, moves, NAGs, results). */
+  var TAG_RE = /\[\s*(\w+)\s+"((?:[^"\\]|\\.)*)"\s*\]/y;
+  function pgnTokens(text) {
+    var out = [], i = 0, n = text.length, c, j;
+    while (i < n) {
+      c = text[i];
+      if (c === '%' && (i === 0 || text[i - 1] === '\n')) { j = text.indexOf('\n', i); i = j < 0 ? n : j; continue; }
+      if (c === ';') { j = text.indexOf('\n', i); i = j < 0 ? n : j; continue; }
+      if (c === '{') {
+        j = text.indexOf('}', i);
+        out.push({ t: 'comment', text: text.slice(i + 1, j < 0 ? n : j).replace(/\s+/g, ' ').trim() });
+        i = j < 0 ? n : j + 1; continue;
+      }
+      if (c === '[') {
+        TAG_RE.lastIndex = i;
+        var m = TAG_RE.exec(text);
+        if (m) { out.push({ t: 'tag', name: m[1], value: m[2].replace(/\\(["\\])/g, '$1') }); i = TAG_RE.lastIndex; continue; }
+        i++; continue;
+      }
+      if (c === '(' || c === ')') { out.push({ t: c }); i++; continue; }
+      if (/\s|[\]}]/.test(c)) { i++; continue; }
+      j = i;
+      while (j < n && !/[\s{}()\[\];]/.test(text[j])) j++;
+      out.push({ t: 'word', text: text.slice(i, j) });
+      i = j;
+    }
+    return out;
   }
 
   // Returns {tags, moves:[{san, uci, ply, color, fenBefore, fenAfter, captured, comment, nag}], result}
   var RESULTS = /^(1-0|0-1|1\/2-1\/2|\*)$/;
 
+  /* One game: the first in the text. It ends at its result token, or where a
+     new tag section starts after its moves; anything after that is ignored, so
+     a file of many games must be split first (Data.importPGN does).
+     A move that cannot be played is an Error naming it: the moves after it
+     would be read from the wrong position, so the game is not silently cut
+     short or continued past the hole. */
   Chess.parsePGN = function (pgn) {
-    // Comments first: they carry [%eval ...] and [%clk ...], which look like
-    // brackets and would go with the tag pairs if those were stripped first.
-    var body = pgn.replace(/\{[^}]*\}/g, function (c) { return ' \u0001' + c.slice(1, -1).replace(/\s+/g, '\u0002') + '\u0001 '; });
-    var tags = parsePgnTags(body);
-    body = body.replace(/\[\w+\s+"[^"]*"\]\s*/g, '').trim();
-    // Variations nest; strip innermost first until none are left.
-    for (var prev = null; prev !== body;) { prev = body; body = body.replace(/\([^()]*\)/g, ' '); }
-    var tokens = body.split(/\s+/);
-    var moves = [];
-    var game = new Chess(tags.FEN || undefined);
-    var result = RESULTS.test(tags.Result || '') ? tags.Result : '*';
-    for (var i = 0; i < tokens.length; i++) {
-      var t = tokens[i];
-      if (!t) continue;
-      if (t[0] === '\u0001') {
-        // A comment describes the move it follows; one before the first move
-        // is about the game and has no move to go with.
-        if (moves.length) moves[moves.length - 1].comment = t.replace(/\u0001/g, '').replace(/\u0002/g, ' ').trim();
+    var tokens = pgnTokens(String(pgn).replace(/\r\n?/g, '\n'));
+    var tags = {}, moves = [], game = null, tokenResult = null, started = false, depth = 0;
+    for (var i = 0; i < tokens.length && !tokenResult; i++) {
+      var tok = tokens[i];
+      if (tok.t === 'tag') {
+        if (started) break;   // the next game's tags
+        tags[tok.name] = tok.value;
         continue;
       }
-      if (/^\d+\.+$/.test(t)) continue;
-      if (RESULTS.test(t)) { result = t; continue; }
+      started = true;
+      if (tok.t === '(') { depth++; continue; }
+      if (tok.t === ')') { if (depth) depth--; continue; }
+      if (depth) continue;   // variations stay out of the main line
+      if (tok.t === 'comment') {
+        // A comment describes the move it follows; one before the first move
+        // is about the game and has no move to go with.
+        if (moves.length) moves[moves.length - 1].comment = tok.text;
+        continue;
+      }
+      var t = tok.text;
+      if (/^\d+\.+$/.test(t) || /^\.+$/.test(t)) continue;
+      if (RESULTS.test(t)) { tokenResult = t; continue; }
       if (/^\$\d+$/.test(t)) { if (moves.length) moves[moves.length - 1].nag = t; continue; }
       t = t.replace(/^\d+\.+/, '');
-      if (!t) continue;
+      if (!t || /^[!?]+$/.test(t) || /^e\.p\.?$/i.test(t)) continue;   // a detached annotation, "exd6 e.p."
+      if (!game) game = new Chess(tags.FEN || undefined);
       var before = game.fen();
       var mv = game.move(t);
-      if (!mv) { continue; }
+      if (!mv) {
+        throw new Error('PGN: cannot play "' + t + '" at move ' + game.movenumber +
+          (game.turn === WHITE ? ' (White)' : ' (Black)') + ' from ' + before);
+      }
       moves.push({
         san: mv.san, uci: mv.fromSq + mv.toSq + (mv.promo ? SYM[mv.promo] : ''),
         ply: moves.length + 1, color: mv.color === WHITE ? 'w' : 'b',
@@ -533,6 +613,7 @@
         comment: null
       });
     }
+    var result = tokenResult || (RESULTS.test(tags.Result || '') ? tags.Result : '*');
     return { tags: tags, moves: moves, result: result };
   };
 

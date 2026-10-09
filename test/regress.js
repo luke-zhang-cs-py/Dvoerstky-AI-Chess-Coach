@@ -1,5 +1,7 @@
-// Regression checks for bugs found in the September and October 2026 audits. One check per
-// bug, each written to fail on the code before its fix. Run: node test/regress.js
+// Regression checks for bugs found in the September and October 2026 audits: at least one
+// check per bug, written to fail on the code before its fix (notes/CODE_AUDIT_2026-10.md
+// records the one that did not, and how it was tightened).
+// Run: TZ=America/Toronto node test/regress.js (the clock-change check needs a zone with one)
 globalThis.window = globalThis;
 require('../js/core.js'); require('../js/engine.js'); require('../js/data.js');
 require('../js/analysis.js'); require('../js/training.js'); require('../js/coach.js');
@@ -7,10 +9,16 @@ require('../js/sparring.js');
 const Games = require('../tools/games.js');
 const { Chess, Engine, Analysis, Training, Coach, Sparring, Data } = globalThis;
 
-let failed = 0, passed = 0;
+let failed = 0, passed = 0, skipped = 0;
 function check(name, ok, detail) {
   if (ok) passed++; else failed++;
   console.log((ok ? 'PASS ' : 'FAIL ') + name + (detail !== undefined ? '  [' + detail + ']' : ''));
+}
+// A check that cannot run here. In CI (CI is set) nothing may be skipped, so a skip fails.
+function skip(name, why) {
+  if (process.env.CI) return check(name, false, 'skipped in CI: ' + why);
+  skipped++;
+  console.log('SKIP ' + name + '  [' + why + ']');
 }
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -147,12 +155,16 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 
   // ---------------------------------------------------------------- training
   {
-    // Run with TZ=America/Toronto: clocks go back on 1 Nov 2026.
+    // Needs a time zone whose clocks change between 25 Oct and 8 Nov 2026: run with
+    // TZ=America/Toronto (clocks go back on 1 Nov), as CI does. In a zone without daylight
+    // saving the dates are unique whatever the code does, so the check would prove nothing.
     const plans = Training.planRange(new Date(2026, 9, 25), 14, null, [], {});
     const dates = plans.map(p => p.date);
     const unique = new Set(dates).size;
-    check('training: 14 days across the clock change are 14 different dates', unique === 14 && dates[13] === '2026-11-07',
-          dates.slice(5, 9).join(' ') + ' ... ' + dates[13]);
+    const name = 'training: 14 days across the clock change are 14 different dates';
+    if (new Date(2026, 9, 25).getTimezoneOffset() === new Date(2026, 10, 8).getTimezoneOffset())
+      skip(name, 'no clock change in this time zone (' + Intl.DateTimeFormat().resolvedOptions().timeZone + '); run with TZ=America/Toronto');
+    else check(name, unique === 14 && dates[13] === '2026-11-07', dates.slice(5, 9).join(' ') + ' ... ' + dates[13]);
     const ics = Training.toICS(plans, { hour: 19 });
     const events = ics.split('BEGIN:VEVENT').length - 1;
     const stamps = (ics.match(/\r\nDTSTAMP:\d{8}T\d{6}Z/g) || []).length;
@@ -182,7 +194,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     const opening = out.narrative[0];
     check('coach: the opening line names the first error, not the costliest', / at move 4\./.test(opening), opening);
     const turn = out.narrative.find(l => /further/i.test(l)) || '';
-    check('coach: one further loss is not called "two"', !/^Two further/.test(turn) || out.turningPoints.length === 3, turn);
+    check('coach: one further loss is called "One further"', /^One further/.test(turn), turn);
   }
 
   // ---------------------------------------------------------------- mistakes, judged by winning chances
@@ -407,7 +419,11 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     check('pgn: games from a file whose Site is not a link get an id each',
       ids.length === 3 && new Set(ids).size === 3, ids.join());
     const again = Data.importPGN(game('me', 'z', '1. c4 e5'), 'me');
-    check('pgn: ...and the same game imported again has the same id', again[0].id === b[0].id, again[0].id);
+    // On the old code every game here was "Chess.com", so "the same id" alone passed there too:
+    // the id must also be the game's own, not Site's, and not another game's.
+    check('pgn: ...and the same game imported again has the same id, its own',
+      again[0].id === b[0].id && again[0].id !== 'Chess.com' && again[0].id !== a[0].id && again[0].id !== a[1].id,
+      again[0].id + ' vs ' + a.map(g => g.id).join());
     const linked = Data.importPGN(game('me', 'x', '1. e4', '[Site "Chess.com"]\n[Link "https://www.chess.com/game/live/123456"]\n'), 'me');
     check('pgn: a chess.com game is known by its Link', linked[0].id === '123456' && /chess\.com\/game/.test(linked[0].url), linked[0].id);
     const li = Data.importPGN(game('me', 'x', '1. e4', '[Site "https://lichess.org/AbCd1234"]\n'), 'me');
@@ -431,6 +447,127 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     check('coach: an answer with no text is an error that says why, not an empty verdict', /refusal/.test(msg), msg);
   }
 
-  console.log('\n' + passed + ' passed, ' + failed + ' failed');
+  // ================================================================ 9 October 2026 audit
+  {
+    // A move the parser could not read was skipped, and the game went on from the wrong
+    // position: here 2. Qxf7 is impossible, so "Nc6" was played by White.
+    let err = null;
+    try { Chess.parsePGN('1. e4 e5 2. Qxf7 Nc6 *'); } catch (e) { err = e; }
+    check('pgn: a move that cannot be read is an error that names it, not skipped', err && /Qxf7/.test(err.message), err ? err.message : 'no error');
+    // ...and the importer skips that game and keeps the others.
+    const two = '[White "me"]\n[Black "x"]\n[Result "*"]\n\n1. e4 e5 2. Qxf7 Nc6 *\n\n' +
+      '[White "me"]\n[Black "y"]\n[Result "*"]\n\n1. d4 d5 *\n';
+    let imported = null;
+    try { imported = Data.importPGN(two, 'me'); } catch (e) { imported = e.message; }
+    check('pgn: the importer skips a game with an unreadable move and keeps the rest',
+          Array.isArray(imported) && imported.length === 1 && imported[0].moves.length === 2, JSON.stringify(imported && imported.length));
+    const sans = p => p.moves.map(m => m.san).join(' ');
+    const semi = Chess.parsePGN('1. e4 e5 ; 2. Nc3 was the other try\n2. Nf3 Nf6 *');
+    check('pgn: a ";" comment runs to the end of the line', sans(semi) === 'e4 e5 Nf3 Nf6', sans(semi));
+    const pct = Chess.parsePGN('1. e4 e5\n% d4 is an escape line, not a move\n2. Nf3 *');
+    check('pgn: a "%" escape line is skipped', sans(pct) === 'e4 e5 Nf3', sans(pct));
+    const lower = Chess.parsePGN('[FEN "8/4P3/8/8/8/k7/8/K7 w - - 0 1"]\n\n1. e8=q Kb3 2. Qe3+ *');
+    check('pgn: a lowercase promotion piece (e8=q)', sans(lower) === 'e8=Q Kb3 Qe3+', sans(lower));
+    const lan = Chess.parsePGN('1. e4 e5 2. Ng1f3 Nb8-c6 3. Bf1-b5 a7a6 4. Bb5xc6 dxc6 *');
+    check('pgn: long algebraic with the from-square (Ng1f3, Nb8-c6, Bb5xc6)', sans(lan) === 'e4 e5 Nf3 Nc6 Bb5 a6 Bxc6 dxc6', sans(lan));
+    const multi = Chess.parsePGN('[Event "a"]\n\n1. e4 e5 1-0\n\n[Event "b"]\n\n1. d4 d5 0-1');
+    check('pgn: two games in one string: the first one, its own tags and result',
+          sans(multi) === 'e4 e5' && multi.tags.Event === 'a' && multi.result === '1-0', sans(multi) + ' / ' + multi.tags.Event + ' / ' + multi.result);
+  }
+  {
+    // Quiescence stood pat in check: Black's queen on a8 is forked by the knight and the
+    // static score counted it as safe; and a mating capture scored as the rook it won.
+    const e = new Engine();
+    const fork = e.quiesce(new Chess('q3k3/2N5/8/8/8/8/8/6K1 b - - 0 1'), -Infinity, Infinity, 4);
+    check('engine: quiescence in check searches the evasions instead of standing pat', fork < 0, fork);
+    const mate = e.quiesce(new Chess('1r4k1/5ppp/8/8/8/8/5PPP/1R4K1 w - - 0 1'), -Infinity, Infinity, 4);
+    check('engine: quiescence sees a mate (Rxb8#)', Engine.mateIn(mate) === 1, mate);
+    // The deadline was checked in search() only, so a long quiescence tree ran on past it.
+    const q = new Engine(); q.clockTicks = 127;   // the next tick reads the clock
+    let threw = null;
+    try { q.quiesce(new Chess('r1q1k2r/1Q3Q2/2Q3Q1/8/8/1q3q2/2q3q1/R3K2R w KQkq - 0 1'), -Infinity, Infinity, 4, 1); } catch (x) { threw = x; }
+    check('engine: quiescence checks the deadline too', !!(threw && threw.timeout), JSON.stringify(threw));
+    // Anything above 9000 read as a mate: eight extra queens is about +9700.
+    const r = new Engine().rank(new Chess('QQQQQQQQ/1Q6/8/8/8/5k2/8/K7 w - - 0 1'), 2, 0);
+    const fake = r.filter(x => Engine.mateIn(x.score) !== null && Math.abs(x.score) < 29000);
+    check('engine: a large material score is not read as a mate', Engine.mateIn(9725) === null && fake.length === 0,
+          fake.map(x => x.san + ' ' + x.score).join());
+  }
+  {
+    // tools/sprt.js and tools/match.js, required in a child: before the fix, requiring them ran them.
+    const path = require('path'), cp = require('child_process');
+    const probe = (file, expr) => {
+      const code = 'globalThis.window = globalThis; const m = require(' + JSON.stringify(path.join(__dirname, '..', 'tools', file)) +
+        '); console.log(JSON.stringify(' + expr + '));';
+      const out = cp.spawnSync(process.execPath, ['-e', code], { encoding: 'utf8', timeout: 20000 });
+      try { return JSON.parse(out.stdout.trim().split('\n').pop()); } catch (e) { return null; }
+    };
+    // The LLR was 0 whenever either side had no win, so a clean sweep never decided.
+    const llr = probe('sprt.js', '[m.llr(60, 40, 0, 0, 20), m.llr(0, 40, 60, 0, 20), m.llr(0, 40, 0, 0, 20)]');
+    const up = Math.log(0.95 / 0.05), down = Math.log(0.05 / 0.95);
+    check('tools: SPRT accepts H1 at +60 =40 -0 and H0 at +0 =40 -60',
+          llr && llr[0] >= up && llr[1] <= down && llr[2] === 0, JSON.stringify(llr));
+    // The default house engine was a spec string re-split on spaces: Node under
+    // "C:\Program Files" became cmd=C:\Program.
+    const house = probe('match.js', 'm.house');
+    check('tools: match.js runs the default house engine with Node\'s own path, spaces and all',
+          house && house.cmd === process.execPath && house.args.length === 1 && /uci\.js$/.test(house.args[0]), JSON.stringify(house));
+  }
+  {
+    // tools/uci.js: the FEN ran six tokens, so "position fen <4 fields> moves ..." read "moves"
+    // as a FEN field and dropped the moves; the search blocked the input, so isready went
+    // unanswered and stop did nothing; "go infinite" and "go nodes" were ignored.
+    // The time limits are loose on purpose: the old code never answered at all (20 s), and a
+    // busy machine or CI runner can take a few hundred ms to schedule the reply.
+    const path = require('path');
+    const p = require('child_process').spawn(process.execPath, [path.join(__dirname, '..', 'tools', 'uci.js')]);
+    const lines = [], t0 = Date.now();
+    let buf = '', exitedAt = null;
+    p.stdout.setEncoding('utf8');
+    p.stdout.on('data', d => { buf += d; let i; while ((i = buf.indexOf('\n')) >= 0) { lines.push({ at: Date.now() - t0, text: buf.slice(0, i).trim() }); buf = buf.slice(i + 1); } });
+    p.on('exit', () => { exitedAt = Date.now() - t0; });
+    const send = l => { try { p.stdin.write(l + '\n'); } catch (e) { /* gone */ } };
+    const waitFor = async (re, ms, from) => {
+      const end = Date.now() + ms;
+      for (;;) {
+        const hit = lines.slice(from || 0).find(l => re.test(l.text));
+        if (hit || Date.now() > end || exitedAt !== null) return hit || null;
+        await sleep(10);
+      }
+    };
+    send('uci'); await waitFor(/^uciok/, 20000);
+    send('position fen 4k3/8/8/8/8/8/8/R3K3 w Q - moves e1c1 e8e7'); send('go depth 2');
+    const b1 = await waitFor(/^bestmove/, 20000);
+    const after = new Chess('4k3/8/8/8/8/8/8/R3K3 w Q - 0 1'); after.move('e1c1'); after.move('e8e7');
+    const mv = b1 && b1.text.split(/\s+/)[1];
+    check('uci: "position fen" with four fields still plays the moves after it',
+          !!mv && after.generate().some(m => m.fromSq + m.toSq === mv.slice(0, 4)), b1 && b1.text);
+    let from = lines.length;
+    send('position startpos'); send('go infinite'); await sleep(150);
+    const asked = Date.now() - t0; send('isready');
+    const ready = await waitFor(/^readyok/, 3000, from);
+    const early = lines.slice(from).find(l => /^bestmove/.test(l.text));
+    check('uci: isready is answered during a search', ready && ready.at - asked < 1000 && !early,
+          ready ? (ready.at - asked) + ' ms' + (early ? ', after a bestmove' : '') : 'no readyok');
+    await sleep(1500);
+    const tooSoon = lines.slice(from).find(l => /^bestmove/.test(l.text));
+    check('uci: "go infinite" sends no bestmove before stop', !tooSoon, tooSoon && tooSoon.text + ' at ' + tooSoon.at + ' ms');
+    from = lines.length; const stopped = Date.now() - t0; send('stop');
+    const b2 = await waitFor(/^bestmove/, 3000, from);
+    check('uci: stop ends the search with a bestmove at once', b2 && b2.at - stopped < 1000, b2 ? (b2.at - stopped) + ' ms' : 'none');
+    from = lines.length; send('go nodes 3000');
+    await waitFor(/^bestmove/, 10000, from);
+    const info = lines.slice(from).find(l => /^info .*\bnodes (\d+)/.test(l.text));
+    const nodes = info ? +info.text.match(/\bnodes (\d+)/)[1] : NaN;
+    check('uci: "go nodes N" stops at N nodes', nodes > 0 && nodes <= 3000, info && info.text);
+    send('go infinite'); await sleep(150);
+    const quitAt = Date.now() - t0; send('quit');
+    for (let i = 0; i < 300 && exitedAt === null; i++) await sleep(10);
+    check('uci: quit during a search exits at once', exitedAt !== null && exitedAt - quitAt < 1500,
+          exitedAt === null ? 'still running' : (exitedAt - quitAt) + ' ms');
+    if (exitedAt === null) p.kill();
+  }
+
+  console.log('\n' + passed + ' passed, ' + failed + ' failed' + (skipped ? ', ' + skipped + ' skipped' : ''));
   process.exitCode = failed ? 1 : 0;
 })();

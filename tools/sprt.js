@@ -57,9 +57,13 @@ if (!isMainThread) {
 // and its variance, with the two hypotheses as expected scores.
 function llr(w, d, l, elo0, elo1) {
   const n = w + d + l;
-  if (!w || !l) return 0;
+  if (!n) return 0;
   const s = (w + d / 2) / n;
   const variance = (w * (1 - s) ** 2 + d * (0.5 - s) ** 2 + l * (0 - s) ** 2) / n;
+  // Zero only when every game had the same result (all draws, all wins): no
+  // spread to measure. It used to be zero whenever either side had no win, so
+  // +60 =40 -0 never accepted H1 and +0 =40 -60 never accepted H0.
+  if (!variance) return 0;
   const score = elo => 1 / (1 + 10 ** (-elo / 400));
   const s0 = score(elo0), s1 = score(elo1);
   return n * (s1 - s0) * (2 * s - s0 - s1) / (2 * variance);
@@ -72,6 +76,9 @@ function eloOf(w, d, l) {
   const hi = -400 * Math.log10(1 / Math.min(0.999, s + 1.96 * sd) - 1), lo = -400 * Math.log10(1 / Math.max(0.001, s - 1.96 * sd) - 1);
   return { elo, margin: (hi - lo) / 2 };
 }
+
+// Required rather than run (test/regress.js): the arithmetic, and no match.
+if (require.main !== module) { module.exports = { llr, eloOf }; return; }
 
 const base = path.resolve(arg('base', ''));
 const cand = path.resolve(arg('new', path.join(__dirname, '..', 'js', 'engine.js')));

@@ -53,6 +53,43 @@ const play = (g, list) => list.forEach(s => { if (!g.move(s)) throw new Error('i
         !sans(new Chess('4k2b/8/8/3pP3/8/8/1K6/8 w - d6 0 1')).includes('exd6'));
   check('en passant: ...but the same capture is fine with no pin',
         sans(new Chess('4k3/8/8/3pP3/8/8/1K6/8 w - d6 0 1')).includes('exd6'));
+  // A FEN's en passant square was taken on trust. With no black pawn on e5, d5xe6 "en passant"
+  // emptied e5 and undoing it put a black pawn there from nowhere.
+  const ghost = new Chess('4k3/8/8/3P4/8/8/8/4K3 w - e6 0 1');
+  const ghostBefore = ghost.fen();
+  const ghostEp = ghost.generate().filter(m => m.flags & Chess.FLAG.EP);
+  check('en passant: a FEN square with no pawn that just passed is dropped, and nothing is added',
+        ghostEp.length === 0 && ghost.fen() === ghostBefore && ghostBefore.split(' ')[3] === '-', ghostBefore);
+  // e3 is Black's en passant square, not White's: d2xe3 "en passant" removed White's own queen on e2.
+  const own = new Chess('4k3/8/8/8/8/8/3PQ3/4K3 w - e3 0 1');
+  const ownEp = own.generate().filter(m => m.flags & Chess.FLAG.EP);
+  check('en passant: a square on the wrong rank is dropped, and the queen stays', ownEp.length === 0 &&
+        own.generate().every(m => { own.makeMove(m); const q = own.get('e2') || own.get(m.toSq); own.undoMove(); return q; }),
+        ownEp.map(m => m.fromSq + m.toSq).join());
+  // The generator itself asks for the pawn too, whatever set the square.
+  const raw = new Chess('4k3/8/8/3P4/8/8/8/4K3 w - - 0 1');
+  raw.ep = Chess.sq0x88('e6');
+  check('en passant: the generator needs an enemy pawn beside the capturing one', !raw.generate().some(m => m.flags & Chess.FLAG.EP));
+}
+
+// ---------------------------------------------------------------- the FEN itself
+{
+  const refuses = fen => { try { new Chess(fen); return false; } catch (e) { return true; } };
+  // King on d1 with a K right: "O-O" took the king to f1 and the g1 rook to e1.
+  const off = new Chess('4k3/8/8/8/8/8/8/3K2R1 w K - 0 1');
+  check('fen: a castling right without king and rook at home is dropped',
+        !sans(off).some(s => s.startsWith('O-O')) && off.fen().split(' ')[2] === '-', off.fen());
+  const rookOff = new Chess('r3k2r/8/8/8/8/8/7R/R3K3 w KQkq - 0 1');
+  check('fen: ...per side: no rook on h1, no K, the rest kept', rookOff.fen().split(' ')[2] === 'Qkq', rookOff.fen());
+  check('fen: a rank of more than 8 squares is refused (p8, 45)',
+        refuses('4k3/p8/8/8/8/8/8/4K3 w - - 0 1') && refuses('4k3/45/8/8/8/8/8/4K3 w - - 0 1'));
+  check('fen: a rank of fewer than 8 squares is refused', refuses('4k3/7/8/8/8/8/8/4K3 w - - 0 1'));
+  check('fen: the side to move must be w or b', refuses('4k3/8/8/8/8/8/8/4K3 x - - 0 1'));
+  check('fen: the en passant field must be a square', refuses('4k3/8/8/8/8/8/8/4K3 w - e9 0 1') && refuses('4k3/8/8/8/8/8/8/4K3 w - zz 0 1'));
+  check('fen: exactly one king a side', refuses('8/8/8/8/8/8/8/8 w - - 0 1') && refuses('4k3/8/8/8/8/8/8/3KK3 w - - 0 1') &&
+        refuses('8/8/8/8/8/8/8/4K3 w - - 0 1'));
+  check('fen: the halfmove clock must be a whole number, not negative', refuses('4k3/8/8/8/8/8/8/4K3 w - - -5 1') &&
+        refuses('4k3/8/8/8/8/8/8/4K3 w - - x 1'));
 }
 
 // ---------------------------------------------------------------- promotion

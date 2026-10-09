@@ -1,8 +1,8 @@
 r"""The house engine from the outside: four checks that drive tools/uci.js over UCI,
 the way a GUI would, with python-chess as an independent referee.
 
-    python test/engine_gauntlet.py legality  [--positions 1000] [--movetime 100]
-    python test/engine_gauntlet.py mates     [--movetime 1000]
+    python test/engine_gauntlet.py legality  [--positions 1000] [--movetime 100] [--slack 150]
+    python test/engine_gauntlet.py mates     [--movetime 1000] [--min-mate1 N] [--min-mate2 N]
     python test/engine_gauntlet.py random    [--games 100] [--movetime 50]
     python test/engine_gauntlet.py stockfish --stockfish path\to\stockfish.exe [--games 20] [--sf-movetime 100]
     python test/engine_gauntlet.py all       --stockfish path\to\stockfish.exe
@@ -12,12 +12,14 @@ the way a GUI would, with python-chess as an independent referee.
              placements, and hand-picked edge cases (en passant out of a pin, castling
              through check, underpromotion, double check). Every answer must be a
              well-formed UCI move that python-chess agrees is legal, sent within the
-             time limit, and "0000" exactly when the game is over. Checked by a move
+             movetime plus --slack ms (pipe latency, a loaded machine), and "0000"
+             exactly when the game is over. The slowest reply is reported. Checked by a move
              generator the engine does not share, so a bug in js/core.js cannot hide.
   mates      test/epd/mate1.epd and mate2.epd. A mate-in-1 is solved by mating. A
              mate-in-2 is solved when the first move still forces mate (proved by
              brute force, so any mating line counts, not only the one in the file)
-             and the engine then mates against every defence it is shown.
+             and the engine then mates against every defence it is shown. Fewer
+             solved than --min-mate1 / --min-mate2 is a hard failure.
   random     games against a random mover and a greedy capturer, colours alternating.
              Fails on a crash, a freeze, an illegal move, or a game that runs to the
              ply cap; reports the score, game lengths, and draws while winning.
@@ -27,8 +29,9 @@ the way a GUI would, with python-chess as an independent referee.
              not count), and before its first blunder (a referee Stockfish at fixed
              depth says the move lost 200+ cp).
 
-Exit code 1 on any hard failure (illegal move, freeze, crash, unsolved suite never
-counts as one: strength is reported, not asserted). --json FILE writes the numbers.
+Exit code 1 on any hard failure: an illegal or malformed move, a freeze, a crash, a
+reply later than movetime + slack, a game run to the ply cap, or a mate suite below
+its --min-mate threshold. Otherwise strength is reported, not asserted. --json FILE writes the numbers.
 Needs Node on PATH (or --node) and `pip install chess`.
 """
 from __future__ import annotations
@@ -62,7 +65,7 @@ EDGE_CASES = {
     "castling out of check": "4k3/8/8/8/8/8/4r3/R3K2R w KQ - 0 1",
     "queenside castling with b1 attacked": "4k3/8/8/8/8/8/1r6/R3K2R w KQ - 0 1",
     "promotion with capture choices": "1n2k3/P7/8/8/8/8/8/4K3 w - - 0 1",
-    "underpromotion to avoid stalemate": "8/1P6/8/8/8/8/k7/2K5 w - - 0 1",
+    "underpromotion to avoid stalemate": "8/1P6/k7/8/1K6/8/8/8 w - - 0 1",   # b8=Q stalemates; b8=R wins
     "all four promotions": "8/4P1pk/6pp/8/8/8/8/4K3 w - - 0 1",
     "double check: only the king may move": "4k3/8/8/1B6/8/8/4R3/4K3 b - - 0 1",
     "pinned piece cannot leave the line": "4k3/4r3/8/8/8/8/4N3/4K3 w - - 0 1",
@@ -228,12 +231,28 @@ def random_game_position(rng: random.Random) -> chess.Board:
 
 
 def random_placement(rng: random.Random) -> chess.Board:
-    """Random but valid: kings apart, no pawns on the back ranks, side not to move not in check."""
+    """Random but valid: kings apart, no pawns on the back ranks, side not to move not in check.
+
+    A third of them start with the kings and some rooks at home, so castling rights are
+    tested; a third end with a double pawn push, so a real en passant square is. Left to
+    chance, a king and rook at home turn up about once in 500 placements, and an en
+    passant square never."""
     while True:
         board = chess.Board(None)
         squares = rng.sample(chess.SQUARES, 64)
-        board.set_piece_at(squares.pop(), chess.Piece(chess.KING, chess.WHITE))
-        board.set_piece_at(squares.pop(), chess.Piece(chess.KING, chess.BLACK))
+        flavour = rng.choice(["plain", "castling", "en passant"])
+        if flavour == "castling":
+            for color, king_sq, corners in ((chess.WHITE, chess.E1, (chess.A1, chess.H1)),
+                                            (chess.BLACK, chess.E8, (chess.A8, chess.H8))):
+                board.set_piece_at(king_sq, chess.Piece(chess.KING, color))
+                squares.remove(king_sq)
+                for corner in corners:
+                    if rng.random() < 0.7:
+                        board.set_piece_at(corner, chess.Piece(chess.ROOK, color))
+                        squares.remove(corner)
+        else:
+            board.set_piece_at(squares.pop(), chess.Piece(chess.KING, chess.WHITE))
+            board.set_piece_at(squares.pop(), chess.Piece(chess.KING, chess.BLACK))
         for _ in range(rng.randint(0, 14)):
             piece = chess.Piece(rng.choice([1, 1, 1, 2, 3, 4, 5]), rng.choice([chess.WHITE, chess.BLACK]))
             sq = squares.pop()
@@ -241,11 +260,43 @@ def random_placement(rng: random.Random) -> chess.Board:
                 continue
             board.set_piece_at(sq, piece)
         board.turn = rng.choice([chess.WHITE, chess.BLACK])
-        # Castling rights where the king and rook stand at home; en passant where one is possible.
+        # Castling rights where the king and rook stand at home.
         board.castling_rights = chess.BB_CORNERS
         board.castling_rights = board.clean_castling_rights()
+        if flavour == "en passant" and not double_push(board, rng):
+            continue
         if board.is_valid() and not board.is_game_over():
             return board
+
+
+def double_push(board: chess.Board, rng: random.Random) -> bool:
+    """Make the side to move's last move a double pawn push beside one of its
+    pawns, so the position carries a real en passant square. False if none fits."""
+    mover, taker = not board.turn, board.turn
+    files = list(range(8))
+    rng.shuffle(files)
+    for f in files:
+        start = chess.square(f, 1 if mover == chess.WHITE else 6)
+        middle = chess.square(f, 2 if mover == chess.WHITE else 5)
+        dest = chess.square(f, 3 if mover == chess.WHITE else 4)
+        beside = [chess.square(f + d, chess.square_rank(dest)) for d in (-1, 1) if 0 <= f + d < 8]
+        if any(board.piece_at(sq) for sq in (start, middle, dest)) or not beside:
+            continue
+        side_sq = rng.choice(beside)
+        if board.piece_at(side_sq):
+            continue
+        board.set_piece_at(start, chess.Piece(chess.PAWN, mover))
+        board.set_piece_at(side_sq, chess.Piece(chess.PAWN, taker))
+        board.turn = mover
+        move = chess.Move(start, dest)
+        if board.is_valid() and board.is_legal(move):
+            board.push(move)
+            board.clear_stack()   # the placement is the start position, as for the others
+            return True
+        board.turn = taker
+        board.remove_piece_at(start)
+        board.remove_piece_at(side_sq)
+    return False
 
 
 def epd_positions(rng: random.Random, n: int) -> list[tuple[str, chess.Board]]:
@@ -286,7 +337,11 @@ def check_answer(board: chess.Board, token: str) -> str | None:
 def run_legality(args: argparse.Namespace) -> dict:
     positions = legality_positions(args.positions, args.seed)
     engine = house(args)
+    # One untimed search first: the first "go" pays for the worker thread's start and the
+    # JIT warming up (over 200 ms here), which no later move pays and a GUI never times.
+    engine.best(chess.Board(), args.movetime, args.timeout)
     failures, times = [], []
+    slowest: tuple[float, str, str] | None = None
     kinds: dict[str, int] = {}
     try:
         for i, (kind, board) in enumerate(positions):
@@ -299,9 +354,14 @@ def run_legality(args: argparse.Namespace) -> dict:
                 engine.restart()
                 continue
             times.append(took)
+            if slowest is None or took > slowest[0]:
+                slowest = (took, kind, board.fen())
             problem = check_answer(board, token)
             if problem:
                 failures.append({"kind": kind, "fen": board.fen(), "error": problem})
+            elif 1000 * took > args.movetime + args.slack:
+                failures.append({"kind": kind, "fen": board.fen(),
+                                 "error": f"late: {1000 * took:.0f} ms against {args.movetime} + {args.slack} ms"})
             if (i + 1) % 100 == 0:
                 print(f"  {i + 1} positions, {len(failures)} failure(s)", flush=True)
         for kind, fen in GAME_OVER.items():
@@ -318,10 +378,15 @@ def run_legality(args: argparse.Namespace) -> dict:
         "failures": failures,
         "median_ms": round(1000 * statistics.median(times)) if times else None,
         "max_ms": round(1000 * max(times)) if times else None,
+        "slowest": {"kind": slowest[1], "fen": slowest[2]} if slowest else None,
+        "slack_ms": args.slack,
     }
-    print(f"legality: {result['positions'] - len(failures)} of {result['positions']} answers legal "
+    print(f"legality: {result['positions'] - len(failures)} of {result['positions']} answers legal and on time "
           f"({', '.join(f'{v} {k}' for k, v in kinds.items())}, plus {len(GAME_OVER)} game-over checks); "
-          f"median {result['median_ms']} ms, slowest {result['max_ms']} ms")
+          f"median {result['median_ms']} ms, slowest {result['max_ms']} ms at {args.movetime} ms a move "
+          f"(limit {args.movetime + args.slack} ms)")
+    if slowest:
+        print(f"  slowest reply: [{slowest[1]}] {slowest[2]}")
     return result
 
 
@@ -382,8 +447,12 @@ def run_mates(args: argparse.Namespace) -> dict:
                     misses.append(f"{ident}: {why}")
             for miss in misses[:10]:
                 print(f"  miss {miss}")
-            result[f"mate_in_{n}"] = {"solved": solved, "total": len(suite), "misses": misses}
-            print(f"mate in {n}: solved {solved} of {len(suite)} at {args.movetime} ms a move")
+            need = getattr(args, f"min_mate{n}")
+            result[f"mate_in_{n}"] = {"solved": solved, "total": len(suite), "misses": misses, "min_solved": need}
+            print(f"mate in {n}: solved {solved} of {len(suite)} at {args.movetime} ms a move"
+                  + (f" (at least {need} required)" if need else ""))
+            if solved < need:
+                hard.append(f"mate in {n}: solved {solved}, below the {need} required")
     finally:
         engine.close()
     result["hard_failures"] = hard
@@ -701,6 +770,9 @@ def main() -> int:
     p.add_argument("--ref-depth", type=int, default=12)
     p.add_argument("--max-plies", type=int, default=400)
     p.add_argument("--timeout", type=float, default=15.0, help="seconds before a search counts as frozen")
+    p.add_argument("--slack", type=int, default=150, help="legality: ms past the movetime a reply may take before it is late")
+    p.add_argument("--min-mate1", type=int, default=0, help="mates: fewer mates in 1 solved is a hard failure")
+    p.add_argument("--min-mate2", type=int, default=0, help="mates: fewer mates in 2 solved is a hard failure")
     p.add_argument("--mate-count", type=int, default=100)
     p.add_argument("--seed", type=int, default=1)
     p.add_argument("--json", help="write the results here")
@@ -723,7 +795,8 @@ def main() -> int:
     if args.json:
         with open(args.json, "w", encoding="utf-8") as f:
             json.dump(results, f, indent=2)
-    print(f"\n{'PASS' if hard == 0 else 'FAIL'}: {hard} hard failure(s) (illegal, malformed, frozen, crashed, or looping)")
+    print(f"\n{'PASS' if hard == 0 else 'FAIL'}: {hard} hard failure(s) (illegal, malformed, late, frozen, crashed, "
+          f"looping, or a mate suite below its threshold)")
     return 1 if hard else 0
 
 

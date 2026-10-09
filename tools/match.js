@@ -45,7 +45,12 @@ function parseEngine(spec) {
   return e;
 }
 
-const house = parseEngine(flag('engine', `name=House cmd=${process.execPath} arg=${path.join(__dirname, 'uci.js')}`));
+// The default is built as an engine, not as a spec string to re-split: a Node
+// installed under "C:\Program Files" split into cmd=C:\Program and an arg.
+const DEFAULT_HOUSE = () => ({ name: 'House', cmd: process.execPath, args: [path.join(__dirname, 'uci.js')], options: {} });
+const house = flag('engine') ? parseEngine(flag('engine')) : DEFAULT_HOUSE();
+// Required rather than run (test/regress.js): the engine specs, and no match.
+if (require.main !== module) { module.exports = { parseEngine, house }; return; }
 const opponents = flags('opponent').map(parseEngine);
 // Concurrency: keep engines <= physical cores. With more, an engine is descheduled mid-move,
 // runs past its own clock, and the match measures the machine instead of the engines.

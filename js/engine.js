@@ -41,8 +41,13 @@
 
   function Engine() {
     this.nodes = 0;   // public: node count from the most recent rank()/rankAsync() call
-    this.clockTicks = 0;   // search() calls, for the deadline check
+    this.clockTicks = 0;   // search() and quiesce() calls, for the deadline check
     this.tt = new Map();   // Zobrist key -> {depth, score, flag}, persists across calls
+    // Optional limits a caller sets between searches (tools/uci.js does):
+    // nodeLimit, a node count at which the search stops as at a deadline
+    // (UCI "go nodes N"); shouldStop(), polled with the clock, true to stop now.
+    this.nodeLimit = 0;
+    this.shouldStop = null;
   }
 
   // Single pass over the board: material + PST (tapered), plus the raw counts
@@ -145,9 +150,15 @@
   // between two winning lines toward whichever was cached rather than
   // whichever is actually shorter. Simplest correct fix: never cache
   // a mate-range score in the first place, so there is nothing stale to
-  // retrieve. (9000 is also where Engine.mateIn starts reading a score
-  // as a mate, for every display.)
-  var TT_MATE_RANGE = 9000;
+  // retrieve. (This is also where Engine.mateIn starts reading a score as a
+  // mate, for every display.)
+  // A mate is scored MATE_SCORE less its distance in plies, and no line is
+  // anywhere near MAX_MATE_PLY long (Stockfish's "mate n" maps to 2n - 1), so
+  // everything above the threshold is a mate and nothing below it is. It was
+  // 9000, which a big material edge (eight extra queens) passes: such a
+  // score was shown as "#n" and kept out of the table as if it were a mate.
+  var MAX_MATE_PLY = 1000;
+  var TT_MATE_RANGE = MATE_SCORE - MAX_MATE_PLY;
 
   // complexity() tuning weights
   var COMPLEXITY_CHECK_SAMPLE = 40;   // cap on how many legal moves to test for checks
@@ -203,7 +214,7 @@
     results.forEach(function (r) {
       if (r.score !== -Infinity) return;
       g.makeMove(r.move);
-      r.score = -self.quiesce(g, -Infinity, Infinity, 0);
+      r.score = -self.quiesce(g, -Infinity, Infinity, 0);   // no stopAt: no deadline, node limit or stop request
       g.undoMove();
     });
     results.sort(function (a, b) { return b.score - a.score; });
@@ -293,17 +304,49 @@
     return false;
   }
 
-  Engine.prototype.quiesce = function (g, alpha, beta, depth) {
+  // Throws the timeout when the search must stop: the node limit reached, or,
+  // every TIMEOUT_CHECK_MASK + 1 calls, the deadline passed or shouldStop()
+  // saying so. Called by search() and quiesce() alike, so a long quiescence
+  // tree cannot run on past the clock.
+  Engine.prototype.checkStop = function (stopAt) {
+    if (this.nodeLimit && this.nodes >= this.nodeLimit) throw { timeout: true };
+    if ((++this.clockTicks & TIMEOUT_CHECK_MASK) === 0 &&
+        ((stopAt && Date.now() > stopAt) || (this.shouldStop && this.shouldStop()))) throw { timeout: true };
+  };
+
+  // stopAt as for search(); undefined (scoreUnsearched) means no limit at all.
+  // In check there is no standing pat -- the side to move may have no safe
+  // move at all -- so every evasion is searched, and having none is mate. The
+  // in-check node does not use up the depth budget's floor until it is
+  // QUIESCE_MAX_DEPTH below zero, where a chain of checks and counter-checks
+  // is cut off with the static score.
+  Engine.prototype.quiesce = function (g, alpha, beta, depth, stopAt) {
     this.nodes++;
+    if (stopAt !== undefined) this.checkStop(stopAt);
+    var ms, i, sc;
+    if (g.inCheck()) {
+      ms = g.generate();
+      if (!ms.length) return -MATE_SCORE + g.history.length;
+      if (depth <= -QUIESCE_MAX_DEPTH) return this.evaluate(g);
+      orderMoves(ms);
+      for (i = 0; i < ms.length; i++) {
+        g.makeMove(ms[i]);
+        sc = -this.quiesce(g, -beta, -alpha, depth - 1, stopAt);
+        g.undoMove();
+        if (sc > alpha) alpha = sc;
+        if (alpha >= beta) return beta;
+      }
+      return alpha;
+    }
     var stand = this.evaluate(g);
     if (stand >= beta) return beta;
     if (stand > alpha) alpha = stand;
     if (depth <= 0) return alpha;
-    var ms = g.generate().filter(function (m) { return m.captured || m.promo; });
+    ms = g.generate().filter(function (m) { return m.captured || m.promo; });
     orderMoves(ms);
-    for (var i = 0; i < ms.length; i++) {
+    for (i = 0; i < ms.length; i++) {
       g.makeMove(ms[i]);
-      var sc = -this.quiesce(g, -beta, -alpha, depth - 1);
+      sc = -this.quiesce(g, -beta, -alpha, depth - 1, stopAt);
       g.undoMove();
       if (sc >= beta) return beta;
       if (sc > alpha) alpha = sc;
@@ -315,14 +358,14 @@
   // synchronous fixed-budget search and rankAsync()'s per-slice deadline alike).
   Engine.prototype.search = function (g, depth, alpha, beta, stopAt) {
     this.nodes++;
-    if (stopAt && (++this.clockTicks & TIMEOUT_CHECK_MASK) === 0 && Date.now() > stopAt) throw { timeout: true };
+    this.checkStop(stopAt);
     var ms = g.generate();
     // Mated here: counted from the root, so mate in n scores MATE_SCORE - (2n - 1),
     // the scale cpDisplay and the Stockfish reader both read as "#n". It used to
     // count remaining depth, so a mate in one read as #49, and #48 a depth later.
     if (ms.length === 0) return g.inCheck() ? -MATE_SCORE + g.history.length : 0;
     if (g.halfmoves >= FIFTY_MOVE_RULE_HALFMOVES) return 0;
-    if (depth <= 0) return this.quiesce(g, alpha, beta, QUIESCE_MAX_DEPTH);
+    if (depth <= 0) return this.quiesce(g, alpha, beta, QUIESCE_MAX_DEPTH, stopAt || 0);
 
     var key = zobristKey(g);
     // A position this line or the game has already had, with the same side to
