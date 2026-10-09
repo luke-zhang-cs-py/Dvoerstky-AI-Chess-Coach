@@ -21,7 +21,8 @@
   function cleanGame(g) {
     g.result = RESULT_OK.test(g.result) ? g.result : '*';
     g.myColor = g.myColor === 'b' ? 'b' : 'w';
-    g.score = [0, 0.5, 1].indexOf(+g.score) > -1 ? +g.score : 0.5;
+    // a game with no result ("*") has no score, so results maths leaves it out
+    g.score = g.result === '*' && g.score == null ? null : [0, 0.5, 1].indexOf(+g.score) > -1 ? +g.score : 0.5;
     ['myRating', 'oppRating', 'ratingDiff', 'acpl', 'oppAcpl', 'accuracy', 'clockInitial',
      'clockIncrement', 'openingPly'].forEach(function (k) { g[k] = numOrNull(g[k]); });
     ['id', 'myName', 'oppName', 'eco', 'openingName', 'status', 'speed', 'perf', 'source', 'judgmentText']
@@ -82,10 +83,22 @@
   // keep each key the app knows, as the value the app itself would have stored.
   var PERFS = ['all', 'ultraBullet', 'bullet', 'blitz', 'rapid', 'classical', 'correspondence'];
   var WINDOW_STEPS = [7, 14, 30, 60, 90, 180, 365, 730, 1095, 0];   // days, for sync, strength and scout; 0 = all time
-  function cleanSettings(v) {
+  var SETTINGS_DEFAULTS = { minutes: 60, endgameTier: 2, hour: 19, apiKey: '', perf: 'all',
+    boardTheme: 'cyan', pieceSet: 'glyph', showCoords: true, uiScale: '1', windowDays: 0 };
+  // A session hour is a whole hour of the day; a budget is a positive number of minutes.
+  function validHour(v) { v = numOrNull(v); return v != null && v >= 0 && v <= 23 && v % 1 === 0 ? v : null; }
+  function validMinutes(v) { v = numOrNull(v); return v != null && v > 0 && v <= 1440 ? v : null; }
+  function validTier(v) { v = numOrNull(v); return [1, 2, 3].indexOf(v) > -1 ? v : null; }
+  // Stored or restored settings, every key the app knows, over the defaults: a blob
+  // missing a key (or holding a bad one) still gives the app a whole set.
+  function cleanSettings(v) { return Object.assign({}, SETTINGS_DEFAULTS, pickSettings(v)); }
+  // Only the keys present in v, each as the app itself would have stored it.
+  function pickSettings(v) {
     var out = {};
     if (!isObj(v)) return out;
-    ['minutes', 'endgameTier', 'hour'].forEach(function (k) { if (numOrNull(v[k]) != null) out[k] = +v[k]; });
+    if (validMinutes(v.minutes) != null) out.minutes = validMinutes(v.minutes);
+    if (validTier(v.endgameTier) != null) out.endgameTier = validTier(v.endgameTier);
+    if (validHour(v.hour) != null) out.hour = validHour(v.hour);
     ['apiKey', 'model'].forEach(function (k) { if (typeof v[k] === 'string') out[k] = v[k]; });
     if ('perf' in v) out.perf = PERFS.indexOf(v.perf) > -1 ? v.perf : 'all';
     if ('boardTheme' in v) out.boardTheme = /^[a-z]+(-[a-z]+)?$/.test(v.boardTheme) ? v.boardTheme : 'cyan';
@@ -105,8 +118,7 @@
     track: cleanTrack(Store.get('track', [])),
     transcripts: cleanTranscripts(Store.get('transcripts', {})),
     completed: cleanCompleted(Store.get('completed', {})),
-    settings: cleanSettings(Store.get('settings', { minutes: 60, endgameTier: 2, hour: 19, apiKey: '', perf: 'all',
-      boardTheme: 'cyan', pieceSet: 'glyph', showCoords: true, windowDays: 0 })),
+    settings: cleanSettings(Store.get('settings', null)),
     engine: new Engine(),
     spar: null,
     review: null,
@@ -117,11 +129,14 @@
   // Settings saved before the window existed were on the old default of rapid
   // games from the last 90 days. Move them to the new default once: every
   // standard speed, all time. A speed picked after this sticks.
-  if (S.settings.windowDays === undefined) {
-    S.settings.windowDays = 0;
-    if (S.settings.perf === 'rapid') S.settings.perf = 'all';
-    Store.set('settings', S.settings);
-  }
+  (function () {
+    var stored = Store.get('settings', null);
+    if (isObj(stored) && !('windowDays' in stored)) {
+      S.settings.windowDays = 0;
+      if (S.settings.perf === 'rapid') S.settings.perf = 'all';
+      Store.set('settings', S.settings);
+    }
+  })();
 
   /* ---------- how far back: one window for sync, strength and scout ---------- */
   function windowLabel(days) {
@@ -192,20 +207,52 @@
     if (!ok) flash('Local storage is full. Reduce the sync window in Settings.', 'bad');
     return ok;
   }
+  // Everything else written as the user works (grades, justifications, days done):
+  // a write the browser refuses says so, instead of being lost without a word.
+  var SAVE_WHAT = { cards: 'drill progress', track: 'strength trajectory', completed: 'days done',
+                    transcripts: 'written justification' };
+  function save(key, value) {
+    var ok = Store.set(key, value);
+    if (!ok) flash('Local storage is full, so your ' + (SAVE_WHAT[key] || key) + ' was not saved. ' +
+      'Export a backup in Settings, then free some space (a shorter sync window keeps fewer games).', 'bad');
+    return ok;
+  }
   function loadGames() {
     var raw = Store.get('games', null);
     if (raw) { try { S.games = hydrate(raw); } catch (e) { S.games = []; } }
   }
 
   /* ---------- masthead + tabs ---------- */
+  function tabNames() { return $$('.tab').map(function (t) { return t.dataset.tab; }); }
   function initTabs() {
-    $$('.tab').forEach(function (t) {
+    var tabs = $$('.tab');
+    tabs.forEach(function (t, i) {
+      t.id = 'tab-' + t.dataset.tab;
+      t.setAttribute('aria-controls', 'panel-' + t.dataset.tab);
+      var panel = $('#panel-' + t.dataset.tab);
+      if (panel) panel.setAttribute('aria-labelledby', t.id);
       t.addEventListener('click', function () { selectTab(t.dataset.tab); });
+      // the tablist pattern: arrows move between tabs (and select them), Home and End jump
+      t.addEventListener('keydown', function (e) {
+        var to = e.key === 'ArrowRight' ? i + 1 : e.key === 'ArrowLeft' ? i - 1 : e.key === 'Home' ? 0 : e.key === 'End' ? tabs.length - 1 : null;
+        if (to == null) return;
+        e.preventDefault();
+        var next = tabs[(to + tabs.length) % tabs.length];
+        selectTab(next.dataset.tab);
+        next.focus();
+      });
     });
-    selectTab(location.hash.slice(1) || 'strength');
+    // an old bookmark or a typo in the hash is not a tab: show the first one
+    var asked = location.hash.slice(1);
+    selectTab(tabNames().indexOf(asked) > -1 ? asked : 'strength');
   }
   function selectTab(name) {
-    $$('.tab').forEach(function (t) { t.setAttribute('aria-selected', String(t.dataset.tab === name)); });
+    if (tabNames().indexOf(name) < 0) name = 'strength';
+    $$('.tab').forEach(function (t) {
+      var on = t.dataset.tab === name;
+      t.setAttribute('aria-selected', String(on));
+      t.tabIndex = on ? 0 : -1;   // one tab stop for the whole list; arrows do the rest
+    });
     $$('.panel').forEach(function (p) { p.classList.toggle('active', p.id === 'panel-' + name); });
     history.replaceState(null, '', '#' + name);
     if (name === 'calendar') renderCalendar();
@@ -224,6 +271,7 @@
   }
 
   /* ---------- sync ---------- */
+  var GAME_CAP = 1000;   // games kept at once: sync's largest request, and the import's limit
   function sync() {
     var raw = $('#handle').value;
     var user = Data.parseHandle(raw);
@@ -235,8 +283,9 @@
     var days = S.settings.windowDays || 0, perf = S.settings.perf || 'all';
     Promise.all([
       Data.fetchProfile(user).catch(function () { return null; }),
-      // a longer window needs a higher cap, or "all time" would quietly mean "the last 300"
-      Data.fetchGames({ user: user, days: days, max: days && days <= 90 ? 300 : 1000, perfType: perf })
+      // 300 games are plenty for a window of up to 90 days; a longer one, or all time,
+      // asks for GAME_CAP, the most games the app keeps (an import keeps as many)
+      Data.fetchGames({ user: user, days: days, max: days && days <= 90 ? 300 : GAME_CAP, perfType: perf })
     ]).then(function (res) {
       var prof = res[0], games = res[1];
       if (!games.length) {
@@ -277,8 +326,18 @@
       S.allErrors = Analysis.mineErrors(S.games);
       S.book = Analysis.buildBook(S.games);
     }
-    S.profile = Analysis.buildProfile(S.games, rating, undefined,
-      { windowDays: S.settings.windowDays || 0, errors: S.allErrors });
+    if (!opts.windowOnly) S.adopted = null;   // new games of your own: a scouted profile no longer stands in
+    if (S.adopted) {
+      // A scouted profile loaded as yours stays theirs as the window moves: their
+      // games measured over the new window, and their repertoire for the mirror.
+      var a = S.adopted;
+      S.profile = Analysis.buildProfile(a.games, a.rating, undefined,
+        { windowDays: S.settings.windowDays || 0, errors: a.errors });
+      S.book = a.book;
+    } else {
+      S.profile = Analysis.buildProfile(S.games, rating, undefined,
+        { windowDays: S.settings.windowDays || 0, errors: S.allErrors });
+    }
     var cards = Training.buildDeck(S.allErrors, S.cardState);
     S.deck = {};
     cards.forEach(function (c) { S.deck[c.id] = c; });
@@ -295,15 +354,17 @@
   // The rating saved at the last sync reaches innerHTML (the ruler, the calibration card): a number or nothing.
   function storedRating() { return numOrNull(Store.get('lichessRating', null)); }
 
+  // Every card's review history is kept, not only the deck's: a card whose game is not
+  // loaded now (a narrower sync, say) has its schedule back when the game returns.
   function persistCards() {
-    var slim = {};
+    var slim = Object.assign({}, S.cardState);
     Object.keys(S.deck).forEach(function (k) {
       var c = S.deck[k];
       slim[k] = { id: c.id, ease: c.ease, interval: c.interval, reps: c.reps,
         lapses: c.lapses, due: c.due, last: c.last, history: c.history.slice(-10) };
     });
     S.cardState = slim;
-    Store.set('cards', slim);
+    save('cards', slim);
   }
 
   /* ---------- trajectory ----------
@@ -322,7 +383,7 @@
     else track.push(entry);
     if (track.length > 400) track = track.slice(-400);
     S.track = track;
-    Store.set('track', track);
+    save('track', track);
   }
 
   function daysBetween(a, b) {
@@ -773,10 +834,10 @@
     if (!p.openings.length) return '<div class="empty">Not enough repeated openings yet.</div>';
     var h = '<table><thead><tr><th>Opening</th><th>as</th><th class="num">n</th><th class="num">score</th><th class="num">cp lost</th></tr></thead><tbody>';
     p.openings.slice(0, 12).forEach(function (o) {
-      var bad = o.scorePct < 42;
+      var bad = o.scorePct != null && o.scorePct < 42;   // null: no finished game to score
       h += '<tr><td>' + esc(o.name) + '</td><td class="soft">' + (o.color === 'w' ? 'White' : 'Black') + '</td>' +
         '<td class="num">' + o.games + '</td>' +
-        '<td class="num"' + (bad ? ' style="color:var(--red)"' : '') + '>' + o.scorePct + '%</td>' +
+        '<td class="num"' + (bad ? ' style="color:var(--red)"' : '') + '>' + (o.scorePct == null ? '—' : o.scorePct + '%') + '</td>' +
         '<td class="num">' + o.cpLost + '</td></tr>';
     });
     return h + '</tbody></table>';
@@ -799,7 +860,7 @@
 
   function openingTreeNode(node) {
     var label = Math.ceil(node.ply / 2) + (node.ply % 2 === 1 ? '.' : '…');
-    var scoreBad = node.scorePct < 42;
+    var scoreBad = node.scorePct != null && node.scorePct < 42;
     var dropLabel, dropBad = false;
     if (node.evalDrop == null) {
       dropLabel = 'no eval data';
@@ -812,7 +873,7 @@
     var h = '<li><div class="node">' +
       '<span class="san">' + label + ' ' + esc(node.san) + '</span>' +
       '<span class="stat">' + node.games + ' games</span>' +
-      '<span class="stat' + (scoreBad ? ' bad' : '') + '">' + node.scorePct + '% score</span>' +
+      '<span class="stat' + (scoreBad ? ' bad' : '') + '">' + (node.scorePct == null ? 'no result' : node.scorePct + '% score') + '</span>' +
       '<span class="stat' + (dropBad ? ' bad' : '') + '">' + dropLabel + '</span>' +
       '</div>';
     var kids = node.childList || [];
@@ -859,9 +920,9 @@
     $('#sparFlip').addEventListener('click', function () { sparBoard.flip(); });
     $('#sparHint').addEventListener('click', function () { refreshAdvice(true); });
     $('#sparTakeback').addEventListener('click', takeback);
-    $('#sparResign').addEventListener('click', function () { if (S.spar) endSpar('You resigned.'); });
+    $('#sparResign').addEventListener('click', function () { if (S.spar && !S.spar.over) endSpar('You resigned.'); });
     $('#sfOn').addEventListener('change', function () {
-      if (!this.checked && sf.reader) { sf.reader.clear(); sf.pending = {}; }
+      if (!this.checked) sfClear();
       readPosition();
     });
     renderSf();
@@ -887,9 +948,10 @@
     $('#sparStatus').textContent = 'Playing as ' + (myColor === 'w' ? 'White' : 'Black') +
       ' against your mirror at ' + S.spar.mirror.targetElo + '.';
     renderSparMoves();
-    if (sf.reader) sf.reader.clear();   // the last game's positions no longer need reading
+    sfClear();   // the last game's positions no longer need reading
     readPosition();
-    if (myColor === 'b') setTimeout(mirrorMove, 250);
+    var sp = S.spar;
+    if (myColor === 'b') setTimeout(function () { mirrorMove(sp); }, 250);
     else refreshAdvice();
   }
 
@@ -903,16 +965,20 @@
     renderSparMoves();
     readPosition();
     if (checkSparEnd()) return;
-    S.spar.thinking = true;   // closed from now, not from when the timer fires: no takeback in the gap
-    setTimeout(mirrorMove, 120);
+    var sp = S.spar;
+    sp.thinking = true;   // closed from now, not from when the timer fires: no takeback in the gap
+    setTimeout(function () { mirrorMove(sp); }, 120);
   }
 
   // An engine answer is only good for the game and position it was asked about.
   function stillCurrent(sp, fen) { return S.spar === sp && !sp.over && sp.game.fen() === fen; }
 
-  function mirrorMove() {
-    var sp = S.spar;
-    if (!sp || sp.over) return;
+  /* The mirror's move in game sp, the game it was scheduled for. A timer from a game
+     since replaced (a restart within the delay) must not move on the new board, and
+     the mirror never moves for the user. */
+  function mirrorMove(sp) {
+    if (!sp || S.spar !== sp || sp.over) return;
+    if (sp.game.turnColor() === sp.myColor) { sp.thinking = false; return; }
     sp.thinking = true;
     var fen = sp.game.fen();
     $('#sparStatus').innerHTML = '<span class="spin"></span> Your mirror is thinking.';
@@ -939,13 +1005,13 @@
   function takeback() {
     var sp = S.spar; if (!sp || sp.thinking) return;
     for (var i = 0; i < 2 && sp.history.length; i++) { sp.game.undoMove(); sp.history.pop(); }
-    sp.over = false;
+    sp.over = false; sp.result = null;
     sparBoard.interactive = true;
     sparBoard.setGame(sp.game);
     renderSparMoves();
     readPosition();
     // Taking back the mirror's only move as Black leaves it the mirror's turn again.
-    if (sp.game.turnColor() !== sp.myColor) { sp.thinking = true; setTimeout(mirrorMove, 120); }
+    if (sp.game.turnColor() !== sp.myColor) { sp.thinking = true; setTimeout(function () { mirrorMove(sp); }, 120); }
     else refreshAdvice();
   }
 
@@ -956,12 +1022,15 @@
       ? (sp.game.turnColor() === sp.myColor ? 'Checkmate. You lost.' : 'Checkmate. You won.')
       : over === 'stalemate' ? 'Stalemate.' : over === 'fifty' ? 'Drawn by the fifty-move rule.'
       : over === 'repetition' ? 'Drawn by threefold repetition.' : 'Drawn: neither side can mate.';
-    endSpar(msg);
+    endSpar(msg, over === 'checkmate' ? (sp.game.turnColor() === 'w' ? '0-1' : '1-0') : '1/2-1/2');
     return true;
   }
 
-  function endSpar(msg) {
+  // result: the PGN result; none given is a resignation by the user
+  function endSpar(msg, result) {
     S.spar.over = true;
+    S.spar.result = result || (S.spar.myColor === 'w' ? '0-1' : '1-0');
+    renderSparMoves();
     $('#sparStatus').textContent = msg + ' Export the game to review it in the Review tab.';
     sparBoard.interactive = false;
   }
@@ -971,12 +1040,19 @@
     var h = '';
     sp.history.forEach(function (m, i) {
       if (i % 2 === 0) h += '<span class="num">' + (i / 2 + 1) + '.</span> ';
-      h += '<button' + (m.blunderTurn ? ' class="blunder"' : m.fromBook ? ' class="inacc"' : '') + '>' + esc(m.san) + '</button> ';
+      // text, not buttons: a move here is read, not pressed
+      h += '<span class="mv' + (m.blunderTurn ? ' blunder' : m.fromBook ? ' inacc' : '') + '">' + esc(m.san) + '</span> ';
     });
     $('#sparMoves').innerHTML = h || '<span class="soft">No moves yet.</span>';
-    $('#sparPgn').value = sp.history.map(function (m, i) {
-      return (i % 2 === 0 ? (i / 2 + 1) + '. ' : '') + m.san;
-    }).join(' ');
+    // With its players and result, so importing this text knows which side was yours
+    // and does not count an unfinished game as a result.
+    var me = String(S.handle || 'You').replace(/[^A-Za-z0-9_ .-]/g, ''), result = sp.result || '*';
+    $('#sparPgn').value = '[Event "Sparring against the mirror"]\n' +
+      '[White "' + (sp.myColor === 'w' ? me : Data.MIRROR_NAME) + '"]\n' +
+      '[Black "' + (sp.myColor === 'b' ? me : Data.MIRROR_NAME) + '"]\n' +
+      '[Result "' + result + '"]\n\n' +
+      sp.history.map(function (m, i) { return (i % 2 === 0 ? (i / 2 + 1) + '. ' : '') + m.san; })
+        .concat([result]).join(' ');
   }
 
   function refreshAdvice(force) {
@@ -998,9 +1074,26 @@
      Every position the game passes through is read once, in order, in a worker.
      A move's verdict needs the position before it and the one after; both are
      read anyway, since each is some move's "after". */
-  var sf = { reader: null, cache: {}, pending: {}, failed: null };
+  // gen: bumped by every clear(), so a read asked for before it is ignored when it lands
+  var sf = { reader: null, cache: {}, cacheKeys: [], pending: {}, failed: null, gen: 0 };
+  var SF_CACHE_MAX = 400;   // reads kept: a few long games' worth; the oldest go first
   function uciOf(m) { return m.fromSq + m.toSq + (m.promo ? Chess.SYM[m.promo] : ''); }
-  var SF_CLASSES = [[300, 'blunder'], [100, 'mistake'], [50, 'inaccuracy'], [0, 'good']];   // cp lost, as Lichess grades
+  // Centipawns lost on a board clamped to +-10 pawns, at fixed thresholds. Lichess grades
+  // by winning chances instead, so near a decided position the two can disagree.
+  var SF_CLASSES = [[300, 'blunder'], [100, 'mistake'], [50, 'inaccuracy'], [0, 'good']];
+
+  // Drop every read queued or running. Nothing asked for before this counts as on its
+  // way any more, so the next game's first position is asked for afresh.
+  function sfClear() {
+    if (sf.reader) sf.reader.clear();
+    sf.pending = {};
+    sf.gen++;
+  }
+  function sfRemember(key, res) {
+    if (!(key in sf.cache)) sf.cacheKeys.push(key);
+    sf.cache[key] = res;
+    while (sf.cacheKeys.length > SF_CACHE_MAX) delete sf.cache[sf.cacheKeys.shift()];
+  }
 
   function sfOn() { return !!$('#sfOn') && $('#sfOn').checked && !sf.failed; }
 
@@ -1028,12 +1121,15 @@
     var r = sfReader();
     if (!r) return;
     sf.pending[key] = true;
-    r.start().then(function () { return r.read(fen, Object.assign({ movetime: +$('#sfTime').value || 1000 }, opts)); })
+    var gen = sf.gen;
+    r.start().then(function () { return gen === sf.gen ? r.read(fen, Object.assign({ movetime: +$('#sfTime').value || 1000 }, opts)) : null; })
       .then(function (res) {
+        if (gen !== sf.gen) return;   // asked for before a clear(): a newer request owns this key now
         delete sf.pending[key];
-        if (res) sf.cache[key] = res;
+        if (res) sfRemember(key, res);
         if (S.spar === sp) renderSf();
       }).catch(function (err) {
+        if (gen !== sf.gen) return;
         delete sf.pending[key];
         sf.failed = err.message;
         renderSf();
@@ -1197,11 +1293,13 @@
   }
 
   var drillBoard = null;
-  function startDrill(mode) {
+  // ids: the cards to run, in order, when a calendar block has already chosen them
+  function startDrill(mode, ids) {
     var all = Object.keys(S.deck).map(function (k) { return S.deck[k]; });
     var queue;
     if (mode === 'endgame') { startEndgame($('#egPick').value); return; }
-    if (mode === 'due') queue = Training.dueCards(all).slice(0, 25);
+    if (ids) queue = ids.map(function (id) { return S.deck[id]; }).filter(Boolean);
+    else if (mode === 'due') queue = Training.dueCards(all).slice(0, 25);
     else if (mode === 'motif') {
       var m = $('#drillMotif').value;
       queue = all.filter(function (c) { return (c.meta.motifs || []).indexOf(m) > -1; });
@@ -1247,20 +1345,30 @@
       drillBoard.setGame(game, { from: move.fromSq, to: move.toSq });
       $('#drillFeedback').innerHTML = '<div class="coach-note ok">Correct: <b class="mono">' + esc(c.meta.solution) + '</b>. ' +
         (c.meta.line ? 'The line continues <span class="mono">' + esc(c.meta.line) + '</span>.' : '') + '</div>';
-      revealGrades(d.attempts === 1 ? 3 : 2);
+      revealGrades(d.attempts === 1 ? 3 : 2, false);
     } else {
       drillBoard.setGame(game);
       $('#drillFeedback').innerHTML = '<div class="coach-note">Not ' + esc(san) + '. ' +
-        (d.attempts >= 2 ? 'Look at what your opponent is allowed to do after it.' : 'Try again — or reveal, and lose the card\'s interval.') + '</div>';
+        (d.attempts >= 2 ? 'Look at what your opponent is allowed to do after it.' : 'Try again — or show the move, and grade the card Missed it or Hard.') + '</div>';
     }
   }
 
-  function revealGrades(suggested) {
+  /* The grades on offer, with the one the attempt points to marked. After "Show the
+     move" the card was not solved, so only "Missed it" and "Hard" are open: a revealed
+     answer cannot be graded as found. "Missed it" starts the card's interval again;
+     "Hard" keeps it and lets it grow more slowly, for a move that was nearly found. */
+  function revealGrades(suggested, shown) {
     S.drill.revealed = true;
     $('#drillReveal').classList.add('hidden');
     var g = $('#drillGrades');
     g.classList.remove('hidden');
-    g.dataset.suggested = suggested;
+    $$('[data-grade]', g).forEach(function (b) {
+      var grade = +b.dataset.grade;
+      b.disabled = !!shown && grade > 1;
+      b.classList.toggle('primary', grade === suggested);
+    });
+    var pick = $('[data-grade="' + suggested + '"]', g);
+    if (pick && document.activeElement && document.activeElement.id === 'drillReveal') pick.focus();
   }
 
   function initDrillControls() {
@@ -1272,11 +1380,13 @@
       drillBoard.interactive = false;
       $('#drillFeedback').innerHTML = '<div class="coach-note">The move was <b class="mono">' + esc(c.meta.solution) + '</b>. ' +
         (c.meta.line ? '<span class="mono">' + esc(c.meta.line) + '</span>' : '') + '</div>';
-      revealGrades(0);
+      revealGrades(0, true);
     });
     $$('[data-grade]').forEach(function (b) {
       b.addEventListener('click', function () {
-        var d = S.drill, c = d.queue[d.index];
+        var d = S.drill;
+        if (!d || b.disabled) return;
+        var c = d.queue[d.index];
         Training.review(S.deck[c.id] || c, +b.dataset.grade);
         persistCards();
         d.practised = true;
@@ -1293,7 +1403,7 @@
     $('#drillStage').classList.add('hidden');
     $('#drillHome').classList.remove('hidden');
     renderDrillHome();
-    if (d && d.practised) markDone('drill');   // quitting before a single card is not a day's work
+    if (d && d.practised) markDone();   // quitting before a single card is not a day's work
   }
 
   function startEndgame(id) {
@@ -1387,7 +1497,7 @@
     host.innerHTML = h;
 
     $('#icsBtn').addEventListener('click', function () {
-      var ics = Training.toICS(plans, { hour: +S.settings.hour });
+      var ics = Training.toICS(plans, { hour: S.settings.hour });   // toICS falls back to 19 for a bad hour
       download('dvoretsky-lab-' + todayKey + '.ics', ics, 'text/calendar');
     });
     $$('[data-day]', host).forEach(function (b) {
@@ -1405,12 +1515,12 @@
     var h = '<div class="sheet"><h3>' + p.weekday + ' ' + p.date + '</h3>' +
       '<p class="tiny soft">' + p.totalMinutes + ' minutes planned' +
       (S.completed[p.date] ? ' · logged as done' : '') + '</p>';
-    p.items.forEach(function (i) {
+    p.items.forEach(function (i, n) {
+      // the drill blocks run the very cards the plan counted (data-item: which block)
+      var run = '<button class="quiet" data-run="cards" data-item="' + n + '">Run it</button>';
       h += '<div class="block ' + i.type + '"><h4>' + esc(i.label) + '</h4>' +
         '<p>' + esc(i.note) + (i.count ? ' <span class="mono">' + i.count + ' positions</span>' : '') + '</p>' +
-        (i.type === 'recall' && i.count ? '<button class="quiet" data-run="due">Run it</button>' : '') +
-        (i.type === 'motif' && i.payload.motif ? '<button class="quiet" data-run="motif" data-motif="' + esc(i.payload.motif) + '">Run it</button>' : '') +
-        (i.type === 'calculation' && i.count ? '<button class="quiet" data-run="calc">Run it</button>' : '') +
+        ((i.type === 'recall' || i.type === 'motif' || i.type === 'calculation') && i.count ? run : '') +
         (i.type === 'endgame' ? '<button class="quiet" data-run="eg" data-eg="' + esc(i.payload.endgameId) + '">Set up</button>' : '') +
         (i.type === 'sparring' ? '<button class="quiet" data-run="spar" data-color="' + i.payload.color + '">Play</button>' : '') +
         (i.type === 'review' ? '<button class="quiet" data-run="review">Open review</button>' : '') +
@@ -1425,9 +1535,7 @@
     $$('[data-run]', host).forEach(function (b) {
       b.addEventListener('click', function () {
         var r = b.dataset.run;
-        if (r === 'due') { selectTab('drills'); startDrill('due'); }
-        if (r === 'motif') { selectTab('drills'); renderDrillHome(); $('#drillMotif').value = b.dataset.motif; startDrill('motif'); }
-        if (r === 'calc') { selectTab('drills'); startDrill('all'); }
+        if (r === 'cards') { selectTab('drills'); startDrill('plan', p.items[+b.dataset.item].payload.cardIds || []); }
         if (r === 'eg') { selectTab('drills'); renderDrillHome(); startEndgame(b.dataset.eg); }
         if (r === 'spar') { selectTab('sparring'); $('#sparColor').value = b.dataset.color; startSpar(b.dataset.color); }
         if (r === 'review') selectTab('review');
@@ -1436,15 +1544,15 @@
     var md = $('#markDone', host);
     if (md) md.addEventListener('click', function () {
       if (S.completed[p.date]) delete S.completed[p.date]; else S.completed[p.date] = Date.now();
-      Store.set('completed', S.completed);
+      save('completed', S.completed);
       renderCalendar();
     });
   }
 
-  function markDone(kind) {
+  function markDone() {
     var k = Training.dateKey(new Date());
     S.completed[k] = Date.now();
-    Store.set('completed', S.completed);
+    save('completed', S.completed);
   }
 
   /* ---------- review (justification transcript) ---------- */
@@ -1469,7 +1577,8 @@
     S.review = {
       game: game, plies: myPlies, cursor: 0,
       transcript: S.transcripts[game.id] || {},
-      errors: (S.profile ? S.profile.errors : []).filter(function (e) { return e.gameId === game.id; })
+      // every mined error, not the window's: a game older than the window is still reviewed against the engine
+      errors: (S.allErrors || []).filter(function (e) { return e.gameId === game.id; })
     };
     $('#revStage').classList.remove('hidden');
     $('#revText').disabled = false;   // the last review's end locked it
@@ -1508,7 +1617,7 @@
       if (i > uptoPly) return;
       if (m.color === 'w') h += '<span class="num">' + Math.ceil((i + 1) / 2) + '.</span> ';
       var cls = m.judgment === 'Blunder' ? 'blunder' : m.judgment === 'Mistake' ? 'mistake' : m.judgment === 'Inaccuracy' ? 'inacc' : '';
-      h += '<button class="' + cls + '"' + (i === uptoPly ? ' aria-current="true"' : '') + '>' + esc(m.san) + '</button> ';
+      h += '<span class="mv ' + cls + '"' + (i === uptoPly ? ' aria-current="true"' : '') + '>' + esc(m.san) + '</span> ';
     });
     return h || '<span class="soft">Start of game.</span>';
   }
@@ -1527,7 +1636,7 @@
     entry.notes = Coach.respond(entry, ctx);
     r.transcript[c.ply] = entry;
     S.transcripts[r.game.id] = r.transcript;
-    Store.set('transcripts', S.transcripts);
+    save('transcripts', S.transcripts);
     $('#revFeedback').innerHTML = renderFeedback(entry);
     var g = new Chess(c.mv.fenBefore);
     var mv = g.moveFromSan(c.mv.san);
@@ -1556,7 +1665,7 @@
 
   function finishReview() {
     var r = S.review;
-    var summary = Coach.summarizeGame(r.game, r.transcript, S.profile ? S.profile.errors : [], S.profile);
+    var summary = Coach.summarizeGame(r.game, r.transcript, S.allErrors || [], S.profile);
     var h = '<div class="sheet"><h3>Session summary</h3>';
     summary.narrative.forEach(function (n) { h += '<p>' + esc(n) + '</p>'; });
     h += '<h4 style="margin-top:.9rem">Homework</h4><ul>';
@@ -1603,8 +1712,9 @@
       var prof = res[0], games = res[1];
       if (!games.length) { out.innerHTML = '<div class="empty">No rated games for ' + esc(user) + ' in that time control ' + windowPhrase(S.settings.windowDays) + '.</div>'; return; }
       var rating = ratingFor(prof, $('#scoutPerf').value, games);
-      var p = Analysis.buildProfile(games, rating, undefined, { windowDays: S.settings.windowDays || 0 });
-      S.scout = { user: user, profile: p, games: games };
+      var errors = Analysis.mineErrors(games);
+      var p = Analysis.buildProfile(games, rating, undefined, { windowDays: S.settings.windowDays || 0, errors: errors });
+      S.scout = { user: user, profile: p, games: games, rating: rating, errors: errors };
       out.innerHTML = scoutReport(user, p);
     }).catch(function (e) {
       out.innerHTML = '<div class="notice bad">' + esc(e.message) + '</div>';
@@ -1616,7 +1726,7 @@
     var top = p.motifs.filter(function (m) { return m.motif !== 'positional' && m.motif !== 'unclassified'; }).slice(0, 4);
     var worstPhase = ['opening', 'middlegame', 'endgame'].sort(function (a, b) {
       return p.phases[b].acplInPhase - p.phases[a].acplInPhase; })[0];
-    var weakOpenings = p.openings.filter(function (o) { return o.games >= 3 && o.scorePct < 45; }).slice(0, 3);
+    var weakOpenings = p.openings.filter(function (o) { return o.games >= 3 && o.scorePct != null && o.scorePct < 45; }).slice(0, 3);
 
     var h = '<div class="sheet"><h3>' + esc(user) + '</h3>' +
       '<p>Measured at <b>' + cal.trueStrength + ' ± ' + cal.marginOfError + '</b>' +
@@ -1652,14 +1762,24 @@
     $('#setPieceSet').value = s.pieceSet || 'glyph';
     $('#setShowCoords').checked = s.showCoords !== false;
     $('#saveSettings').addEventListener('click', function () {
-      S.settings = { minutes: +$('#setMinutes').value, endgameTier: +$('#setTier').value,
-        hour: +$('#setHour').value, apiKey: $('#setKey').value, perf: S.settings.perf || 'all',
+      // A value that does not read as one (an hour of "7pm" or 25, minutes of 0) keeps
+      // the one saved before, and the notice says which.
+      var hour = validHour($('#setHour').value.trim()), minutes = validMinutes($('#setMinutes').value.trim());
+      var kept = [];
+      if (hour == null) { kept.push('the session hour (a whole hour from 0 to 23)'); $('#setHour').value = S.settings.hour; }
+      if (minutes == null) { kept.push('the minutes a day (a number above 0)'); $('#setMinutes').value = S.settings.minutes; }
+      S.settings = Object.assign({}, S.settings, {
+        minutes: minutes == null ? S.settings.minutes : minutes,
+        endgameTier: validTier($('#setTier').value) || S.settings.endgameTier,
+        hour: hour == null ? S.settings.hour : hour,
+        apiKey: $('#setKey').value,
         boardTheme: $('#setBoardTheme').value, pieceSet: $('#setPieceSet').value,
-        showCoords: $('#setShowCoords').checked,
-        uiScale: S.settings.uiScale || '1', windowDays: S.settings.windowDays || 0 };
-      Store.set('settings', S.settings);
+        showCoords: $('#setShowCoords').checked });
+      var ok = Store.set('settings', S.settings);
       applyBoardSettings();
-      flash('Settings saved.');
+      if (!ok) flash('Local storage is full, so the settings were not saved.', 'bad');
+      else if (kept.length) flash('Settings saved, but kept the old value for ' + kept.join(' and ') + '.', 'warn');
+      else flash('Settings saved.');
       renderCalendar();
     });
     $('#exportAll').addEventListener('click', function () {
@@ -1688,7 +1808,7 @@
             if (typeof d.handle === 'string') { S.handle = d.handle; Store.set('handle', d.handle); $('#handle').value = d.handle; }
             if (isObj(d.settings)) {
               var keep = S.settings.apiKey;   // never in a backup; keep the one already here
-              S.settings = Object.assign({}, S.settings, cleanSettings(d.settings), { apiKey: keep });
+              S.settings = Object.assign({}, S.settings, pickSettings(d.settings), { apiKey: keep });
               Store.set('settings', S.settings); applyBoardSettings();
             }
             if (d.lichessRating != null) Store.set('lichessRating', numOrNull(d.lichessRating));
@@ -1698,16 +1818,28 @@
         } else {
           var user = Data.parseHandle($('#handle').value) || '';
           var games = Data.importPGN(txt, user);
-          if (!games.length) { flash('No games found in that PGN.', 'bad'); return; }
+          var skippedNote = importSkipNote(games.skipped || []);
+          if (!games.length) { flash('No games found in that PGN.' + skippedNote, 'bad'); return; }
           // the same file imported twice must not count every game twice
           var have = {};
           S.games.forEach(function (g) { have[g.id] = true; });
           var fresh = games.filter(function (g) { return !have[g.id]; });
-          S.games = fresh.map(cleanGame).concat(S.games).slice(0, 400);
-          saveGames(); rebuild();
+          // Imported and synced games together, newest first, up to the same cap sync
+          // uses: what goes is the oldest, whichever way it came in.
+          var all = fresh.map(cleanGame).concat(S.games).sort(function (a, b) { return b.date - a.date; });
+          var dropped = Math.max(0, all.length - GAME_CAP);
+          S.games = all.slice(0, GAME_CAP);
+          var guessed = fresh.filter(function (g) { return g.colourGuessed; }).length;
+          var stored = saveGames(); rebuild();
+          if (!stored) return;   // keep the storage-full warning on screen
           flash('Imported ' + fresh.length + ' games from PGN' +
             (fresh.length < games.length ? ' (' + (games.length - fresh.length) + ' already loaded)' : '') + '.' +
-            (games.some(function (g) { return g.analysed; }) ? '' : ' None carry engine evaluations, so error mining will be empty — export from Lichess with analysis included.'));
+            (dropped ? ' ' + dropped + ' of the oldest games were dropped to stay within ' + GAME_CAP + '.' : '') +
+            (guessed ? ' ' + guessed + ' name' + (guessed === 1 ? 's' : '') + ' no player, so ' + (guessed === 1 ? 'it was' : 'they were') +
+              ' read as played with White; put your username in the box above and import again to match by name.' : '') +
+            skippedNote +
+            (games.some(function (g) { return g.analysed; }) ? '' : ' None carry engine evaluations, so error mining will be empty — export from Lichess with analysis included.'),
+            dropped || skippedNote ? 'warn' : '');
         }
       };
       fr.readAsText(f);
@@ -1718,6 +1850,19 @@
       Store.keys().forEach(Store.del);
       location.reload();
     });
+  }
+
+  // What the PGN import left out, and why, for the notice.
+  function importSkipNote(skipped) {
+    var variants = {}, unreadable = 0;
+    skipped.forEach(function (s) {
+      if (s.reason === 'variant') variants[s.variant] = (variants[s.variant] || 0) + 1;
+      else unreadable++;
+    });
+    var names = Object.keys(variants), n = names.reduce(function (t, k) { return t + variants[k]; }, 0);
+    return (n ? ' Left out ' + n + ' game' + (n === 1 ? '' : 's') + ' in ' + names.map(esc).join(', ') +
+        ': only standard chess is analysed, since other variants have other rules.' : '') +
+      (unreadable ? ' Left out ' + unreadable + ' game' + (unreadable === 1 ? '' : 's') + ' whose moves could not be read.' : '');
   }
 
   function download(name, text, mime) {
@@ -1772,7 +1917,7 @@
     range.addEventListener('change', function () {    // the analysis follows the release
       S.settings.windowDays = show();
       Store.set('settings', S.settings);
-      if (S.games.length) rebuild(undefined, { windowOnly: true });
+      if (S.games.length || S.adopted) rebuild(undefined, { windowOnly: true });
       else renderWindowNote();
     });
   }
@@ -1852,8 +1997,13 @@
     $('#sparCoach').addEventListener('change', function () { refreshAdvice(); });
     document.addEventListener('click', function (e) {
       if (e.target && e.target.id === 'scoutAdopt' && S.scout) {
-        S.profile = S.scout.profile;
-        S.book = Analysis.buildBook(S.scout.games);   // so the sparring mirror plays their repertoire too
+        // Kept as a whole, so moving the window re-measures their games, not yours, and
+        // the mirror keeps their repertoire (see rebuild).
+        S.adopted = { user: S.scout.user, games: S.scout.games, rating: S.scout.rating,
+                      errors: S.scout.errors, book: Analysis.buildBook(S.scout.games) };
+        S.profile = Analysis.buildProfile(S.adopted.games, S.adopted.rating, undefined,
+          { windowDays: S.settings.windowDays || 0, errors: S.adopted.errors });
+        S.book = S.adopted.book;   // so the sparring mirror plays their repertoire too
         renderRuler(); renderStrength(); renderCalendar();
         flash('Loaded ' + esc(S.scout.user) + '\u2019s profile into the workspace: strength, calendar and the sparring opponent\u2019s ' +
               'openings are theirs now; your drill deck stays yours. Sync your own account to switch back.');

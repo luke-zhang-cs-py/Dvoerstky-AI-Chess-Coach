@@ -284,12 +284,8 @@ main { padding: 1.3rem 1.25rem 4rem; max-width: 1400px; margin: 0 auto; }
 /* ---------- notation ---------- */
 .moves { font-family: var(--mono); font-size: var(--fs-md); line-height: 1.9; }
 .moves .num { color: var(--ink-faint); padding-right: .1em; }
-.moves button {
-  border: none; background: none; padding: .05em .3em; border-radius: var(--r);
-  cursor: pointer; font: inherit; min-height: 0;
-}
-.moves button:hover { background: var(--blue-tint); }
-.moves button[aria-current=true] { background: var(--ink); color: var(--card); }
+.moves .mv { padding: .05em .3em; border-radius: var(--r); }   /* read, not pressed: no button look */
+.moves .mv[aria-current=true] { background: var(--ink); color: var(--card); }
 .moves .blunder { color: var(--red); font-weight: 700; }
 .moves .mistake { color: var(--red); }
 .moves .inacc { color: var(--amber); }

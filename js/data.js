@@ -42,6 +42,10 @@
   // normal position, so "all" is spelled out rather than omitted.
   var STANDARD_PERFS = 'ultraBullet,bullet,blitz,rapid,classical,correspondence';
 
+  // The name the Sparring tab's game text gives the mirror, so importing that text
+  // knows which side was the user's.
+  var MIRROR_NAME = 'Dvoretsky Lab mirror';
+
   /* Fetch NDJSON stream of games. Requires network access from the page origin.
      opts.days: how far back (0 or none = the whole history). opts.perfType: one speed,
      or 'all' for every standard one. */
@@ -160,29 +164,62 @@
     };
   }
 
-  /* Import a PGN file (possibly many games) as a fallback when the API is unreachable. */
-  function importPGN(text, user) {
-    var chunks = text.replace(/\r/g, '').split(/\n\n(?=\[)/);
-    var joined = [], buf = '';
-    chunks.forEach(function (c) {
-      buf += (buf ? '\n\n' : '') + c;
-      // not \b: there is no word boundary between a space and "*"
-      if (/(^|\s)(1-0|0-1|1\/2-1\/2|\*)$/.test(c.trim())) { joined.push(buf); buf = ''; }
+  /* Cut a PGN file into games. A game ends where the next one's tags begin -- a tag
+     line after movetext, with or without a blank line between (some tools write
+     none) -- or after its result token. Lines inside a {comment} are neither: a
+     comment's second paragraph may well start with "[". */
+  var TAG_LINE = /^\s*\[[A-Za-z0-9_]+\s+"/;
+  var RESULT_END = /(^|\s)(1-0|0-1|1\/2-1\/2|\*)\s*$/;   // not \b: there is no word boundary between a space and "*"
+  function splitGames(text) {
+    var games = [], cur = [], hasMoves = false, inComment = false;
+    function close() { if (cur.join('').trim()) games.push(cur.join('\n')); cur = []; hasMoves = false; }
+    text.replace(/\r/g, '').split('\n').forEach(function (line) {
+      var isTag = !inComment && TAG_LINE.test(line);
+      if (isTag && hasMoves) close();
+      cur.push(line);
+      if (isTag || !line.trim()) return;
+      var code = '';   // the part of the line outside comments, where a result can be
+      for (var i = 0; i < line.length; i++) {
+        var ch = line[i];
+        if (inComment) { if (ch === '}') inComment = false; continue; }
+        if (ch === '{') { inComment = true; continue; }
+        if (ch === ';') break;   // a comment to the end of the line
+        code += ch;
+      }
+      if (code.trim()) hasMoves = true;
+      if (!inComment && hasMoves && RESULT_END.test(code)) close();
     });
-    if (buf.trim()) joined.push(buf);
+    close();
+    return games;
+  }
 
-    var parsedAll = joined.map(function (p) {
-      try { return Chess.parsePGN(p); } catch (e) { return null; }
+  // Only standard chess: a variant's moves (a crazyhouse drop, Chess960 castling) do not
+  // follow the rules js/core.js plays by, and its positions are not ones to drill.
+  var STANDARD_VARIANT = /^(standard|from position|)$/i;
+
+  /* Import a PGN file (possibly many games) as a fallback when the API is unreachable.
+     Returns the games; out.skipped lists what was left out and why:
+     { reason: 'variant', variant } or { reason: 'unreadable', detail }. */
+  function importPGN(text, user) {
+    var skipped = [];
+    var parsedAll = splitGames(text).map(function (p) {
+      var variant = (p.match(/^\s*\[Variant\s+"([^"]*)"\]/m) || [])[1];
+      if (variant != null && !STANDARD_VARIANT.test(variant.trim())) {
+        skipped.push({ reason: 'variant', variant: variant });
+        return null;
+      }
+      try { return Chess.parsePGN(p); } catch (e) { skipped.push({ reason: 'unreadable', detail: e.message }); return null; }
     }).filter(function (p) { return p && p.moves.length; });
 
     // Whose games are these? The handle if it names a player; otherwise the
     // name that turns up in the most games -- a player's own export has them in
-    // every one, on both colours.
-    var lower = (user || '').toLowerCase();
+    // every one, on both colours. The Sparring tab's game text names its other
+    // side MIRROR_NAME, which is never the user.
+    var lower = (user || '').toLowerCase(), mirror = MIRROR_NAME.toLowerCase();
     var seen = {};
     parsedAll.forEach(function (p) {
       [p.tags.White, p.tags.Black].forEach(function (n) {
-        if (n) { n = n.toLowerCase(); seen[n] = (seen[n] || 0) + 1; }
+        if (n && n.toLowerCase() !== mirror) { n = n.toLowerCase(); seen[n] = (seen[n] || 0) + 1; }
       });
     });
     if (!seen[lower]) {
@@ -192,16 +229,29 @@
     var out = [];
     parsedAll.forEach(function (parsed, i) {
       var t = parsed.tags;
-      var myColor = (t.Black || '').toLowerCase() === lower ? 'b' : 'w';
+      // Which side is the user's: the side with their name, else the side the mirror is
+      // not on. A game that names neither (bare movetext, no tags) is read as played
+      // with White -- nothing tells, and White is where the move list starts -- and is
+      // marked colourGuessed, so the import notice can say how many were read that way.
+      var w = (t.White || '').toLowerCase(), b = (t.Black || '').toLowerCase();
+      var named = !!lower && (w === lower || b === lower);
+      var myColor = named ? (w === lower ? 'w' : 'b') : w === mirror ? 'b' : 'w';
+      var guessed = !named && w !== mirror && b !== mirror;
+      // "*" is a game with no result (unfinished, abandoned): no score, so the
+      // performance rating and every score percentage leave it out.
       var score = parsed.result === '1/2-1/2' ? 0.5 :
         parsed.result === '1-0' ? (myColor === 'w' ? 1 : 0) :
-        parsed.result === '0-1' ? (myColor === 'b' ? 1 : 0) : 0.5;
+        parsed.result === '0-1' ? (myColor === 'b' ? 1 : 0) : null;
+      // Lichess names its events "Rated Blitz game" or "Casual Rapid game"; with no word
+      // either way (chess.com's "Live Chess", an over-the-board event) it is not known.
+      var ev = t.Event || '';
+      var rated = /\b(casual|unrated)\b/i.test(ev) ? false : /\brated\b/i.test(ev) ? true : null;
       var d = Date.parse((t.UTCDate || t.Date || '').replace(/\./g, '-') + 'T' + (t.UTCTime || '12:00:00') + 'Z');
       var url = gameUrl(t);
       out.push({
         id: url ? url.replace(/[\/?#]+$/, '').split('/').pop() : pgnId(t, parsed.moves),
         source: 'pgn', url: url,
-        speed: guessSpeed(t.TimeControl), perf: guessSpeed(t.TimeControl), rated: true,
+        speed: guessSpeed(t.TimeControl), perf: guessSpeed(t.TimeControl), rated: rated,
         date: isNaN(d) ? Date.now() - i * 86400000 : d,
         endedAt: isNaN(d) ? Date.now() - i * 86400000 : d,
         status: t.Termination || 'unknown',
@@ -215,9 +265,11 @@
         analysed: parsed.moves.some(function (m) { return m.comment && /\[%eval/.test(m.comment); }),
         acpl: null, accuracy: null, counts: null,
         clockInitial: null, clockIncrement: null,
-        moves: attachPgnEvals(parsed.moves)
+        moves: attachPgnEvals(parsed.moves),
+        colourGuessed: guessed
       });
     });
+    out.skipped = skipped;
     return out;
   }
 
@@ -273,6 +325,8 @@
     fetchProfile: fetchProfile,
     fetchRatingHistory: fetchRatingHistory,
     importPGN: importPGN,
+    splitGames: splitGames,
+    MIRROR_NAME: MIRROR_NAME,
     normalizeLichess: normalizeLichess
   };
 })(typeof window !== 'undefined' ? window : globalThis);

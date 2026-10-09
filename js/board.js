@@ -7,6 +7,7 @@
   var GLYPH_LETTERS = { wk: 'K', wq: 'Q', wr: 'R', wb: 'B', wn: 'N', wp: 'P',
                          bk: 'k', bq: 'q', br: 'r', bb: 'b', bn: 'n', bp: 'p' };
   var FILES = 'abcdefgh';
+  var NAMES = { k: 'king', q: 'queen', r: 'rook', b: 'bishop', n: 'knight', p: 'pawn' };
 
   function Board(el, opts) {
     this.el = el;
@@ -24,6 +25,11 @@
     this.solidPieces = !!this.opts.solidPieces;
     this.marks = [];
     this.pendingPromotion = null;   // the four promotion moves, while the picker is open
+    // The one square in the tab order (a roving tabindex): Tab reaches the board once,
+    // the arrow keys move over all 64 squares, Enter or Space picks a square up or drops on it.
+    this.cursor = null;
+    this.refocus = false;   // put focus back on the cursor after the next render
+    if (!el.hasAttribute('aria-label')) el.setAttribute('aria-label', 'Chess board. Arrow keys move between squares; Enter picks a piece up and puts it down.');
     this.el.addEventListener('click', this.onClick.bind(this));
     this.el.addEventListener('keydown', this.onKey.bind(this));
     this.render();
@@ -72,6 +78,16 @@
     var checkSq = null;
     if (g.inCheck()) checkSq = Chess.algebraic(g.kings[g.turn]);
 
+    // the cursor stays where it is; with none yet, it starts on a piece that can move,
+    // else on the bottom-left corner
+    if (!this.cursor || !/^[a-h][1-8]$/.test(this.cursor)) {
+      var firstMovable = null;
+      order.forEach(function (rf) {
+        var nm = FILES[rf[1]] + (8 - rf[0]), pc = arr[rf[0]][rf[1]];
+        if (!firstMovable && legalFrom[nm] && (!self.allowedColor || (pc && pc.color === self.allowedColor))) firstMovable = nm;
+      });
+      this.cursor = firstMovable || (this.flipped ? 'h8' : 'a1');
+    }
     var glyphs = this.pieceSet === 'letters' ? GLYPH_LETTERS : GLYPH;
     // which glyph family a side is drawn from: with solid pieces, white uses the filled shapes too
     var solid = this.solidPieces && glyphs === GLYPH;
@@ -92,8 +108,10 @@
       if (canMove || targets[name]) cls.push('movable');
       var mark = self.marks.indexOf(name) > -1;
 
-      html += '<div class="' + cls.join(' ') + '" data-sq="' + name + '"' +
-        (canMove || targets[name] ? ' tabindex="0" role="button" aria-label="' + name + '"' : '') + '>';
+      var label = name + ', ' + (piece ? (piece.color === 'w' ? 'white ' : 'black ') + NAMES[piece.type] : 'empty') +
+        (self.selected === name ? ', selected' : '') + (targets[name] ? ', a move to here' : '');
+      html += '<div class="' + cls.join(' ') + '" data-sq="' + name + '" role="button" tabindex="' +
+        (name === self.cursor ? '0' : '-1') + '" aria-label="' + label + '">';
       if (piece) html += '<span class="piece ' + piece.color + '">' + glyphs[shapeOf(piece.color) + piece.type] + '</span>';
       if (targets[name]) html += '<span class="dot"></span>';
       if (mark) html += '<span class="arrowmark"></span>';
@@ -114,24 +132,39 @@
       }).join('') + '</div>';
     }
     // Rebuilding the squares drops keyboard focus; put it back where it was.
-    var focused = document.activeElement && this.el.contains(document.activeElement) &&
-      document.activeElement.getAttribute('data-sq');
+    var focused = (document.activeElement && this.el.contains(document.activeElement)) || this.refocus;
+    this.refocus = false;
     this.el.innerHTML = html;
     if (this.pendingPromotion) {
       var first = this.el.querySelector('[data-promo]');
       if (first) first.focus();
     } else if (focused) {
-      var again = this.el.querySelector('[data-sq="' + focused + '"]');
-      if (again && again.hasAttribute('tabindex')) again.focus();
+      var again = this.el.querySelector('[data-sq="' + this.cursor + '"]');
+      if (again) again.focus();
     }
+  };
+
+  // Move the cursor by files and ranks as the board is seen (a flipped board turns
+  // the arrows around with it), stopping at the edge.
+  Board.prototype.moveCursor = function (df, dr) {
+    if (this.flipped) { df = -df; dr = -dr; }
+    var f = FILES.indexOf(this.cursor[0]) + df, r = +this.cursor[1] + dr;
+    if (f < 0 || f > 7 || r < 1 || r > 8) return;
+    this.cursor = FILES[f] + r;
+    var sq, all = this.el.querySelectorAll('[data-sq]');
+    for (var i = 0; i < all.length; i++) all[i].tabIndex = all[i].dataset.sq === this.cursor ? 0 : -1;
+    sq = this.el.querySelector('[data-sq="' + this.cursor + '"]');
+    if (sq) sq.focus();
   };
 
   Board.prototype.onKey = function (e) {
     if (e.key === 'Escape' && this.pendingPromotion) { this.pendingPromotion = null; this.render(); return; }
     if (e.target.closest('[data-promo]')) return;   // a picker button: its own click fires
-    if (e.key !== 'Enter' && e.key !== ' ') return;
     var sq = e.target.closest('[data-sq]');
     if (!sq) return;
+    var step = { ArrowUp: [0, 1], ArrowDown: [0, -1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] }[e.key];
+    if (step) { e.preventDefault(); this.cursor = sq.dataset.sq; this.moveCursor(step[0], step[1]); return; }
+    if (e.key !== 'Enter' && e.key !== ' ') return;
     e.preventDefault();
     this.handleSquare(sq.dataset.sq);
   };
@@ -141,6 +174,7 @@
     if (promo && this.pendingPromotion) {
       var chosen = this.pendingPromotion.filter(function (c) { return Chess.SYM[c.promo] === promo.dataset.promo; })[0];
       this.pendingPromotion = null;
+      this.refocus = true;   // the picker is gone: focus goes back to the board, on the promotion square
       if (chosen && this.opts.onMove) this.opts.onMove(chosen, this.game);
       else this.render();
       return;
@@ -152,7 +186,8 @@
   };
 
   Board.prototype.handleSquare = function (name) {
-    if (!this.interactive) return;
+    this.cursor = name;   // after a move, keyboard focus stays on the square the piece went to
+    if (!this.interactive) { this.render(); return; }
     var g = this.game;
     var piece = g.get(name);
     if (this.selected) {

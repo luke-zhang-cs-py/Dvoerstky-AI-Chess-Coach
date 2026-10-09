@@ -412,6 +412,44 @@
     });
   }
 
+  /* Which side has a forced mate after a move, from White's side: 1, -1, or 0 for none.
+     Lichess's analysis and a PGN's [%eval #n] give the mate count (mateAfter); a game
+     stored before that field existed has only the evalAfter of +-10000 that stands for it. */
+  function mateSide(mv) {
+    if (!mv) return 0;
+    if (typeof mv.mateAfter === 'number' && mv.mateAfter) return mv.mateAfter > 0 ? 1 : -1;
+    if (typeof mv.evalAfter === 'number' && Math.abs(mv.evalAfter) >= 10000) return mv.evalAfter > 0 ? 1 : -1;
+    return 0;
+  }
+
+  /* A forced mate thrown away is judged as lila's MateAdvice judges it
+     (modules/tree/src/main/Advice.scala), not by winning chances: with the eval clamped,
+     losing a mate for a +8 position barely moves the chances curve (0.98 to 0.90), yet
+     Lichess calls it a Mistake. From the mover's side, a mate lost (it had one; after the
+     move it has none, or is being mated) is an Inaccuracy if the position stays above
+     +999, a Mistake above +700, else a Blunder. A mate kept, even a slower one, is no error.
+     The other half of MateAdvice, "mate created" (walking into a mate), is left to winning
+     chances on purpose: lila calls even -7.6 into mate a Mistake, but a position already
+     that lost is not worth a drill (test/regress.js, "already lost position"), and from an
+     ordinary position the chances curve already makes it a blunder.
+     This reads the app's own evals rather than the judgment Lichess attached, so games
+     from a PGN with [%eval] (which carries no judgments) are judged the same way. Returns
+     'inaccuracy' | 'mistake' | 'blunder', null for a mate case that is no error, or
+     undefined when winning chances decide. */
+  function mateJudgment(prevMove, mv, before, after) {
+    var sign = mv.color === 'w' ? 1 : -1;
+    var had = mateSide(prevMove) * sign, has = mateSide(mv) * sign;
+    if (!had && !has) return undefined;
+    var nextCp = has ? null : sign * after;
+    if (had > 0 && has <= 0) {
+      if (nextCp != null && nextCp > 999) return 'inaccuracy';
+      if (nextCp != null && nextCp > 700) return 'mistake';
+      return 'blunder';
+    }
+    if (!had && has < 0) return undefined;   // mate created: winning chances decide (see above)
+    return null;
+  }
+
   function mineErrors(games, opts) {
     opts = opts || {};
     var minLoss = opts.minLoss || 80;
@@ -423,7 +461,9 @@
         var cpLoss = mv.color === 'w' ? (before - after) : (after - before);
         var sign = mv.color === 'w' ? 1 : -1;
         var chanceDrop = winningChances(sign * before) - winningChances(sign * after);
-        if (cpLoss < minLoss || chanceDrop < CHANCE_INACCURACY) return;
+        var mateCall = mateJudgment(game.moves[i - 1], mv, before, after);
+        if (mateCall === null || cpLoss < minLoss) return;
+        if (mateCall === undefined && chanceDrop < CHANCE_INACCURACY) return;
 
         var ply = i + 1;
         var phase = phaseOf(mv.fenBefore, ply, game.openingPly);
@@ -467,7 +507,7 @@
           bestUci: bestUci,
           line: mv.serverLine || null,
           cpLoss: Math.round(cpLoss),
-          severity: chanceDrop >= CHANCE_BLUNDER ? 'blunder' : chanceDrop >= CHANCE_MISTAKE ? 'mistake' : 'inaccuracy',
+          severity: mateCall || (chanceDrop >= CHANCE_BLUNDER ? 'blunder' : chanceDrop >= CHANCE_MISTAKE ? 'mistake' : 'inaccuracy'),
           chanceDrop: Math.round(chanceDrop * 100) / 100,
           judgment: mv.judgment || null,
           phase: phase,
@@ -506,13 +546,20 @@
   }
 
   function newTreeNode(san, ply) {
-    return { san: san, ply: ply, games: 0, score: 0, evalDropSum: 0, evalDropSamples: 0, children: {} };
+    return { san: san, ply: ply, games: 0, score: 0, scored: 0, evalDropSum: 0, evalDropSamples: 0, children: {} };
+  }
+
+  // A game set up from a position (a PGN [FEN] tag) is not an opening: its first move is
+  // not a move from the initial position, so it stays out of the tree.
+  function startsAtInitial(g) {
+    var first = g.moves && g.moves[0] && g.moves[0].fenBefore;
+    return !first || first.split(' ').slice(0, 4).join(' ') === START_KEY;
   }
 
   function buildOpeningTree(games) {
     var root = newTreeNode(null, 0);
     games.forEach(function (g) {
-      if (!g.moves || !g.moves.length) return;
+      if (!g.moves || !g.moves.length || !startsAtInitial(g)) return;
       var node = root;
       var maxPly = Math.min(g.moves.length, OPENING_TREE_MAX_PLY);
       for (var ply = 1; ply <= maxPly; ply++) {
@@ -522,7 +569,7 @@
         if (!node.children[san]) node.children[san] = newTreeNode(san, ply);
         node = node.children[san];
         node.games++;
-        node.score += g.score;
+        if (typeof g.score === 'number') { node.score += g.score; node.scored++; }   // an unfinished game has no result
         var before = myPovEval(g, ply);
         var after = myPovEval(g, ply + OPENING_TREE_EVAL_WINDOW);
         if (before != null && after != null) {
@@ -540,7 +587,7 @@
   // repertoire, e.g. Caro-Kann / QGD) surface first without hardcoding any
   // opening name.
   function finalizeTreeNode(node) {
-    node.scorePct = node.games ? Math.round(node.score / node.games * 100) : 0;
+    node.scorePct = node.scored ? Math.round(node.score / node.scored * 100) : null;
     node.evalDrop = node.evalDropSamples ? Math.round(node.evalDropSum / node.evalDropSamples) : null;
     var kids = Object.keys(node.children).map(function (k) { return node.children[k]; })
       .filter(function (k) { return k.games >= OPENING_TREE_MIN_GAMES; });
@@ -611,8 +658,9 @@
       var name = g.openingName || 'Unlabelled';
       var fam = name.split(':')[0];
       var k = g.myColor + '|' + fam;
-      if (!openMap[k]) openMap[k] = { name: fam, color: g.myColor, games: 0, score: 0, cpLost: 0, errors: 0, eco: g.eco };
-      openMap[k].games++; openMap[k].score += g.score;
+      if (!openMap[k]) openMap[k] = { name: fam, color: g.myColor, games: 0, score: 0, scored: 0, cpLost: 0, errors: 0, eco: g.eco };
+      openMap[k].games++;
+      if (typeof g.score === 'number') { openMap[k].score += g.score; openMap[k].scored++; }   // an unfinished game has no result
     });
     errors.forEach(function (e) {
       var fam = (e.opening || 'Unlabelled').split(':')[0];
@@ -620,7 +668,7 @@
       if (openMap[k]) { openMap[k].cpLost += e.cpLoss; openMap[k].errors++; }
     });
     var openings = Object.keys(openMap).map(function (k) { return openMap[k]; })
-      .map(function (o) { o.scorePct = Math.round(o.score / o.games * 100); return o; })
+      .map(function (o) { o.scorePct = o.scored ? Math.round(o.score / o.scored * 100) : null; return o; })
       .filter(function (o) { return o.games >= 2; })
       .sort(function (a, b) { return b.games - a.games; });
 
@@ -694,14 +742,17 @@
     maxPly = maxPly || 24;
     var book = {};
     games.forEach(function (g) {
-      var pos = new Chess();
+      // from where the game began: a game set up from a position (a [FEN] tag) adds
+      // its own positions, not its moves as if they were played from the initial one
+      var first = g.moves && g.moves[0] && g.moves[0].fenBefore, pos;
+      try { pos = first ? new Chess(first) : new Chess(); } catch (e) { return; }
       for (var i = 0; g.moves && i < g.moves.length && i < maxPly; i++) {
         var fenKey = pos.fen().split(' ').slice(0, 4).join(' ');
         var san = g.moves[i].san;
         if (!book[fenKey]) book[fenKey] = {};
-        if (!book[fenKey][san]) book[fenKey][san] = { n: 0, score: 0, mine: 0 };
+        if (!book[fenKey][san]) book[fenKey][san] = { n: 0, score: 0, scored: 0, mine: 0 };
         book[fenKey][san].n++;
-        book[fenKey][san].score += g.score;
+        if (typeof g.score === 'number') { book[fenKey][san].score += g.score; book[fenKey][san].scored++; }
         if (g.moves[i].color === g.myColor) book[fenKey][san].mine++;
         var applied = pos.move(san);
         if (!applied) break;

@@ -180,7 +180,9 @@
       blocks = kept.length ? kept : [blocks[0]];
     }
 
-    var due = dueCards(deck, d.getTime());
+    // Due at any time on this day, not only by its first instant: a card graded at
+    // 19:00 with a 2-day interval is due at 19:00 two days on, and that day lists it.
+    var due = dueCards(deck, new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1).getTime() - 1);
     var topMotifs = (profile && profile.motifs || []).filter(function (m) {
       return m.motif !== 'positional' && m.motif !== 'unclassified';
     }).slice(0, 6);
@@ -264,12 +266,19 @@
 
   function toICS(plans, opts) {
     opts = opts || {};
-    var hour = opts.hour != null ? opts.hour : 19;
-    function stamp(d, h, m) {
-      var x = new Date(d);
-      x.setHours(h, m || 0, 0, 0);
-      return x.getFullYear() + String(x.getMonth() + 1).padStart(2, '0') + String(x.getDate()).padStart(2, '0') +
-        'T' + String(x.getHours()).padStart(2, '0') + String(x.getMinutes()).padStart(2, '0') + '00';
+    // An hour that is not a whole number from 0 to 23 (a typo in Settings, a key
+    // missing from an old backup) is the default, never NaN in the file.
+    var hour = +opts.hour;
+    if (opts.hour == null || opts.hour === '' || !(hour >= 0 && hour <= 23 && hour % 1 === 0)) hour = 19;
+    // Floating times are wall-clock times, so they are formatted by arithmetic on
+    // the date's own numbers. A local Date would move 02:00 on the night the clocks
+    // go forward to 03:00, an hour that does not exist there.
+    function stamp(dateKey, minutes) {
+      var ymd = dateKey.split('-').map(Number);
+      var x = new Date(Date.UTC(ymd[0], ymd[1] - 1, ymd[2] + Math.floor(minutes / 1440)));   // UTC: no clock changes
+      var m = minutes % 1440;
+      return x.getUTCFullYear() + String(x.getUTCMonth() + 1).padStart(2, '0') + String(x.getUTCDate()).padStart(2, '0') +
+        'T' + String(Math.floor(m / 60)).padStart(2, '0') + String(m % 60).padStart(2, '0') + '00';
     }
     // Times are "floating" (no TZID): a study block at 19:00 means 19:00
     // wherever the calendar is opened, which is what a personal plan wants.
@@ -278,15 +287,13 @@
     plans.forEach(function (p) {
       var offset = 0;
       p.items.forEach(function (item, idx) {
-        var start = new Date(p.date + 'T00:00:00');
-        var sh = hour + Math.floor(offset / 60), sm = offset % 60;
+        var from = hour * 60 + offset;
         offset += item.minutes;
-        var eh = hour + Math.floor(offset / 60), em = offset % 60;
         lines.push('BEGIN:VEVENT');
         lines.push('UID:' + p.date + '-' + idx + '@dvoretsky.lab');
         lines.push('DTSTAMP:' + dtstamp);
-        lines.push('DTSTART:' + stamp(start, sh, sm));
-        lines.push('DTEND:' + stamp(start, eh, em));
+        lines.push('DTSTART:' + stamp(p.date, from));
+        lines.push('DTEND:' + stamp(p.date, hour * 60 + offset));
         lines.push('SUMMARY:' + escapeICS(item.label));
         lines.push('DESCRIPTION:' + escapeICS(item.note + (item.count ? ' (' + item.count + ' positions)' : '')));
         lines.push('END:VEVENT');

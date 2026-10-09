@@ -56,7 +56,9 @@
     var entry = this.book[key];
     if (!entry) return null;
     var options = Object.keys(entry).map(function (san) {
-      return { san: san, n: entry[san].n, score: entry[san].score / entry[san].n };
+      // unfinished games carry no result, so the score is over the games that have one
+      var e = entry[san], scored = e.scored != null ? e.scored : e.n;
+      return { san: san, n: e.n, score: scored ? e.score / scored : 0.5 };
     }).filter(function (o) { return o.n >= 2; });
     if (!options.length) return null;
     var total = options.reduce(function (s, o) { return s + o.n; }, 0);
@@ -204,7 +206,11 @@
   }
 
   // cp is from whichever side's point of view the caller wants shown.
+  // The full mate score, with no moves left in it, is a position already mated
+  // (Stockfish's "score mate 0"): the game is over, so it reads as the result.
+  var MATED = 30000;
   function cpDisplay(cp) {
+    if (Math.abs(cp) >= MATED) return cp > 0 ? '1-0' : '0-1';
     var mate = Engine.mateIn(cp);
     if (mate !== null) return (mate > 0 ? '#' : '-#') + Math.abs(mate);
     var v = cp / 100;

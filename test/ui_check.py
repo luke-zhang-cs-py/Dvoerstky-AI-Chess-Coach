@@ -6,7 +6,7 @@
 Each check is written to fail on the code before its fix. With --coverage the
 page's precise V8 block coverage is written out for test/coverage_report.py.
 """
-import json, os, re, sys, tempfile
+import json, os, re, sys, tempfile, time
 from urllib.parse import parse_qs, urlparse
 from playwright.sync_api import sync_playwright
 
@@ -122,11 +122,11 @@ with sync_playwright() as p:
     pg.select_option("#sparColor", "b"); pg.click("#sparStart")
     pg.wait_for_function("document.querySelector('#sparMoves').innerText.trim().length > 3", timeout=15000)
     pg.wait_for_timeout(300)
-    pg.wait_for_function("document.querySelectorAll('#sparMoves button').length >= 1", timeout=15000)
+    pg.wait_for_function("document.querySelectorAll('#sparMoves .mv').length >= 1", timeout=15000)
     pg.wait_for_timeout(300)
     pg.click("#sparTakeback")
     try:
-        pg.wait_for_function("document.querySelectorAll('#sparMoves button').length >= 1", timeout=8000)
+        pg.wait_for_function("document.querySelectorAll('#sparMoves .mv').length >= 1", timeout=8000)
         moved = True
     except Exception:
         moved = False
@@ -307,7 +307,7 @@ with sync_playwright() as p:
     check("stockfish: it starts in a worker from file:// and reads the start position",
           "depth" in now and "Stockfish plays" in now, now.replace("\n", " | ")[:90])
     pg.click('#sparBoard [data-sq="e2"]'); pg.click('#sparBoard [data-sq="e4"]')
-    pg.wait_for_function("document.querySelectorAll('#sparMoves button').length >= 2", timeout=30000)
+    pg.wait_for_function("document.querySelectorAll('#sparMoves .mv').length >= 2", timeout=30000)
     try:
         pg.wait_for_function("""(() => { const rows = [...document.querySelectorAll('.sf-log tbody tr')];
             return rows.length >= 2 && rows.every(r => /good|inaccuracy|mistake|blunder/.test(r.innerText)); })()""", timeout=60000)
@@ -380,6 +380,16 @@ with sync_playwright() as p:
                                                  "score": {"concreteness": hostile("transcript")}, "notes": []}}}
     pg.set_input_files("#importFile", write_tmp("hostile-backup.json", json.dumps(bad)))
     pg.wait_for_timeout(1500)
+    # The checks below pass trivially if the import threw and nothing was restored, so first
+    # prove it was: the restore's own message, and the backup's games, transcript and trajectory
+    # now in storage.
+    restored = pg.evaluate("""([id, ply]) => {
+      const get = k => JSON.parse(localStorage.getItem('dvor:' + k) || 'null');
+      const t = get('transcripts') || {}, track = get('track') || [], games = get('games') || [];
+      return { flash: document.querySelector('#flash').innerText.trim(), transcript: !!(t[id] && t[id][ply]),
+               track: track.some(p => p.day === '2026-09-01'), game: games.some(g => g.id === id) }; }""", [g0["id"], first_ply])
+    check("backup: the hostile backup was restored (so the checks on it test something)",
+          restored["flash"] == "Backup restored." and restored["transcript"] and restored["track"] and restored["game"], restored)
     for tab in ["strength", "review", "drills"]:
         pg.click("button.tab[data-tab=%s]" % tab); pg.wait_for_timeout(200)
     pg.click("button.tab[data-tab=review]"); pg.select_option("#revGame", "0"); pg.click("#revStart"); pg.wait_for_timeout(300)
@@ -454,6 +464,7 @@ with sync_playwright() as p:
     pg.click("button.tab[data-tab=strength]")
     for name in ["alice", "bob"]:
         pg.fill("#handle", name); pg.click("#sync"); pg.wait_for_timeout(1500)
+    check("titled: alice's rating history was held back until after bob's sync (the race is staged)", len(held) == 1, len(held))
     if held: held[0].fulfill(status=200, content_type="application/json", body=json.dumps([{"name": "Blitz", "points": [[2026, 8, 1, 1950]]}]))
     pg.wait_for_timeout(800)
     row = you()
@@ -463,6 +474,224 @@ with sync_playwright() as p:
     row = you()
     check("titled: after a sync whose profile lookup failed, another account's ratings are not shown as yours",
           row.startswith("You") and "bob" not in row and "alice" not in row, row)
+
+    # ---- 9 October 2026 audit: each scenario on a fresh page of its own, seeded through storage
+    DAY = 86400000
+    NOW = int(time.time() * 1000)
+    TODAY = time.strftime("%Y.%m.%d")
+    def blunder_game(gid, days_ago=1, my="w"):
+        # 1.e4 e5 2.Ba6?? bxa6 3.Nf3, evals from White's side; Lichess's best for ply 3 is g1f3
+        return {"id": gid, "source": "lichess", "url": "https://lichess.org/" + gid, "speed": "rapid", "perf": "rapid",
+                "rated": True, "date": NOW - days_ago * DAY, "endedAt": NOW - days_ago * DAY, "status": "resign",
+                "myColor": my, "myName": "luke", "oppName": "opp", "myRating": 1800, "oppRating": 1800,
+                "score": 0, "result": "0-1", "eco": "C20", "openingName": "King's Pawn Game", "openingPly": 2,
+                "analysed": True, "acpl": 60,
+                "m": [["e4", 30, "", "", "", "", ""], ["e5", 30, "", "", "", "", ""],
+                      ["Ba6", -300, "Blunder", "g1f3", "", "Nf3 Nc6", ""], ["bxa6", -300, "", "", "", "", ""],
+                      ["Nf3", -300, "", "", "", "", ""]]}
+    def small_error_game(gid, days_ago=1):
+        g = blunder_game(gid, days_ago)
+        g["m"] = [["e4", 30, "", "", "", "", ""], ["e5", 30, "", "", "", "", ""],
+                  ["Qh5", -80, "Inaccuracy", "g1f3", "", "Nf3", ""], ["Nc6", -80, "", "", "", "", ""]]
+        return g
+    def fresh(seed, hash_="", routes=None):
+        """A new context (its own storage), seeded once before the page's scripts run."""
+        c = b.new_context(viewport={"width": 1280, "height": 900}, accept_downloads=True)
+        c.route("**/lichess.org/**", lambda r: r.fulfill(status=200, body="", content_type="application/x-ndjson"))
+        for pat, fn in (routes or {}).items(): c.route(pat, fn)
+        page = c.new_page()
+        page.on("pageerror", lambda e: errors.append(str(e)))
+        page.on("dialog", lambda d: d.accept())
+        js = "".join("localStorage.setItem(%s, %s);" % (json.dumps("dvor:" + k), json.dumps(json.dumps(v))) for k, v in seed.items())
+        page.add_init_script('if (!sessionStorage.getItem("seeded")) { localStorage.clear(); %s sessionStorage.setItem("seeded", "1"); }' % js)
+        page.goto("file:///" + os.path.abspath(APP).replace("\\", "/") + hash_)
+        page.wait_for_timeout(500)
+        return c, page
+    stored_games = lambda page: page.evaluate("JSON.parse(localStorage.getItem('dvor:games'))")
+
+    # Import: a PGN on top of synced games keeps the synced ones (the cap sync uses, newest kept).
+    c2, p2 = fresh({"games": [blunder_game("s%03d" % i, 2 + i % 300) for i in range(600)], "handle": "luke"})
+    p2.set_input_files("#importFile", write_tmp("one.pgn", '[Event "Rated Rapid game"]\n[Site "https://lichess.org/newgame1"]\n'
+        '[Date "%s"]\n[White "luke"]\n[Black "x"]\n[Result "1-0"]\n\n1. e4 e5 2. Nf3 1-0\n' % TODAY))
+    p2.wait_for_timeout(2500)
+    g2 = stored_games(p2)
+    dates = [g["date"] for g in g2]
+    check("import: a one-game PGN on 600 synced games keeps all 601, newest first",
+          len(g2) == 601 and g2[0]["id"] == "newgame1" and dates == sorted(dates, reverse=True), "%d games, first %s" % (len(g2), g2[0]["id"]))
+    c2.close()
+    c2, p2 = fresh({"games": [blunder_game("s%04d" % i, 2 + i) for i in range(1000)], "handle": "luke"})
+    p2.set_input_files("#importFile", write_tmp("one.pgn", '[Site "https://lichess.org/newgame2"]\n[Date "%s"]\n[White "luke"]\n[Black "x"]\n'
+        '[Result "1-0"]\n\n1. e4 e5 1-0\n' % TODAY))
+    p2.wait_for_timeout(3000)
+    g2 = stored_games(p2)
+    check("import: past the cap, the oldest game goes, and the notice says so",
+          len(g2) == 1000 and g2[0]["id"] == "newgame2" and "s0999" not in [g["id"] for g in g2] and "1 of the oldest" in p2.inner_text("#flash"),
+          "%d; %s" % (len(g2), p2.inner_text("#flash")[:90]))
+    p2.set_input_files("#importFile", write_tmp("zh.pgn", '[Variant "Crazyhouse"]\n[White "luke"]\n[Black "x"]\n[Result "1-0"]\n\n'
+        '1. e4 d5 2. exd5 Qxd5 3. Nc3 Qa5 4. P@d4 1-0\n'))
+    p2.wait_for_timeout(800)
+    check("import: a variant game is refused, and the notice says why", "only standard chess" in p2.inner_text("#flash")
+          and "Crazyhouse" in p2.inner_text("#flash"), p2.inner_text("#flash")[:90])
+    c2.close()
+
+    # Cards: review history for a game no longer loaded survives the next rebuild.
+    gone = {"gone1:3": {"id": "gone1:3", "ease": 2.7, "interval": 40, "reps": 5, "lapses": 0, "due": NOW + 30 * DAY,
+                        "last": NOW - 10 * DAY, "history": [{"t": NOW - 10 * DAY, "g": 3}]}}
+    c2, p2 = fresh({"games": [blunder_game("new1", 1)], "cards": gone})
+    kept = p2.evaluate("JSON.parse(localStorage.getItem('dvor:cards'))")
+    check("cards: a card whose game is not loaded keeps its schedule", "gone1:3" in kept and kept["gone1:3"]["interval"] == 40
+          and "new1:3" in kept, sorted(kept))
+    c2.close()
+
+    # Review: a game older than the window is still reviewed against its mined errors.
+    c2, p2 = fresh({"games": [blunder_game("old1", 200)], "settings": {"windowDays": 7, "hour": 19, "minutes": 60, "endgameTier": 2}})
+    p2.click("button.tab[data-tab=review]"); p2.select_option("#revGame", "0"); p2.click("#revStart")
+    p2.fill("#revText", "e4 because it is natural"); p2.click("#revSubmit"); p2.click("#revNext")
+    p2.fill("#revText", "Ba6 develops, his reply bxa6 I missed"); p2.click("#revSubmit")
+    fb = p2.inner_text("#revFeedback")
+    check("review: an error outside the Strength window is still named", "the engine wanted Nf3, cost 3.3 pawns" in fb, fb.strip()[-80:])
+    check("review: the move list is text, not buttons that do nothing",
+          p2.evaluate("document.querySelectorAll('#revMoves button').length") == 0 and p2.evaluate("document.querySelectorAll('#revMoves .mv').length") >= 3)
+    c2.close()
+
+    # Sparring: a restart as White within the mirror's delay; the mirror must not play White's move.
+    c2, p2 = fresh({"games": [blunder_game("a1", 1)]})
+    p2.click("button.tab[data-tab=sparring]"); p2.uncheck("#sfOn")
+    p2.evaluate("""() => { const c = document.querySelector('#sparColor'), s = document.querySelector('#sparStart');
+      c.value = 'b'; s.click(); c.value = 'w'; s.click(); }""")
+    p2.wait_for_timeout(3000)
+    check("sparring: a game restarted as White before the mirror's first move has no move played for you",
+          p2.evaluate("document.querySelectorAll('#sparMoves .mv').length") == 0, p2.inner_text("#sparMoves")[:30])
+    p2.click('#sparBoard [data-sq="e2"]'); p2.click('#sparBoard [data-sq="e4"]')
+    p2.wait_for_function("document.querySelectorAll('#sparMoves .mv').length >= 2", timeout=20000)
+    pgn = p2.input_value("#sparPgn")
+    check("sparring: the game text names the players and the result, so an import knows your side",
+          '[White "You"]' in pgn and '[Black "Dvoretsky Lab mirror"]' in pgn and '[Result "*"]' in pgn and pgn.rstrip().endswith("*"), pgn[:120])
+    p2.click("#sparResign")
+    check("sparring: ...and after resigning, the result is the mirror's", '[Result "0-1"]' in p2.input_value("#sparPgn"))
+    p2.click("button.tab[data-tab=settings]")
+    p2.set_input_files("#importFile", write_tmp("spar.pgn", p2.input_value("#sparPgn")))
+    p2.wait_for_timeout(1500)
+    imp = [g for g in stored_games(p2) if g["oppName"] == "Dvoretsky Lab mirror"]
+    check("sparring: that text imports as your game, with your colour and result", bool(imp) and imp[0]["myColor"] == "w" and imp[0]["score"] == 0,
+          str(imp and (imp[0]["myColor"], imp[0]["score"])))
+    c2.close()
+
+    # Stockfish: a restart before the first read finishes still gets the new game's position read.
+    c2, p2 = fresh({"games": [blunder_game("a1", 1)]})
+    p2.click("button.tab[data-tab=sparring]"); p2.select_option("#sfTime", "1000"); p2.select_option("#sparColor", "w")
+    p2.click("#sparStart"); p2.wait_for_timeout(300); p2.click("#sparStart")
+    try:
+        p2.wait_for_function("/depth/.test(document.querySelector('#sfNow').innerText)", timeout=30000); read_ok = True
+    except Exception:
+        read_ok = False
+    check("stockfish: starting again while the first read runs does not leave the reading stuck", read_ok,
+          " ".join(p2.inner_text("#sfNow").split())[:70])
+    c2.close()
+
+    # Calendar: "Run it" on a calculation set runs that set, not every card.
+    c2, p2 = fresh({"games": [blunder_game("b%d" % i, 1) for i in range(6)] + [small_error_game("s%d" % i, 1) for i in range(30)],
+                    "settings": {"windowDays": 0, "minutes": 60, "hour": 19, "endgameTier": 2}})
+    p2.click("button.tab[data-tab=calendar]")
+    ran = None
+    for d in p2.query_selector_all("[data-day]"):
+        d.click()
+        btn = p2.query_selector("#dayDetail .block.calculation [data-run]")
+        if btn:
+            n = int(re.search(r"(\d+) positions", p2.inner_text("#dayDetail .block.calculation")).group(1))
+            btn.click(); p2.wait_for_timeout(300)
+            ran = (n, p2.inner_text("#drillProgress"))
+            break
+    check("calendar: a calculation set's Run it drills the positions it lists", bool(ran) and ran[1] == "1 of %d" % ran[0], str(ran))
+    c2.close()
+
+    # Drills: after "Show the move" the card cannot be graded as found.
+    c2, p2 = fresh({"games": [blunder_game("a1", 1)]})
+    p2.click("button.tab[data-tab=drills]"); p2.click("[data-start=due]"); p2.click("#drillReveal")
+    open_grades = p2.evaluate("[...document.querySelectorAll('#drillGrades button')].filter(b => !b.disabled).map(b => b.dataset.grade).join()")
+    check("drills: after a reveal only Missed it and Hard can be chosen", open_grades == "0,1", open_grades)
+    p2.click('[data-grade="0"]')
+    card = p2.evaluate("JSON.parse(localStorage.getItem('dvor:cards'))['a1:3']")
+    check("drills: ...and the card loses its interval", card["interval"] == 0 and card["lapses"] == 1, card)
+    c2.close()
+
+    # Storage full: a justification that cannot be saved says so.
+    c2, p2 = fresh({"games": [blunder_game("a1", 1)]})
+    p2.evaluate("""() => { let n = 1 << 22, i = 0;
+      while (n > 16) { try { localStorage.setItem('junk' + (i++), 'x'.repeat(n)); } catch (e) { n >>= 1; } } }""")
+    p2.click("button.tab[data-tab=review]"); p2.select_option("#revGame", "0"); p2.click("#revStart")
+    p2.fill("#revText", "Candidates e4 or d4; his reply e5; equal. " * 20); p2.click("#revSubmit")
+    check("storage: a justification that does not fit says it was not saved",
+          p2.evaluate("!document.querySelector('#flash').classList.contains('hidden')") and "not saved" in p2.inner_text("#flash"),
+          p2.inner_text("#flash")[:80])
+    c2.close()
+
+    # Keyboard: the board is one tab stop, arrows cover all 64 squares, focus survives a move.
+    c2, p2 = fresh({"games": [blunder_game("a1", 1)]})
+    p2.click("button.tab[data-tab=drills]"); p2.select_option("#egPick", "lucena"); p2.click("[data-start=endgame]")
+    stops = p2.evaluate("[...document.querySelectorAll('#drillBoard [data-sq]')].map(s => s.tabIndex)")
+    check("keyboard: every square is focusable, and exactly one is in the tab order",
+          len(stops) == 64 and stops.count(0) == 1 and stops.count(-1) == 63, "%d squares, %d tab stops" % (len(stops), stops.count(0)))
+    labels = p2.evaluate("['c8', 'd1', 'e4'].map(n => document.querySelector('#drillBoard [data-sq=' + n + ']').getAttribute('aria-label'))")
+    check("keyboard: squares are named with what stands on them", labels == ["c8, white king", "d1, white rook", "e4, empty"], labels)
+    p2.focus('#drillBoard [data-sq=d1]'); p2.keyboard.press("ArrowUp"); p2.keyboard.press("ArrowUp"); p2.keyboard.press("ArrowRight")
+    at = p2.evaluate("document.activeElement.dataset.sq || document.activeElement.tagName")
+    check("keyboard: arrow keys move over the squares, empty ones included", at == "e3", at)
+    p2.focus('#drillBoard [data-sq=d1]'); p2.keyboard.press("Enter")
+    p2.focus('#drillBoard [data-sq=d4]'); p2.keyboard.press("Enter")
+    after_move = p2.evaluate("document.activeElement.dataset.sq || document.activeElement.tagName")
+    p2.wait_for_function("/Engine plays/.test(document.querySelector('#drillFeedback').innerText)", timeout=15000)
+    after_reply = p2.evaluate("document.activeElement.dataset.sq || document.activeElement.tagName")
+    check("keyboard: after a move, and after the reply, focus is on the square the piece went to",
+          after_move == "d4" and after_reply == "d4", "%s / %s" % (after_move, after_reply))
+    c2.close()
+
+    # Tabs: a hash that is not a tab shows Strength; tabs are wired to their panels and to the arrows.
+    c2, p2 = fresh({}, "#nosuchtab")
+    check("tabs: an unknown hash falls back to Strength", p2.evaluate("document.querySelectorAll('.panel.active').length") == 1
+          and p2.evaluate("(document.querySelector('.panel.active') || {}).id") == "panel-strength")
+    wired = p2.evaluate("[...document.querySelectorAll('.tab')].every(t => document.getElementById(t.getAttribute('aria-controls')))")
+    p2.focus("button.tab[data-tab=strength]"); p2.keyboard.press("ArrowRight")
+    moved = p2.evaluate("[document.activeElement.dataset.tab, (document.querySelector('.panel.active') || {}).id, "
+                        "[...document.querySelectorAll('.tab')].filter(t => t.tabIndex === 0).length]")
+    check("tabs: each controls its panel, and the arrow keys move between them", wired and moved == ["sparring", "panel-sparring", 1], moved)
+    c2.close()
+
+    # Settings: a stored blob missing a key reads over the defaults; a bad hour keeps the old one.
+    c2, p2 = fresh({"settings": {"windowDays": 0, "minutes": 60}, "games": [blunder_game("a1", 1)]})
+    p2.click("button.tab[data-tab=settings]")
+    shown_hour = p2.input_value("#setHour")
+    p2.fill("#setHour", "7pm"); p2.click("#saveSettings")
+    st = p2.evaluate("JSON.parse(localStorage.getItem('dvor:settings'))")
+    check("settings: missing keys read as the defaults, and an hour of \"7pm\" keeps the saved 19",
+          shown_hour == "19" and st["hour"] == 19 and "kept the old value" in p2.inner_text("#flash"), "%r; %s" % (shown_hour, st.get("hour")))
+    p2.fill("#setMinutes", "0"); p2.click("#saveSettings")
+    check("settings: minutes of 0 keep the saved value", p2.evaluate("JSON.parse(localStorage.getItem('dvor:settings')).minutes") == 60)
+    p2.click("button.tab[data-tab=calendar]")
+    with p2.expect_download() as dl:
+        p2.click("#icsBtn")
+    ics = open(dl.value.path(), encoding="utf-8").read()
+    check("settings: the calendar file has no NaN in it", "NaN" not in ics and "T190000" in ics,
+          [l for l in ics.splitlines() if l.startswith("DTSTART")][:1])
+    c2.close()
+
+    # Scout: a profile loaded as yours stays theirs when the window moves.
+    def scout_games(route):
+        rows = [json.dumps({"id": "sc%d" % i, "rated": True, "speed": "rapid", "perf": "rapid", "createdAt": NOW - DAY,
+                "status": "resign", "winner": "white", "moves": "e4 e5 Nf3 Nc6",
+                "players": {"white": {"user": {"name": "scoutee"}, "rating": 1700}, "black": {"user": {"name": "opp"}, "rating": 1700}}})
+                for i in range(5)]
+        route.fulfill(status=200, body="\n".join(rows) + "\n", content_type="application/x-ndjson")
+    c2, p2 = fresh({"games": [blunder_game("own%d" % i, 1) for i in range(3)]}, routes={"**/lichess.org/api/games/user/scoutee**": scout_games})
+    p2.click("button.tab[data-tab=scout]"); p2.fill("#scoutHandle", "scoutee"); p2.click("#scoutBtn")
+    p2.wait_for_selector("#scoutAdopt", timeout=10000); p2.click("#scoutAdopt"); p2.wait_for_timeout(300)
+    p2.evaluate("""() => { const r = document.querySelector('#winDays'); r.value = '0';
+      r.dispatchEvent(new Event('input')); r.dispatchEvent(new Event('change')); }""")
+    p2.wait_for_timeout(700)
+    cap2 = p2.inner_text("#rulerCaption")
+    check("scout: after loading a scouted profile, moving the window re-measures their games, not yours",
+          re.search(r"Last 7 days:\s*5\s*games", cap2) is not None, cap2[:60])
+    c2.close()
 
     check("page: no uncaught errors throughout", not errors, errors[:3])
 
