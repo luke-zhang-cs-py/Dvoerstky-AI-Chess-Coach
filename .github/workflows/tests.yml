@@ -22,10 +22,11 @@ jobs:
         with:
           node-version: "22"
 
-      - name: Node suites (rules, engine, analysis, sparring, regressions)
+      - name: Node suites (perft, rules, engine, analysis, sparring, integration, regressions, titled, coach, app)
         run: |
           for t in test/*.js; do
             # tactics.js scores by the clock, so its number depends on the machine: run it by hand
+            # (as tools/bench.js and tools/acpl.js, the speed and sparring-calibration measurements)
             case "$t" in test/tactics.js) continue ;; esac
             echo "::group::$t"
             node "$t" || exit 1
@@ -38,13 +39,22 @@ jobs:
 
       - name: Engine over UCI (1,000-position legality, mates, games against baselines)
         run: |
-          pip install chess
-          python test/engine_gauntlet.py legality
-          python test/engine_gauntlet.py mates --movetime 300
+          pip install chess==1.11.2
+          # every reply legal, and within 100 ms a move + 150 ms of slack for a shared runner
+          python test/engine_gauntlet.py legality --movetime 100 --slack 150
+          # 1 s a move (about 5 minutes for the 200 positions): 100 of 100 for both here. At 300 ms
+          # mate in 2 fell to 82 on a busy machine, too close to any floor to gate on. 95 leaves
+          # room for a runner at half this speed, where 95-97 have been seen.
+          python test/engine_gauntlet.py mates --movetime 1000 --min-mate1 100 --min-mate2 95
           python test/engine_gauntlet.py random --games 20
 
       - name: Browser checks (index.html in Chromium, Stockfish included)
         run: |
-          pip install playwright
+          pip install playwright==1.62.0
           python -m playwright install --with-deps chromium
           python test/ui_check.py
+
+      - name: Single-file build (dist/ is not in git; built here and opened on its own)
+        run: |
+          python tools/build_single_file.py
+          python test/dist_check.py

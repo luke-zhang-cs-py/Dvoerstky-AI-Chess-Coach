@@ -1,5 +1,5 @@
 // Benchmark: a fixed search of fixed positions, like Stockfish's `bench`.
-//   node test/bench.js [depth]        (default depth 4)
+//   node tools/bench.js [depth]        (default depth 4)
 // Prints nodes per second, and a signature: the total node count. The search
 // has no clock here, so the count is exactly the same on any machine, and it
 // changes only when the search itself does. A speed-only change keeps the

@@ -18,7 +18,8 @@ A native Stockfish (not the one inside the page) is the referee:
   5. advice     -- the house engine's first choice at its app budget: how
                    much does Stockfish say it gives away?
 
-Needs Node (for the app's own code) and Playwright (for the reader).
+Needs Node (for the app's own code) and Playwright (for the reader). Exits 1 if any
+endgame study's claim is WRONG; the other sections are measurements, reported only.
 """
 import json, os, statistics, subprocess, sys, tempfile
 
@@ -72,7 +73,10 @@ class Stockfish:
 
 
 def node(script, payload=None):
-    f = tempfile.NamedTemporaryFile("w", suffix=".js", delete=False, dir=HERE)
+    # In the system's temp directory, not test/: a run that dies must not leave a stray
+    # .js beside the suites, where CI's test/*.js loop would run it. ROOT makes the
+    # requires absolute, so the script's own location does not matter.
+    f = tempfile.NamedTemporaryFile("w", suffix=".js", delete=False)
     f.write("globalThis.window = globalThis;\nconst ROOT = %s;\n" % json.dumps(ROOT) + script); f.close()
     try:
         out = subprocess.run([NODE, f.name], input=json.dumps(payload or {}), capture_output=True, text=True, timeout=3600)
@@ -115,6 +119,7 @@ for s in studies:
 print("\n1. Endgame studies (Stockfish 19, depth 30; score for the side to move)")
 for r in rows: print("   %-14s %-44s %10s  %s" % (r[0], r[1], r[2], "ok" if r[3] else "WRONG"))
 report["endgames"] = {"checked": len(rows), "correct": sum(1 for r in rows if r[3])}
+rows_endgames = rows   # `rows` is reused below; the exit code reads these
 
 # ---------------------------------------------------------------- the sample games, read by the app
 data = node("""require(ROOT + '/js/core.js'); require(ROOT + '/js/engine.js'); require(ROOT + '/js/data.js'); require(ROOT + '/js/analysis.js');
@@ -220,3 +225,10 @@ report["reader"] = {"moves": total, "same_verdict": same, "within50": near}
 
 sf.close()
 json.dump(report, open(os.path.join(tempfile.gettempdir(), "stockfish_check.json"), "w"), indent=1)
+wrong = [r[0] for r in rows_endgames if not r[3]]
+if wrong:
+    print()
+    print("FAIL: endgame claims Stockfish 19 does not support: " + ", ".join(wrong))
+    sys.exit(1)
+print()
+print("PASS: every endgame claim holds")

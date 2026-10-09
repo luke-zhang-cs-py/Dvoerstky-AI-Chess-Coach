@@ -28,7 +28,14 @@ games** (or import a PGN in Settings).
 
 ```bash
 python tools/build_single_file.py     # one self-contained HTML file, Stockfish included
+python test/dist_check.py             # open that file on its own and check it works
 ```
+
+The single file lands in `dist/Dvoretsky-Lab.html`. `dist/` is not in git, so build it
+from the sources when you need it: a copy left from older sources goes stale with nothing
+to say so. CI builds it on every push and opens it in Chromium with nothing beside it;
+`test/dist_check.py` fails on any page error, any file left un-inlined, or any inlined
+file that differs from the one in `js/` or `css/`.
 
 ## Two engines, on purpose
 
@@ -47,52 +54,64 @@ house engine judged its own mistakes correctly.
 
 ```
 index.html   the whole app: open it
-js/          ten modules, plain scripts, no bundler; js/vendor/ is Stockfish (GPL-3.0)
+js/          11 modules, plain scripts, no bundler; js/vendor/ is Stockfish (GPL-3.0)
 css/         one stylesheet
-test/        Node suites, a Playwright drive of the page, and a coverage report
-tools/       the single-file build and the demo recorder
+test/        Node suites, the UCI gauntlet, Playwright drives of the page and the single file, a coverage report
+tools/       uci.js (the engine for any UCI GUI), match.js and sprt.js (engine matches; games.js is
+             what they share), bench.js and acpl.js (speed and sparring calibration), the
+             single-file build and the demo recorder
 experiments/ a PyTorch move predictor and an Elo study against Stockfish, apart from the app
 notes/       the full guide
 ```
 
 ## Tests
 
-**75 regression checks, 39 rules checks, 37 titled-player checks, 12 coach checks, 56 browser checks, and perft on 21
-positions**, 15 of them edge cases (en passant out of a pin, castling into check,
-underpromotion) with counts taken from Stockfish 19. Every bug fixed has a check that
+**414 checks.** In Node: 94 regression, 50 rules, 37 titled-player, 25 app (PGN import,
+mining, calendar), 22 integration, 18 analysis, 17 sparring, 12 coach and 10 engine checks,
+and perft on 21 positions (35 counts, plus 5 SAN and PGN checks), 15 of them edge cases (en
+passant out of a pin, castling into check, underpromotion) with counts taken from Stockfish 19,
+one from python-chess. In Chromium: 83 browser checks and 6 on the single-file build. Every
+suite exits non-zero on a failure, which is what CI reads. Every bug fixed has a check that
 failed on the code before its fix. The browser checks run the real Stockfish.
 
 **From the outside** (`test/engine_gauntlet.py`): the engine driven over UCI the way a
 GUI drives it, with python-chess as a referee that shares no code with `js/core.js`.
 
-| check | result |
-|---|---|
-| legality: 1,000 positions (random games, EPD suites, random valid placements, 18 edge cases) plus 2 game-over positions | 1,002 of 1,002 legal, well-formed and on time; median 83 ms, slowest 99 ms at 100 ms a move |
-| mate in 1: 100 positions, screened by Stockfish and proved by brute force | 100 of 100 at 1 s |
-| mate in 2: 100 positions, any forced line accepted | 100 of 100 at 1 s |
-| 100 games against a random mover, 50 against a greedy capturer | 150 wins, no draws, no freezes, no games run to the ply cap; median win in 31 plies |
-| 20 games against Stockfish 19 at 0.1 s a move (house engine also 0.1 s) | 0.5 of 20 (one perpetual), as expected. Median first blunder (200+ cp by a depth-12 referee) at move 8 after the opening; really down material from move 14 |
+| check | result | measured |
+|---|---|---|
+| legality: 1,000 positions (random games, EPD suites, random valid placements, 18 edge cases) plus 2 game-over positions | 1,002 of 1,002 legal and well-formed, every reply within 100 ms a move + 150 ms of slack (a later one fails); median 83 ms, slowest 127 ms. On time means within the slack, not within 100 ms: replies of 176 ms have been seen on a loaded machine | 9 Oct 2026, this engine |
+| mate in 1: 100 positions, screened by Stockfish and proved by brute force | 100 of 100 at 1 s (fewer fails CI) | 9 Oct 2026, this engine |
+| mate in 2: 100 positions, any forced line accepted | 100 of 100 at 1 s (CI fails below 95); 82 at 0.3 s | 9 Oct 2026, this engine |
+| 100 games against a random mover, 50 against a greedy capturer (CI plays 20 and 10: `random --games 20`) | 150 wins, no draws, no freezes, no games run to the ply cap; median win in 32 plies against the random mover (31 on the previous engine), 36 against the greedy one | 9 Oct 2026, this engine |
+| 20 games against Stockfish 19 at 0.1 s a move (house engine also 0.1 s) | 0.5 of 20 (one perpetual), as expected. Median first blunder (200+ cp by a depth-12 referee) at move 8 after the opening; really down material from move 14 | 28 Sep 2026, previous engine |
 
 On Windows the harness switches off power throttling for the engines it starts: a
 windowless child otherwise runs at about half speed (66k against 127k nodes/s here),
 and mate in 2 fell to 95–97 of 100 because depth 3 no longer fit in the second.
 
-| strength | |
-|---|---|
-| matches against Stockfish 19 (set to 1500, 1800, 2100) and Maia 1500, 1900 (`tools/match.js`, 30+0.3) | performance about 1730 over 66 games |
-| SPRT against the previous engine (`tools/sprt.js`) | +41 ± 28 Elo, H1 accepted |
-| Win at Chess, 300 tactics (`test/tactics.js`) | 87 at 0.5 s |
-| Bratko-Kopec, 24 positions | 6 at 10 s |
-| BT2630, 30 hard positions | 3 at 10 s: a rating floor of 1820 |
-| STS, 1,500 strategic positions | 41.9% of the points at 0.5 s |
-| speed (`test/bench.js`) | 60–110k nodes/s, by machine load; perft 3.4M leaves/s |
+| strength | | measured |
+|---|---|---|
+| SPRT against the engine before it (`tools/sprt.js`, 60 ms a move, elo0 0, elo1 20) | +83.5 ± 45.7 Elo over 212 games (+120 =22 −70), LLR 3.00, H1 accepted | 9 Oct 2026, this engine |
+| Win at Chess, 300 tactics (`test/tactics.js`) | 93 at 0.5 s (87 on the previous engine) | 9 Oct 2026, this engine |
+| Bratko-Kopec, 24 positions | 6 at 10 s (6 before) | 9 Oct 2026, this engine |
+| BT2630, 30 hard positions | 3 at 10 s: a rating floor of 1820 (the same before) | 9 Oct 2026, this engine |
+| matches against Stockfish 19 (set to 1500, 1800, 2100) and Maia 1500, 1900 (`tools/match.js`, 30+0.3) | performance about 1730 over 66 games | 27 Sep 2026, previous engine |
+| STS, 1,500 strategic positions | 41.9% of the points at 0.5 s | 27 Sep 2026, previous engine |
+| speed (`tools/bench.js`, depth 4) | 61–73k nodes/s with other work running (the previous engine 62k beside it; 60–110k by machine load before); signature 3,015,335 nodes. Perft 2.3M leaves/s (3.4M before, on a quieter machine) | 9 Oct 2026, this engine |
+
+*This engine* is `js/engine.js` after the 9 October 2026 changes (the quiescence search
+searches check evasions, the deadline reaches quiescence, the mate threshold); *the previous
+engine* is `js/engine.js` as of `e278488` (27 September 2026). The rows on the previous engine
+need Stockfish or Lc0 to rerun, so they were not. Every timed figure depends on the machine
+and its load: these were taken with other work running.
 
 Stockfish 19 through the same suites and scorer: WAC 276 at 1 s, Bratko-Kopec 20, BT2630
 24, STS 86.2%, so the answer keys and the scoring hold up.
 
 `test/stockfish_check.py` re-checks the app's claims against Stockfish 19: every
 endgame study's verdict, the imported evaluations, the mined mistakes and the house
-engine's own choices (93% within 50 cp of best). `tools/uci.js` runs the engine in
+engine's own choices (93% within 50 cp of best, on the previous engine), and exits 1 if
+an endgame claim is wrong. `tools/uci.js` runs the engine in
 any UCI GUI. Setup: [`.github/CONTRIBUTING.md`](.github/CONTRIBUTING.md).
 
 MIT, except `js/vendor/` (Stockfish.js, GPL-3.0).

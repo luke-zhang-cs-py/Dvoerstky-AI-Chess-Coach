@@ -19,7 +19,9 @@ const suites = [
 ];
 
 // Edge cases from the standard perft suites: each count is Stockfish 19's own
-// (`go perft N`), not a number copied from memory. [name, fen, depth, nodes]
+// (`go perft N`), not a number copied from memory, except the rank-pin case, counted
+// by python-chess (chess 1.11.2) -- a move generator that shares no code with this one.
+// [name, fen, depth, nodes]
 const edges = [
   ["illegal en passant: the capture would expose the king", "8/5bk1/8/2Pp4/8/1K6/8/8 w - d6 0 1", 5, 62297],
   ["en passant that gives check", "8/8/1k6/2b5/2pP4/8/5K2/8 b - d3 0 1", 5, 206379],
@@ -34,7 +36,7 @@ const edges = [
   ["self stalemate", "K1k5/8/P7/8/8/8/8/8 w - - 0 1", 6, 2217],
   ["stalemate and checkmate (1)", "8/k1P5/8/1K6/8/8/8/8 w - - 0 1", 6, 43261],
   ["stalemate and checkmate (2)", "8/8/2k5/5q2/5n2/8/5K2/8 b - - 0 1", 4, 23527],
-  ["en passant pinned along the rank", "8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1", 5, 674624],
+  ["en passant pinned along the rank", "8/8/8/K2pP2r/8/8/8/7k w - d6 0 1", 6, 921406],
   ["the 'position 4' mirror", "r2q1rk1/pP1p2pp/Q4n2/bbp1p3/Np6/1B3NBn/pPPP1PPP/R3K2R b KQ - 0 1", 3, 9467]
 ];
 

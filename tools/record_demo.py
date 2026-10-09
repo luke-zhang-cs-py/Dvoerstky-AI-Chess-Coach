@@ -36,10 +36,10 @@ def slide(pg, i):
     pg.wait_for_timeout(700)
 
 def play(pg, a, b):
-    n = pg.evaluate("document.querySelectorAll('#sparMoves button').length")
+    n = pg.evaluate("document.querySelectorAll('#sparMoves .mv').length")
     pg.click('#sparBoard [data-sq="%s"]' % a); pg.wait_for_timeout(250)
     pg.click('#sparBoard [data-sq="%s"]' % b)
-    pg.wait_for_function("document.querySelectorAll('#sparMoves button').length >= %d" % (n + 2), timeout=30000)
+    pg.wait_for_function("document.querySelectorAll('#sparMoves .mv').length >= %d" % (n + 2), timeout=30000)
 
 def graded(pg, n):
     pg.wait_for_function("""n => { const rows = [...document.querySelectorAll('.sf-log tbody tr')];

@@ -1,3 +1,9 @@
+// Sparring calibration, measured by self-play: for each asked strength, three 44-ply
+// games of the mirror against itself, and the centipawns it really gave away (by the
+// house engine's own reckoning) mapped back to an Elo.
+//   node tools/acpl.js
+// A measurement, not a pass/fail suite: the mirror searches against the clock
+// (220 ms a move), so the numbers move with the machine's speed and load.
 globalThis.window = globalThis;
 require('../js/core.js'); require('../js/engine.js'); require('../js/data.js');
 require('../js/analysis.js'); require('../js/sparring.js');

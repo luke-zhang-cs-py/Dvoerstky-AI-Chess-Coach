@@ -1,3 +1,115 @@
+# October 2026 audit (9 Oct)
+
+Scope: the engine over UCI (`js/engine.js`, `js/core.js`'s FEN and PGN reading, `tools/uci.js`,
+`tools/sprt.js`, `tools/match.js`, the gauntlet's positions), then the app (`js/ui.js`,
+`js/data.js`, `js/training.js`, `js/analysis.js`, `js/board.js`, `js/sparring.js`), then the tests,
+CI and the docs themselves. Two passes fixed code; a third hardened the tests and corrected the
+documents. The earlier passes, below, were not redone.
+
+Baseline (`a484217`): regress 75, rules 39, titled 37, coach 12, `ui_check.py` 56; `eng.js`,
+`an.js`, `spar.js`, `integration.js`, `acpl.js` and `bench.js` printed and exited 0 whatever they
+found; perft "on 21 positions" was 20 (one edge case was position 3 again, a ply deeper).
+After: regress 94, rules 50, titled 37, coach 12, the new `test/app.js` 25, `eng.js` 10, `an.js`
+18, `spar.js` 17, `integration.js` 22, `ui_check.py` 83, the new `test/dist_check.py` 6, perft 21
+positions (35 counts) and 5 SAN/PGN checks.
+
+## Engine fixes
+
+| Area | What was wrong | Fix | Check |
+|---|---|---|---|
+| En passant and FEN | A FEN's en passant square was taken on trust: a square with no pawn that just passed, or on the wrong rank, gave a capture that removed the wrong piece. Malformed FENs (a rank of 7 or 9 squares, no king, a bad side to move or clock) loaded. Castling rights without king and rook at home were kept. | The square is kept only when a pawn has just passed it and an enemy pawn stands beside; the FEN reader refuses what is malformed and says why; a right needs the king and that rook at home. | rules.js (11) |
+| UCI | `position` lost a FEN of fewer than six fields; `stop` and `isready` were not read during a search; `go nodes` and `go infinite` were ignored. | The search runs in a worker thread, so the protocol thread answers `isready` at once, `stop` ends the search with its best move so far, `quit` exits; `go nodes N` and `go infinite` work. | regress.js ("uci:") |
+| PGN | A move that could not be played was skipped and the game carried on. | An error naming the move; the importer skips that game and keeps the rest. | regress.js, app.js |
+| SPRT | The LLR's variance was zero whenever either side had no win, so +60 =40 −0 never accepted H1. | Zero only when every game had the same result. | regress.js |
+| Match path | A Node under `C:\Program Files` split into `cmd=C:\Program` and an argument. | The default engine is built as an engine, not re-split from a string. | regress.js |
+| Quiescence in check | The quiescence search stood pat in check, so a side in check with no safe move scored as if it could pass. | In check every evasion is searched, and having none is mate. SPRT against the engine before: +120 =22 −70 over 212 games at 60 ms a move, +83.5 ± 45.7 Elo, H1 accepted. | regress.js, SPRT |
+| Deadline | Only `search()` read the clock, so a long quiescence tree ran on past it. | `search()` and `quiesce()` both check the deadline, the node limit and the stop flag. | regress.js |
+| Mate threshold | A score above 9,000 counted as a mate, which a big material edge passes: it showed as "#n" and was kept out of the table. | The threshold is the mate score less the longest possible line, so nothing below it is a mate. | regress.js |
+| Gauntlet placements | Random placements almost never had castling rights or an en passant square, so neither was tested. | A third start with kings and rooks at home, a third end with a double pawn push. | engine_gauntlet.py |
+
+## App fixes
+
+| Area | What was wrong | Fix | Check |
+|---|---|---|---|
+| Import cap | A PGN import kept 400 games, the imported ones first, whatever their dates: on 600 synced games a one-game import dropped 201 of them. | Imported and synced games together, newest first, up to the same cap; the notice says what went. | ui_check.py |
+| Drill history | A card whose game was not loaded (a narrower sync) lost its schedule. | Every card's review history is kept. | ui_check.py |
+| Review verdicts | An error outside the Strength window was not named in the review. | Every mined error is reviewed against the engine. | ui_check.py |
+| Sparring turn race | Restarting as White before the mirror's first move could play a move for you; a takeback in the gap before the timer fired raced the mirror. | The turn closes when the mirror's move is scheduled, and a move for a game no longer on the board is dropped. | ui_check.py |
+| Stockfish restart | Starting again while the first read ran left the reader stuck. | `clear()` bumps a generation; a read asked for before it is ignored when it lands. | ui_check.py |
+| Calendar due day | A card due at 19:00 on a day was not listed on that day's plan. | Due at any time on the day counts. | app.js |
+| Lost mates | A forced mate thrown away was not mined as a mistake. | Judged as lila's MateAdvice judges it. | app.js |
+| Book and FEN starts | A game set up from a FEN added its moves to the book and tree as if played from the start. | Set-up games stay out of the tree and add only their own positions to the book. | app.js |
+| Variants and unfinished games | Variant games were imported; a game with result `*` counted as a result. | Variants are refused, with the reason; an unfinished game has no score. | app.js, ui_check.py |
+| Settings | A stored blob missing a key, an hour of "7pm" or minutes of 0 put NaN in the plan and the `.ics`. | Every key over the defaults; a bad value keeps the saved one, and the notice says which. | ui_check.py |
+| Calc set | A calculation set's Run it drilled other positions than the ones it listed. | The block runs the cards the plan counted. | ui_check.py |
+| Dist build in CI | A built `dist/` file could go stale with nothing to say so. | Not in git; CI builds it and opens it on its own (`test/dist_check.py`). | dist_check.py |
+| Storage-full messages | A refused write (grades, justifications, days done) was lost without a word. | Each says it was not saved. | ui_check.py |
+| Reveal grading | After "Show the move" every grade was open, so a shown answer could be graded found. | Only Missed it and Hard; the text under a wrong try now says so. | ui_check.py |
+| Keyboard and aria | Only squares with a move were focusable, each its own tab stop and named by its square alone; empty squares could not be reached; the tabs were not a tablist. | A roving tabindex over the 64 named squares, arrows and Enter or Space; tabs with arrows, Home and End. | ui_check.py |
+| Bad hash | An unknown `#tab` showed no panel. | Falls back to Strength. | ui_check.py |
+| Game splitting | A file was cut into games only at a blank line before `[`: games one newline apart ran together, and a comment whose paragraph starts with `[` cut a game in two. | A game ends where the next one's tags begin, outside comments. | app.js |
+| ICS DST | A floating 02:00 on the night the clocks go forward moved to 03:00. | Times are formatted by arithmetic on the date's own numbers. | app.js |
+| Mate 0 | Stockfish's "mate 0" (already mated) was shown as a score. | It reads as the result. | app.js |
+| Cache | The Stockfish read cache grew without bound. | 400 reads, the oldest out first. | none (read, not run) |
+
+## Test hardening
+
+- `eng.js`, `an.js`, `spar.js` and `integration.js` printed results and exited 0. Each now
+  checks what it printed (67 checks between them), ends with "N passed, M failed" and exits 1 on
+  a failure. Each was run with every condition inverted (all fail, exit 1) and with one
+  condition, or one line of the module it tests, broken (`Training.review` not counting lapses,
+  the mirror not counting book hits): one failure each time. `acpl.js` and `bench.js` measure
+  by the clock, so they moved to `tools/` as measurements.
+- `engine_gauntlet.py mates` takes `--min-mate1` and `--min-mate2`; fewer solved is a hard
+  failure. CI runs mates at 1 s a move with 100 and 95: 100 of 100 for both here, in about five
+  minutes. At 300 ms mate in 2 solved 82 of 100 on 9 October with the machine busy (90 to 91
+  had been seen before), too close to any floor to gate on.
+- `engine_gauntlet.py legality` counts a reply later than the movetime plus `--slack` (150 ms)
+  as a failure, and names the slowest position.
+- regress.js: "the same game imported again has the same id" passed on the code before its fix,
+  where every such game was `Chess.com`. It now also requires an id that is not `Chess.com` and
+  not another game's, and fails there. The "One further" line is asserted, not just "not Two".
+  The clock-change check prints SKIP in a zone without daylight saving, and fails under `CI`;
+  so does app.js's "02:00 on the day the clocks go forward", which passed as `true` there.
+- ui_check.py: the hostile-backup checks first prove the backup was restored (the message, and
+  its game, transcript and trajectory in storage); the rating-history race checks that the
+  request really was held.
+- perft: the duplicate edge case is now a rank pin on en passant (`8/8/8/K2pP2r/8/8/8/7k w -
+  d6`, 921,406 at depth 6, counted by python-chess), so "21 positions" is true. The gauntlet's
+  "underpromotion to avoid stalemate" was not one (`b8=Q` did not stalemate); it is now
+  `8/1P6/k7/8/1K6/8/8/8 w`, where `b8=Q` stalemates and `b8=R` wins, checked with python-chess.
+- `stockfish_check.py` exits 1 on a WRONG endgame claim and writes its scratch scripts to the
+  system temp directory; `coverage_report.py` exits 1 when a suite it ran failed. CI pins
+  `chess==1.11.2` and `playwright==1.62.0`.
+- `tools/record_demo.py` waits on `#sparMoves .mv` (the move list is text now, not buttons).
+
+## Coverage
+
+`python test/coverage_report.py` after this pass (Node 24.21.0, `ui_check.py` in the
+Chromium of Playwright 1.62): 93.3% of 4,755 lines, 616/663 functions, every run exiting 0. The suites that
+became checks run the same code as before, so they add no lines; `bench.js` and `acpl.js` no
+longer count, being in `tools/`.
+
+## Documents corrected
+
+The guide's sparring calibration (re-measured; it scatters from run to run), the README's
+strength figures (dated, and marked where they are the previous engine's), the SPRT result,
+"ten modules" (11), the tools list, the test lists, the calibration study's README (a count of
+eight that listed seven, a claim that one won game ruled out search bugs, and a note that it
+describes the engine of 18 September), and the count of failing checks for 5 October below.
+
+## Maintenance classification
+
+| Change | Type |
+|---|---|
+| The engine and app fixes above | corrective |
+| UCI in a worker (`stop`, `isready`, `go nodes`, `go infinite`), variants refused, the keyboard board | adaptive |
+| Quiescence in check | corrective and perfective (+83.5 Elo) |
+| The four suites turned into checks, the gauntlet's thresholds and slack, the tightened checks, exit codes in `stockfish_check.py` and `coverage_report.py`, pinned CI packages | preventive |
+| README, guide, CONTRIBUTING and the calibration README | perfective (documentation) |
+
+---
+
 # Code audit, 5 October 2026
 
 Scope: the files the two earlier passes read least, `js/coach.js` (65.9% of lines covered,
@@ -19,8 +131,11 @@ the rest print and exit 0), `ui_check.py` 56/56 in Chrome, the UCI gauntlet's le
 | 3 | Integration (identity) | A PGN game's id was the last segment of `Site`. chess.com writes `Site "Chess.com"` (the game's page is in `Link`), and other tools write `"?"` or a city, so every game in such a file had the same id: the second file imported was all "already loaded", and transcripts, drill cards (`id:ply`) and the review list ran different games together. | `gameUrl()` takes the game's page from `Site` or `Link`; with neither, `pgnId()` hashes players, date, round, start position and moves, so the same game re-imported keeps its id and two games never share one. Lichess ids are unchanged. | regress.js: four "pgn:" checks |
 | 4 | Functional | An answer from the API with no text in it (a refusal, a stop before any text) was shown as an empty verdict box. | `callLLM` rejects with the stop reason, which the existing `.catch` already shows. | regress.js: "an answer with no text is an error that says why" |
 
-Each check was run against the code before its fix and failed there (bug 2 also made the id
-checks fail, which is how it was found).
+Six of the seven new checks were run against the code before their fix and failed there (bug 2
+also made the id checks fail, which is how it was found). The seventh, "the same game imported
+again has the same id", passed on that code too: every game in the file was `Chess.com`, so any
+two had the same id. On 9 October it was tightened to also require an id that is not
+`Chess.com` and not another game's, and it now fails on the old code (see the 9 October section).
 
 ## Checklist
 
@@ -73,6 +188,12 @@ lines that ran with some code on them skipped.
 | stockfish-reader.js | 90.8% of 119 | 90.8% of 119 | 16/20 | 16/20 |
 | ui.js | 88.1% of 1,662 | 88.1% of 1,662 | 239/267 | 239/267 |
 | **total** | **92.3% of 4,460** | **93.7% of 4,472** | **581/626** | **593/635** |
+
+The "before" total here, 581/626 functions, is one more than the October audit's "after"
+(580/626, below) for the same code: the two are separate runs, and the browser check's
+time-limited searches take slightly different branches from one run to the next (the
+`sparring.js` line noted below is one such), so a function or a few lines either way is
+run-to-run variance, not a change.
 
 `coach.js`'s remaining gap is the two `fetch` callbacks' error shapes that only a real network
 produces. `data.js`'s is `fetchGames` and `fetchProfile` against the live API, which the browser

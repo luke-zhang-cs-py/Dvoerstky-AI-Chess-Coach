@@ -1,17 +1,25 @@
 # Elo calibration study (experiment, not part of the app)
 
 Does `Sparring.Mirror`, asked for `targetElo=X`, actually produce game
-*outcomes* consistent with strength X? The README's own "Be clear about what
-is measured and what is estimated" section already flags the sparring
-opponent's error rate as **Modelled**, validated only by self-play (Mirror
-vs. Mirror: "asked for 2050 it realises 40cp/move, which maps back to
-2048"). This experiment checks it against an external, independent ground
+*outcomes* consistent with strength X? The "Be clear about what is measured
+and what is estimated" section of [`notes/GUIDE.md`](../../notes/GUIDE.md)
+already flags the sparring opponent's error rate as **Modelled**, validated
+only by self-play (Mirror vs. Mirror; at the time of this study it read "asked
+for 2050 it realises 40cp/move, which maps back to 2048", since re-measured:
+see the guide). This experiment checks it against an external, independent ground
 truth instead: real Stockfish, set to the same Elo via its own officially
 calibrated `UCI_LimitStrength` + `UCI_Elo` mode (not the coarser 0-20 "Skill
 Level" knob, which isn't Stockfish's own Elo estimate).
 
 **Not part of the app** — pure Python/Playwright, drives the real unmodified
 `js/sparring.js` code in a real browser. `js/` has no dependency on this.
+
+**An older engine.** The study ran on 18 September 2026 (`10e83df`). The
+engine has changed since: mate scores were kept out of the transposition
+table (`a53cd64`), the null-move search was fixed not to prune against a mate
+bound or overwrite the repetition key (`f89bd43`), and on 9 October 2026 the
+quiescence search started searching check evasions. Everything below
+describes the engine as it was on 18 September, not the one in `js/` now.
 
 ## Result: Mirror loses ~100% of games against Stockfish at every Elo tested
 
@@ -20,8 +28,10 @@ Level" knob, which isn't Stockfish's own Elo estimate).
 scored **0/24** — not close losses, almost all by outright checkmate.
 
 That number looks alarming on its own, so before trusting it I ran four
-isolation tests (`debug_*.py`, `sanity_check.py`) to find out whether this
-is a harness bug, an engine.js bug, or a real finding:
+isolation tests (`debug_*.py`) to find out whether this is a harness bug, an
+engine.js bug, or a real finding. A fifth script, `sanity_check.py` (Mirror at
+2400 against Stockfish at its 1320 floor), is in the folder, but its result
+was not recorded: rerun it for a figure.
 
 1. **`debug_one_game.py`** — full move-by-move trace of one game, checking
    the board position tracked by the Python side against the one tracked by
@@ -31,19 +41,20 @@ is a harness bug, an engine.js bug, or a real finding:
 2. **`debug_raw_engine.py`** — bypassed Mirror's error injection entirely
    and just played `engine.rankAsync()`'s own top move against
    Stockfish@1320 (Stockfish's documented floor). **Engine.js won cleanly**,
-   its own eval climbing from +48 to a forced mate at ply 49. This rules out
-   a bug in this session's transposition-table/null-move-pruning work —
-   the search and evaluation are correct.
+   its own eval climbing from +48 to a forced mate at ply 49. One won game
+   shows the search plays sound chess; it does not show it free of bugs
+   (`a53cd64` and `f89bd43`, above, fixed real ones afterwards).
 3. **`debug_mirror_sampling.py`** — called `Mirror.chooseMove()` 8 times on
    a fixed position at `targetElo=2400` and compared the actual loss of the
-   move it picked against `Analysis.acplFromElo(2400)` (20cp). Observed
-   losses: 26, 32, 26, 32, 0, 32, 13cp — close to the target. The
+   move it picked against `Analysis.acplFromElo(2400)` (20cp). Seven of the
+   eight losses were recorded: 26, 32, 26, 32, 0, 32, 13cp (the eighth is not
+   in the notes) — close to the target. The
    move-by-move error model is not obviously broken either.
 4. **`debug_vs_random.py`** — Mirror@2400 vs. a purely random legal-move
    opponent, no Stockfish, no bridging at all. **Mirror won all 4 games**,
    in 15-44 plies. Rules out a deep bug in Mirror or the harness.
 
-So: the search is correct, the per-move error model is roughly calibrated,
+So: the search played sound chess, the per-move error model is roughly calibrated,
 and Mirror beats a genuinely weak opponent easily — but it still loses
 almost every game against Stockfish even at Stockfish's *weakest possible*
 setting. The conclusion isn't a bug; it's a real, known limitation of using
@@ -62,12 +73,11 @@ chess-programming community, not specific to this app.
 
 ## What this does and doesn't mean for the app
 
-- It does **not** mean `engine.js`'s search/eval is broken (test 2 disproves
-  that directly) or that Mirror's per-move error model is miscalibrated in
-  isolation (test 3).
+- It does **not** mean `engine.js`'s search/eval is broken (test 2 is
+  evidence against that, though not a proof) or that Mirror's per-move error
+  model is miscalibrated in isolation (test 3).
 - It does mean: don't take "Mirror-vs-Stockfish game score" as a calibration
-  metric for this app. The self-play validation the README already
-  describes, and human playtesting, remain the meaningful ways to check
+  metric for this app. The self-play validation the guide describes, and human playtesting, remain the meaningful ways to check
   this. This experiment is evidence *for* that existing caveat, not against
   the app.
 

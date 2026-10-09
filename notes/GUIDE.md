@@ -131,13 +131,20 @@ with their square and highlight colours and solid pieces.
   right often enough to be useful for grouping your errors, and wrong often enough that you
   should not treat a tag as gospel. Anything it cannot place is labelled honestly as
   unclassified rather than guessed at.
-- **Modelled:** the sparring opponent's error rate. Validated over self-play: asked for
-  2050 it realises 40 cp/move, which maps back to 2048; asked for 2350 it realises 23 cp,
-  mapping back to 2326. It runs slightly *strong* below about 1800.
+- **Modelled:** the sparring opponent's error rate. Validated over self-play
+  (`node tools/acpl.js`: three 44-ply games per strength, the loss judged by the house
+  engine). Re-measured on 9 October 2026, after the engine changes: asked for 1600 it
+  realised 82 to 86 cp/move over three runs, mapping back to about 1660–1690; asked for 2050,
+  34 to 47 cp over four (about 1970–2160); asked for 2350, 18 to 29 cp over four (about
+  2210–2500). So it runs *strong* at 1600, by 60–90 Elo, and above about 1800 it lands on
+  either side of the target by up to about 150 Elo: one run gave about 2150 and 2500 for
+  2050 and 2350, two others about 1970 for 2050. Three games is a small sample, and the
+  mirror searches against the clock (220 ms a move), so the numbers depend on the machine's speed and load: a slower or
+  busier machine searches less deeply and gives away more.
 - **The engine is mine, not Stockfish.** Tapered piece-square tables, material, bishop
   pair, pawn structure and mobility, with alpha-beta search, MVV-LVA ordering and
   quiescence. The move generator is verified by perft on 21 positions, 15 of them edge
-  cases counted by Stockfish 19, and the rules (castling, en passant, promotion, the
+  cases (14 counted by Stockfish 19, one by python-chess), and the rules (castling, en passant, promotion, the
   fifty-move rule, threefold repetition, dead positions) by `test/rules.js`. But the evaluation is club-strength, not superhuman: for ground truth on
   *your own games* the app uses Lichess's analysis, and the local engine is used for
   sparring, drills and live advice where speed matters more than the last 20 centipawns.
@@ -215,27 +222,63 @@ js/board.js         board rendering and interaction
 js/stockfish-reader.js  Stockfish in a Web Worker: UCI parsing, an ordered read queue
 js/vendor/          Stockfish.js 10.0.2 (GPL-3.0), wrapped as a string so file:// can run it
 js/ui.js            all seven workspaces
-test/               perft, rules, engine, analysis, integration, sparring and regression tests (node),
-                    a browser check of the UI (ui_check.py) and a coverage report
-test/bench.js       fixed-depth benchmark: nodes/s and a signature that changes when the search does
+test/               Node suites: perft.js, rules.js, eng.js (engine), an.js (analysis), integration.js,
+                    spar.js (sparring), regress.js, titled.js, coach.js, app.js (PGN import, mining,
+                    calendar); ui_check.py (the UI in a real browser); dist_check.py (the single-file
+                    build on its own); engine_gauntlet.py (the engine over UCI, refereed by
+                    python-chess); and coverage_report.py
 test/tactics.js     EPD suites in test/epd/ (Win at Chess, Bratko-Kopec, BT2630, STS), timed to the move found
 test/stockfish_check.py  the app's claims re-checked against a local Stockfish
+tools/bench.js      fixed-depth benchmark: nodes/s and a signature that changes when the search does
+tools/acpl.js       the sparring calibration by self-play: asked strength against realised centipawn loss
 tools/uci.js        the house engine as a UCI engine, for any chess GUI
 tools/sprt.js       engine against engine, stopped by a sequential probability ratio test
 tools/match.js      head-to-head matches over UCI against reference engines (Stockfish, Lc0 with Maia)
 tools/games.js      what match.js and sprt.js share: the openings and how a game ends
 ```
 
-Run the tests with `node test/perft.js`, `node test/rules.js`, `node test/integration.js`,
-`node test/acpl.js`, and `node test/regress.js` — one check per bug from the September
-and October 2026 audits, each written to fail on the code before its fix (`node test/titled.js` for
-the titled-player comparison). The October audit is written up in `notes/CODE_AUDIT_2026-10.md`.
+Every `test/*.js` file except `tactics.js` is a pass/fail suite: it prints a line per
+check, ends with "N passed, M failed" (perft: "ALL PERFT PASS"), and exits non-zero on a
+failure, which is what CI reads. Run them all with
+
+```bash
+export TZ=America/Toronto                    # see the time zone note below
+for t in test/*.js; do [ "$t" = test/tactics.js ] || node "$t" || break; done
+```
+
+`test/regress.js` holds at least one check for each bug from the September and October 2026
+audits, written to fail on the code before its fix; `notes/CODE_AUDIT_2026-10.md` writes the
+audits up, including the one check that did not fail there until it was tightened.
+`titled.js` covers the titled-player comparison, `coach.js` the written-verdict rubric and
+the API call, and `app.js` PGN import, mistake mining and the calendar.
+
+**The time zone matters for two checks.** "14 days across the clock change" (regress.js)
+and "02:00 on the day the clocks go forward" (app.js) need a zone with daylight saving, so
+run the suites with `TZ=America/Toronto`, as CI does. In a zone without it they print SKIP
+(and fail in CI, where nothing may be skipped). On Windows, a `TZ` set in Git Bash does not reach
+a Node that is not an MSYS program (VS Code's `Code.exe` run as Node, say): it reads the
+system zone instead, so check what it sees with
+`node -e "console.log(Intl.DateTimeFormat().resolvedOptions().timeZone)"`.
+
+From the outside, over UCI (`pip install chess`):
+
+```bash
+python test/engine_gauntlet.py legality      # 1,000 positions: legal, well-formed, within movetime + 150 ms
+python test/engine_gauntlet.py mates --min-mate1 100 --min-mate2 100   # fewer solved is a failure
+python test/engine_gauntlet.py random        # 100 games against a random mover, 50 against a greedy one
+```
+
+CI runs the same three, with `mates --min-mate1 100 --min-mate2 95` (at the default 1 s a
+move; with the engine at half speed, under Windows power throttling, it solved 95 to 97 of
+the mates in 2) and
+`random --games 20`, to keep the job short.
 
 Strength and speed are measured apart from the pass/fail suites, because they depend on
 the machine:
 
 ```bash
-node test/bench.js [depth]                   # nodes/s; the signature must not change for a speed-only edit
+node tools/bench.js [depth]                  # nodes/s; the signature must not change for a speed-only edit
+node tools/acpl.js                           # the sparring calibration, by self-play
 node test/tactics.js 500 wac sts             # Win at Chess and STS at 500 ms a position
 node test/tactics.js 10000 bk bt2630         # Bratko-Kopec and BT2630 at 10 s
 node tools/sprt.js --base <old engine.js> --movetime 60   # until H0 or H1 is accepted
@@ -264,9 +307,12 @@ own clock), and give Stockfish a Move Overhead of 100 ms, since a limited Stockf
 time controls spends its clock to the last few milliseconds and pipe latency then flags it.
 
 `sprt.js` plays each opening twice with colours swapped and stops on the trinomial
-log-likelihood ratio, as cutechess does (alpha = beta = 0.05). The last run, the
-repetition and mate-score fixes against the engine before them: +161 =123 −114,
-+41 ± 28 Elo, H1 accepted.
+log-likelihood ratio, as cutechess does (alpha = beta = 0.05). The last run, 9 October
+2026, the engine with the quiescence search searching check evasions (and this round's
+other engine fixes) against the one before it, at 60 ms a move with elo0 = 0 and
+elo1 = 20: 212 games, +120 =22 −70, +83.5 ± 45.7 Elo, LLR 3.00, H1 accepted. The run
+before it (26 September), the repetition and mate-score fixes against the engine before
+them: +161 =123 −114, +41 ± 28 Elo, H1 accepted.
 
 The UI is checked in a real browser, and coverage is measured across both:
 

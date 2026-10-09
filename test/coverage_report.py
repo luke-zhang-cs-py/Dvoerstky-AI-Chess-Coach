@@ -1,5 +1,6 @@
 """Line and function coverage of js/, from every test that runs: the Node suites
-and the browser drive of index.html, merged. No npm packages needed.
+and the browser drive of index.html, merged. No npm packages needed. Exits 1 if
+any suite it ran failed, after writing the report.
 
     python test/coverage_report.py [--node path/to/node] [--out coverage.html]
 
@@ -119,6 +120,10 @@ def main():
     print("%-18s %7d %6.1f%% %7d %4d/%-4d" % ("TOTAL", T[0], 100.0 * T[1] / T[0], T[2], T[3], T[4]))
     print("\nruns:", ", ".join("%s (exit %d)" % (l, c) for l, c, _ in runs))
     print("report:", OUT)
+    bad = [l for l, c, _ in runs if c != 0]
+    if bad:   # coverage from a failing suite is not a result: say so, and fail
+        print("FAILED: " + ", ".join(bad))
+        sys.exit(1)
 
 def write_html(report, runs):
     T = sum(r["lines"] for r in report); C = sum(r["covered"] for r in report)
