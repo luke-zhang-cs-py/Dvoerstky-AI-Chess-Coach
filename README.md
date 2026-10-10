@@ -66,7 +66,7 @@ notes/       the full guide
 
 ## Tests
 
-**478 checks.** In Node: 96 regression, 52 rules, 45 app (PGN import, Lichess sync, mining,
+**479 checks.** In Node: 96 regression, 52 rules, 46 app (PGN import, Lichess sync, mining,
 calendar, storage, the Stockfish reader), 37 titled-player, 22 integration, 21 sparring,
 21 coach, 18 analysis and 10 engine checks,
 and perft on 21 positions (35 counts, plus 5 SAN and PGN checks), 15 of them edge cases (en

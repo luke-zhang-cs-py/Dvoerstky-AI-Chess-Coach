@@ -10,10 +10,14 @@
       catch (e) { return dflt; }
     },
     set: function (k, v) {
+      // After wipe() the page is on its way to a reload; a save already queued (a deferred rebuild writing the
+      // drill cards, say) must not put data back in the gap. It reports success so no storage-full warning shows.
+      if (Store.wiped) return true;
       try { localStorage.setItem(Store.key(k), JSON.stringify(v)); return true; }
       catch (e) { console.warn('storage full', e); return false; }
     },
     del: function (k) { try { localStorage.removeItem(Store.key(k)); } catch (e) {} },
+    wipe: function () { Store.wiped = true; Store.keys().forEach(Store.del); },
     keys: function () {
       var out = [];
       for (var i = 0; i < localStorage.length; i++) {

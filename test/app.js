@@ -222,6 +222,11 @@ const sans = g => g.moves.map(m => m.san).join(' ');
     mem['other:app'] === '1');
   mem['dvor:bad'] = '{not json';
   check('store: a value that is not JSON reads as the default', Data.Store.get('bad', 42) === 42);
+  // Delete everything, then a save that was already queued fires before the reload: nothing may come back.
+  Data.Store.set('cards', { a: 1 }); Data.Store.wipe(); Data.Store.set('games', [3]); Data.Store.set('cards', { b: 2 });
+  check('store: after wipe() nothing of this app is left, and a late save writes nothing', Data.Store.keys().length === 0,
+        Data.Store.keys().join());
+  Data.Store.wiped = false;
   delete globalThis.localStorage;
 }
 

@@ -1847,7 +1847,7 @@
     });
     $('#wipe').addEventListener('click', function () {
       if (!confirm('Delete all local data for this app?')) return;
-      Store.keys().forEach(Store.del);
+      Store.wipe();
       location.reload();
     });
   }
