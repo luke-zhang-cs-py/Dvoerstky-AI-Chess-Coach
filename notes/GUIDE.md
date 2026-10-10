@@ -323,10 +323,37 @@ python test/ui_check.py                      # the browser checks: they drive in
 python test/coverage_report.py --out coverage.html
 ```
 
-`coverage_report.py` runs every Node suite and the browser check under V8's own block
-coverage and merges them, so a line counts as covered if any test ran it. Chromium drops
-a page's coverage when it reloads, so the browser check snapshots it before each reload,
-and measures each fresh page it opens until that page closes. Offsets are read from the
-files byte for byte, so a Windows checkout with CRLF endings measures the same as CI.
-On 10 October 2026: 99.96% of 4,756 lines (every line but the two after "Delete
-everything" reloads the page) and 678 of 681 functions.
+`coverage_report.py` runs what CI runs, under V8's own block coverage: every Node suite
+but `tactics.js` (with `CI=true`, child processes and workers included), the browser
+check, and the single-file check on a file built from the tree as it is (its inlined
+scripts are mapped back onto `js/`, CRLF and all). It measures every `.js` file under
+`js/` except `js/vendor/` (Stockfish, third-party), and fails if any run fails or records
+nothing. Chromium drops a page's coverage when it reloads, so the browser check takes it
+before each reload, from each fresh page before it closes, and, for "Delete everything",
+paused on the call to `location.reload` itself. Each record is read on its own (the
+innermost V8 range decides) and the records are merged as "ran in any of them", which
+cannot count twice. It reports five figures: lines (a line is partial when part of it
+never ran, and partial lines are listed), statements, branches (both arms of every `if`,
+the implicit else included, every `?:` arm, every `&&`/`||`/`??` operand, every case),
+V8's blocks, and functions. Statements, branches and the function list come from the
+TypeScript parser (VS Code carries one; `--ts` names another), because V8 does not list
+a function nested in one that never ran. Offsets are V8's UTF-16 units into the file as
+it is on disk, so a CRLF checkout measures the same as CI. Two things V8 does not tell:
+a statement after a call that threw counts as run, and a function V8 counts per function
+only (code reused from its compilation cache) has none of its lines credited; the browser
+runs turn that cache off for this reason. With it on, every reloaded page counted whole
+functions as run, and the figure before this round, 99.96% of lines, was really 99.03%
+(95.6% of statements, 86.7% of branches). Checked by hand on `stockfish-reader.js` (120
+code lines, 21 functions), and on a scratch copy given a function no test calls, which it
+reported as never called, with its nested function, its lines, statements and branches.
+
+On 10 October 2026: all 4,713 lines and all 681 functions; 4,162 of 4,181 statements
+(99.5%), 3,383 of 3,523 branches (96.0%), 2,725 of 2,848 V8 blocks (a few `ui.js`
+branches that depend on timing come and go between runs). Outside `ui.js` all that is
+left is the defensive `catch` around the motif classifier in `mineErrors`, and the
+equal-names arm of the titled players' sort (no two have the same name). The rest is in
+`ui.js` and is not reachable from the page as it is: guards for an element the page
+always has, buttons that are hidden whenever their guard would matter (grading with no
+card, Next with no review), a board move while the board is locked, the Stockfish cache
+filling up, a read failing after a newer game started, and `||` defaults for settings
+that `cleanSettings` has already filled. They are left as guards, not tested by contrivance.

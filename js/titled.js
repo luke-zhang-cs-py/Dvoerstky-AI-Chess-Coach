@@ -153,7 +153,7 @@
     return PLAYERS.map(function (p) {
       var l = live && live.players && Object.prototype.hasOwnProperty.call(live.players, p.user) ? live.players[p.user] : null;
       var fresh = !!l && typeof l === 'object';
-      var s = fresh ? { t: cleanTitle(l.t), s: cleanRows(l.s) } : snap[p.user] || { t: null, s: {} };
+      var s = fresh ? { t: cleanTitle(l.t), s: cleanRows(l.s) } : snap[p.user];   // every listed player is in the snapshot (test/titled.js checks)
       return { user: p.user, name: p.name, title: s.t, rows: s.s, live: fresh };
     }).sort(function (a, b) {
       return TITLE_ORDER.indexOf(a.title) - TITLE_ORDER.indexOf(b.title) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);

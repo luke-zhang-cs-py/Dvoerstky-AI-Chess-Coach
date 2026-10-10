@@ -63,5 +63,74 @@ check('opening tree: one root move, e4, reached in all 5 games', tree.childList.
 check('opening tree: 3 wins of 5 is 60%', e4.scorePct === 60, desc);
 check('opening tree: the eval drop over ten plies is 10', e4.evalDrop === 10, desc);
 
+// ---------------------------------------------------------------- October 2026 coverage round
+motif('Nf5, opening the d-file onto the queen', '3q2k1/8/8/8/3N4/8/8/3R2K1 w - - 0 1', 'Kh1', 'Nf5', 'discovered attack');
+{
+  const t = tags('8/8/8/8/5K1k/8/8/6Q1 w - - 0 1', 'Kf3', 'Qh2#');
+  check('motif: a mate in the middle of the board is a mating net, not a back-rank mate',
+    t.indexOf('mating net') >= 0 && t.indexOf('back rank') < 0, t.join(', '));
+}
+{
+  // A stored ACPL that is not a number (an old backup, a hand-edited file) is left out of the
+  // move-quality mean, and a game with no moves array weighs nothing rather than throwing.
+  const ok = { date: now, oppRating: 2000, score: 1, acpl: 40, moves: new Array(60) };
+  const odd = { date: now, oppRating: 2000, score: 0, acpl: 'n/a' };
+  const cal2 = A.calibrateStrength([ok, odd], 2000, now);
+  const alone = A.calibrateStrength([ok], 2000, now);
+  check('calibration: an ACPL that is not a number is left out of move quality, not NaN',
+    cal2.moveQualityElo === alone.moveQualityElo && Number.isFinite(cal2.trueStrength), cal2.moveQualityElo + ' vs ' + alone.moveQualityElo);
+}
+{
+  // Lichess's best move unreadable here: the first move of its line is used instead.
+  const sans = ['e4', 'e5', 'Ba6', 'bxa6', 'Nf3'], evals = [30, 30, -300, -300, -300];
+  const pos = new Chess(), moves = sans.map((san, i) => {
+    const mv = { san, color: i % 2 ? 'b' : 'w', fenBefore: pos.fen(), evalAfter: evals[i] };
+    pos.move(san); return mv;
+  });
+  moves[2].serverBest = 'z9z9'; moves[2].serverLine = 'Nf3 Nc6 Bc4';
+  const errs = A.mineErrors([{ id: 'sb', myColor: 'w', moves }]);
+  check('mining: a best move that cannot be read falls back to the first move of the line',
+    errs.length === 1 && errs[0].best === 'Nf3' && errs[0].bestUci === 'z9z9' && errs[0].line === 'Nf3 Nc6 Bc4',
+    JSON.stringify(errs.map((e) => [e.played, e.best, e.bestUci])));
+}
+{
+  // An unfinished game (no score) adds its moves to the book, not to the results.
+  const mk = (id, score) => ({ id, myColor: 'w', score, moves: [{ san: 'e4', color: 'w' }, { san: 'e5', color: 'b' }] });
+  const book = A.buildBook([mk('b1', 1), mk('b2', undefined)]);
+  const e4 = book['rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -']['e4'];
+  check('book: an unfinished game counts in n but not in the score', e4.n === 2 && e4.scored === 1 && e4.score === 1 && e4.mine === 2, JSON.stringify(e4));
+}
+
+{
+  const types = ['6k1/5b2/8/8/8/8/1B6/6K1 w - - 0 1', '6k1/5n2/8/8/8/8/1N6/6K1 w - - 0 1', '6k1/5n2/8/8/8/8/1B6/6K1 w - - 0 1'].map((f) => A.endgameType(f));
+  check('endgame type: bishops only, knights only, and a bishop against a knight', types.join() === 'bishop endgame,knight endgame,minor piece endgame', types.join());
+  const rooks = ['6k1/5ppp/8/8/8/8/8/R5K1 w - - 0 1', '6k1/5ppp/8/8/8/8/8/r5K1 w - - 0 1', '6k1/r7/8/8/8/8/8/R5K1 w - - 0 1',
+    'r5k1/r7/8/8/8/8/R7/R5K1 w - - 0 1', 'r5k1/8/8/8/8/8/R7/R5K1 w - - 0 1'].map((f) => A.endgameType(f));
+  check('endgame type: a lone rook against pawns is a rook endgame, and only two rooks on a side make it double',
+    rooks.join() === 'rook endgame,rook endgame,rook endgame,double rook endgame,double rook endgame', rooks.join());
+  check('motif: a FEN that cannot be read gives no tags, and no played move is fine',
+    tags('not a fen', 'e4', 'e5').length === 0 && tags('6k1/5ppp/8/8/8/8/8/R3K3 w - - 0 1', null, 'Ra8#').indexOf('back rank') >= 0);
+  const promo = tags('8/P7/8/8/8/8/8/k6K w - - 0 1', 'Kh2', 'a8=Q', { timePressure: true });
+  check('motif: a promotion is tagged, and so is time pressure', promo.indexOf('promotion') >= 0 && promo.indexOf('time pressure') >= 0, promo.join(', '));
+  motif('Bb2, a rook in front of a knight on the diagonal', '6k1/8/5n2/8/3r4/8/8/2B4K w - - 0 1', 'Kg1', 'Bb2', 'skewer');
+  motif('Ra1# against White', 'r5k1/8/8/8/8/8/5PPP/6K1 b - - 0 1', 'Kf8', 'Ra1#', 'back rank');
+  const quiet = 'r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 0 3';
+  const offer = '4k3/8/8/4p3/8/8/8/3QK3 w - - 0 1';
+  check('motif: with no loss recorded, a worse position is no "defensive resource" and a piece offered is no sacrifice',
+    tags(quiet, 'd3', 'Bb5', { evalBefore: -300 }).join() === 'positional' && tags(offer, 'Ke2', 'Qd4').indexOf('sacrifice / deflection') < 0
+    && tags(offer, 'Ke2', 'Qd4', { cpLoss: 300 }).indexOf('sacrifice / deflection') >= 0, tags(offer, 'Ke2', 'Qd4', { cpLoss: 300 }).join(', '));
+  const today = A.calibrateStrength(games, 2100);
+  check('calibration: with no date given it measures as of now', today.sample === 40, today.sample);
+  // Games kept in storage can be damaged: a move with no SAN ends the tree there, a move that
+  // cannot be played ends the book there, and an "analysed" game with no moves adds nothing.
+  const torn = (id) => ({ id, myColor: 'w', score: 1, moves: [{ san: 'e4', color: 'w' }, { color: 'b' }, { san: 'Nf3', color: 'w' }] });
+  const tree2 = A.buildOpeningTree([torn('t1'), torn('t2'), torn('t3'), torn('t4'), torn('t5')]);
+  const book2 = A.buildBook([{ id: 'k', myColor: 'w', moves: [{ san: 'e4', color: 'w' }, { san: 'Ke7', color: 'b' }, { san: 'Nf3', color: 'w' }] },
+                             { id: 'f', myColor: 'w', moves: [{ san: 'e4', color: 'w', fenBefore: 'not a position' }] }]);
+  const prof = A.buildProfile([{ id: 'p', analysed: true, myColor: 'w', score: 1, date: now, oppRating: 2000 }], 2000, now);
+  check('stored games: a move with no SAN ends the tree, an unplayable move ends the book, an unreadable start adds nothing, an analysed game with no moves adds no plies',
+    tree2.childList.length === 1 && tree2.childList[0].games === 5 && Object.keys(tree2.childList[0].children).length === 0 && Object.keys(book2).length === 2
+    && prof.phases.opening.plies === 0, JSON.stringify([tree2.childList.map((n) => n.san), Object.keys(book2).length, prof.phases.opening.plies]));
+}
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 process.exitCode = failed ? 1 : 0;

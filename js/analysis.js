@@ -42,7 +42,7 @@
     pairs.forEach(function (p) {
       if (p.value == null || isNaN(p.value)) return;
       var ageDays = (now - p.date) / DAY;
-      var w = Math.pow(0.5, ageDays / halfLifeDays) * (p.weight == null ? 1 : p.weight);
+      var w = Math.pow(0.5, ageDays / halfLifeDays) * p.weight;   // the one caller always gives a weight
       num += p.value * w; den += w;
     });
     return den > 0 ? num / den : null;
@@ -74,9 +74,8 @@
     // confidence in the result-based estimate grows with sample size
     var wPerf = n >= 3 ? Math.min(0.62, n / (n + 22)) : 0;
     var wMove = moveQualityElo != null ? 0.38 : 0;
-    var wAnchor = 1 - wPerf - wMove;
-    if (wAnchor < 0) { wAnchor = 0; }
-    var total = wPerf + wMove + wAnchor || 1;
+    var wAnchor = 1 - wPerf - wMove;   // never below 0: wPerf is at most 0.62, wMove 0.38
+    var total = wPerf + wMove + wAnchor;
 
     var anchor = lichessRating || (perf ? perf.rating : 2000);
     var blended = ((perf ? perf.rating : anchor) * wPerf + (moveQualityElo || anchor) * wMove + anchor * wAnchor) / total;
@@ -137,7 +136,9 @@
     var heavy = ['q', 'r', 'b', 'n'].filter(function (k) { return counts.w[k] || counts.b[k]; });
     if (!heavy.length) return 'pawn endgame';
     if (heavy.length === 1 && heavy[0] === 'r') {
-      return (counts.w.r === 1 && counts.b.r === 1) ? 'rook endgame' : 'double rook endgame';
+      // 'Double rook' only when a side really has two: rook against pawns (1 v 0) and an extra rook (2 v 1)
+      // used to fall through to it, since the test was 'exactly one each'.
+      return (counts.w.r || 0) >= 2 || (counts.b.r || 0) >= 2 ? 'double rook endgame' : 'rook endgame';
     }
     if (heavy.length === 1 && heavy[0] === 'q') return 'queen endgame';
     if (heavy.length === 1 && heavy[0] === 'b') return 'bishop endgame';
@@ -155,8 +156,7 @@
   function squaresAttackedFrom(g, sq) {
     // pseudo targets of the piece standing on sq
     var saved = g.turn;
-    var p = g.board[sq];
-    if (!p) return [];
+    var p = g.board[sq];   // every caller asks about a square with a piece on it
     g.turn = p & Chess.COLOR_MASK;
     var ms = g.generate({ legal: false, square: Chess.algebraic(sq) });
     g.turn = saved;
@@ -270,8 +270,7 @@
   // How many of the king's own square and its eight neighbours the enemy attacks
   // (squares, not attackers: one queen covering three of them counts three).
   function attackedSquaresAroundKing(g, color) {
-    var k = g.kings[colorBit(color)];
-    if (k < 0) return 0;
+    var k = g.kings[colorBit(color)];   // a position always has both kings (Chess will not load one without)
     var ob = color === 'w' ? Chess.BLACK : Chess.WHITE, n = 0;
     var ring = [-17, -16, -15, -1, 1, 15, 16, 17, 0];
     ring.forEach(function (o) {
@@ -283,7 +282,6 @@
 
   function isBackRank(g, color) {
     var k = g.kings[colorBit(color)];
-    if (k < 0) return false;
     var r = k >> 4;
     return (color === 'w' && r === 7) || (color === 'b' && r === 0);
   }
@@ -347,9 +345,9 @@
     return false;
   }
 
+  // The one caller asks only about a target the slider attacks, so the two are on one line.
   function onSameRay(vacated, sliderSq, target) {
     var dr = (target >> 4) - (sliderSq >> 4), df = (target & 15) - (sliderSq & 15);
-    if (dr !== 0 && df !== 0 && Math.abs(dr) !== Math.abs(df)) return false;
     var stepR = Math.sign(dr), stepF = Math.sign(df);
     var cur = sliderSq + stepR * 16 + stepF;
     while (cur !== target && !(cur & 0x88)) {
@@ -369,11 +367,7 @@
       if (t !== Chess.KNIGHT && t !== Chess.BISHOP && t !== Chess.ROOK && t !== Chess.QUEEN) continue;
       if (!g.attacked(ob, sq)) continue;
       var dests = squaresAttackedFrom(g, sq);
-      var safe = dests.filter(function (d) {
-        var occ = g.board[d];
-        if (occ && (occ & Chess.COLOR_MASK) === cb) return false;
-        return !g.attacked(ob, d);
-      });
+      var safe = dests.filter(function (d) { return !g.attacked(ob, d); });   // its moves never land on its own side
       if (safe.length === 0) return Chess.algebraic(sq);
     }
     return null;
@@ -474,12 +468,10 @@
         }
         var bestUci = mv.serverBest || null;
         var bestSan = null;
-        if (bestUci) {
-          try {
-            var tmp = new Chess(mv.fenBefore);
-            var bm = tmp.moveFromSan(bestUci);
-            if (bm) bestSan = tmp.san(bm);
-          } catch (e) {}
+        if (bestUci) {   // fenBefore has loaded once already (phaseOf above), and a move that is not one is null
+          var tmp = new Chess(mv.fenBefore);
+          var bm = tmp.moveFromSan(bestUci);
+          if (bm) bestSan = tmp.san(bm);
         }
         if (!bestSan && mv.serverLine) bestSan = String(mv.serverLine).split(/\s+/)[0];
 

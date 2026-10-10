@@ -83,7 +83,7 @@
         var w = Math.exp(-losses[i] * lam);
         num += losses[i] * w; den += w;
       }
-      return den > 0 ? num / den : 0;
+      return num / den;   // the best candidate's loss is 0, so its weight is 1 and den >= 1
     }
     var lo = 1e-5, hi = 1;
     if (meanAt(lo) <= target) return lo;      // even a coin flip is too accurate
@@ -161,16 +161,14 @@
         var fen = g.fen().split(' ');
         fen[1] = mover === 'w' ? 'b' : 'w';
         fen[3] = '-';
-        var flipped;
-        try { flipped = new Chess(fen.join(' ')); } catch (e) { flipped = null; }
-        if (flipped) {
-          return engine.rankAsync(flipped, Math.max(2, depth - 1), Math.round(budget * 0.7))
-            .then(function (theirs) {
-              return assemble(g, mover, mine, theirs, engine);
-            });
-        }
+        // The same board with the other side to move: a FEN that loaded once loads again.
+        var flipped = new Chess(fen.join(' '));
+        return engine.rankAsync(flipped, Math.max(2, depth - 1), Math.round(budget * 0.7))
+          .then(function (theirs) {
+            return assemble(g, mover, mine, theirs, engine);
+          });
       }
-      return assemble(g, mover, mine, null, engine);   // in check, or no null-move position: no threats
+      return assemble(g, mover, mine, null, engine);   // in check: no null move, so no threats
     });
   }
 

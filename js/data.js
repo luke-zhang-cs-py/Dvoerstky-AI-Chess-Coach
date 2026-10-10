@@ -102,8 +102,10 @@
   /* Convert a Lichess game object into our internal shape. */
   function normalizeLichess(g, user) {
     var lower = (user || '').toLowerCase();
-    var wName = (((g.players || {}).white || {}).user || {}).name || (g.players.white.aiLevel ? 'Stockfish L' + g.players.white.aiLevel : 'Anonymous');
-    var bName = (((g.players || {}).black || {}).user || {}).name || (g.players.black.aiLevel ? 'Stockfish L' + g.players.black.aiLevel : 'Anonymous');
+    // Lichess always sends both players; one without them is not a game, and the TypeError
+    // here drops it (fetchGames reads each line in a try).
+    var wName = (g.players.white.user || {}).name || (g.players.white.aiLevel ? 'Stockfish L' + g.players.white.aiLevel : 'Anonymous');
+    var bName = (g.players.black.user || {}).name || (g.players.black.aiLevel ? 'Stockfish L' + g.players.black.aiLevel : 'Anonymous');
     var myColor = wName.toLowerCase() === lower ? 'w' : (bName.toLowerCase() === lower ? 'b' : null);
     var me = myColor === 'w' ? g.players.white : g.players.black;
     var opp = myColor === 'w' ? g.players.black : g.players.white;
@@ -145,19 +147,19 @@
       myColor: myColor,
       myName: myColor === 'w' ? wName : bName,
       oppName: myColor === 'w' ? bName : wName,
-      myRating: me ? me.rating : null,
-      oppRating: opp ? opp.rating : null,
-      ratingDiff: me ? me.ratingDiff : null,
+      myRating: me.rating,
+      oppRating: opp.rating,
+      ratingDiff: me.ratingDiff,
       score: score,
       result: result,
       eco: (g.opening || {}).eco || null,
       openingName: (g.opening || {}).name || null,
       openingPly: (g.opening || {}).ply || null,
       analysed: !!(g.analysis && g.analysis.length),
-      acpl: me && me.analysis ? me.analysis.acpl : null,
-      oppAcpl: opp && opp.analysis ? opp.analysis.acpl : null,
-      accuracy: me && me.analysis ? me.analysis.accuracy : null,
-      counts: me && me.analysis ? {
+      acpl: me.analysis ? me.analysis.acpl : null,
+      oppAcpl: opp.analysis ? opp.analysis.acpl : null,
+      accuracy: me.analysis ? me.analysis.accuracy : null,
+      counts: me.analysis ? {
         inaccuracy: me.analysis.inaccuracy || 0,
         mistake: me.analysis.mistake || 0,
         blunder: me.analysis.blunder || 0

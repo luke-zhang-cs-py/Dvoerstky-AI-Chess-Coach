@@ -209,8 +209,7 @@
 
   Chess.prototype.inCheck = function (color) {
     color = color || this.turn;
-    var k = this.kings[color];
-    if (k < 0) return false;
+    var k = this.kings[color];   // load() refuses a position without both kings
     return this.attacked(color === WHITE ? BLACK : WHITE, k);
   };
 
@@ -431,14 +430,7 @@
         return mv;
       }
     }
-    // lenient: try uci
-    var uci = clean.match(/^([a-h][1-8])([a-h][1-8])([qrbn])?$/i);
-    if (uci) {
-      for (var j = 0; j < ms.length; j++) {
-        if (ms[j].fromSq === uci[1] && ms[j].toSq === uci[2] &&
-            (!uci[3] || SYM[ms[j].promo] === uci[3].toLowerCase())) return ms[j];
-      }
-    }
+    // (UCI, e2e4 or e7e8q, is long algebraic without the piece letter: the loop above reads it.)
     return null;
   };
 

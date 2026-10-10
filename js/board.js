@@ -23,7 +23,6 @@
     // Solid shapes for both sides (colour then comes from CSS): an outline
     // white king disappears on a light board, as the site themes have.
     this.solidPieces = !!this.opts.solidPieces;
-    this.marks = [];
     this.pendingPromotion = null;   // the four promotion moves, while the picker is open
     // The one square in the tab order (a roving tabindex): Tab reaches the board once,
     // the arrow keys move over all 64 squares, Enter or Space picks a square up or drops on it.
@@ -106,7 +105,6 @@
       var canMove = self.interactive && legalFrom[name] &&
         (!self.allowedColor || (piece && piece.color === self.allowedColor));
       if (canMove || targets[name]) cls.push('movable');
-      var mark = self.marks.indexOf(name) > -1;
 
       var label = name + ', ' + (piece ? (piece.color === 'w' ? 'white ' : 'black ') + NAMES[piece.type] : 'empty') +
         (self.selected === name ? ', selected' : '') + (targets[name] ? ', a move to here' : '');
@@ -114,7 +112,6 @@
         (name === self.cursor ? '0' : '-1') + '" aria-label="' + label + '">';
       if (piece) html += '<span class="piece ' + piece.color + '">' + glyphs[shapeOf(piece.color) + piece.type] + '</span>';
       if (targets[name]) html += '<span class="dot"></span>';
-      if (mark) html += '<span class="arrowmark"></span>';
       if (self.showCoords) {
         var edgeRank = self.flipped ? f === 7 : f === 0;
         var edgeFile = self.flipped ? r === 0 : r === 7;
@@ -136,11 +133,9 @@
     this.refocus = false;
     this.el.innerHTML = html;
     if (this.pendingPromotion) {
-      var first = this.el.querySelector('[data-promo]');
-      if (first) first.focus();
+      this.el.querySelector('[data-promo]').focus();   // the picker was just drawn, four buttons
     } else if (focused) {
-      var again = this.el.querySelector('[data-sq="' + this.cursor + '"]');
-      if (again) again.focus();
+      this.el.querySelector('[data-sq="' + this.cursor + '"]').focus();   // render always leaves a cursor on the board
     }
   };
 
@@ -154,7 +149,7 @@
     var sq, all = this.el.querySelectorAll('[data-sq]');
     for (var i = 0; i < all.length; i++) all[i].tabIndex = all[i].dataset.sq === this.cursor ? 0 : -1;
     sq = this.el.querySelector('[data-sq="' + this.cursor + '"]');
-    if (sq) sq.focus();
+    sq.focus();   // on the board: the edges were checked above
   };
 
   Board.prototype.onKey = function (e) {
@@ -196,17 +191,11 @@
       }.bind(this));
       if (candidates.length) {
         var chosen = candidates[0];
-        if (candidates.length > 1) { // promotion: ask, rather than always queening
-          if (this.opts.promptPromotion) {
-            var want = this.opts.promptPromotion();
-            var found = candidates.filter(function (c) { return Chess.SYM[c.promo] === want; })[0];
-            if (found) chosen = found;
-          } else {
-            this.selected = null;
-            this.pendingPromotion = candidates;
-            this.render();
-            return;
-          }
+        if (candidates.length > 1) { // promotion: ask with the picker, rather than always queening
+          this.selected = null;
+          this.pendingPromotion = candidates;
+          this.render();
+          return;
         }
         this.selected = null;
         if (this.opts.onMove) this.opts.onMove(chosen, g);

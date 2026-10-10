@@ -109,6 +109,74 @@ check('book: one entry per position on the line', Object.keys(book).length === L
   check('advice: in check, no threat list and no threat note', adv2.black.length === 0 && adv2.threatNote === null, adv2.black.length + ', ' + adv2.threatNote);
   check('advice: in check, the one legal move is the only candidate', adv2.white.length === 1 && adv2.white[0].san === 'Kxe2', adv2.white.map(c => c.san).join());
 
+  // ---------------------------------------------------------------- October 2026 coverage round
+  {
+    const m = new Sparring.Mirror(profile);
+    check('style: castling early earns the castling bonus only before move 12; a candidate with no SAN earns none',
+      Math.round(m.styleBonus({ san: 'O-O', move: {} }, 10)) === 40 && m.styleBonus({ san: 'O-O', move: {} }, 30) === 0
+      && m.styleBonus({ move: {} }, 10) === 0, [m.styleBonus({ san: 'O-O', move: {} }, 10), m.styleBonus({ move: {} }, 10)].join());
+    // The engine finding no moves at all (the position is over) is no move, not a crash.
+    const none = new Sparring.Mirror(profile);
+    none.engine = { rankAsync: () => Promise.resolve([]), complexity: () => 0 };
+    const nothing = await none.chooseMove(new Chess('7k/8/8/8/8/8/8/K7 w - - 0 1'), 40);
+    check('mirror: with no candidates from the engine it plays nothing', nothing === null, String(nothing));
+    // Every candidate close to equal and a weak target: even the flattest choice is more
+    // accurate than asked, so the temperature stops at its floor rather than searching.
+    const flat = new Sparring.Mirror(profile, { targetElo: 800 });
+    const pos = new Chess();
+    const moves = pos.generate();
+    flat.engine = { rankAsync: () => Promise.resolve(moves.slice(0, 3).map((mv, i) => ({ move: mv, san: pos.san(mv), score: 20 - i * 5 }))),
+                    complexity: () => 0 };
+    const realRandom = Math.random;
+    Math.random = () => 0.99;   // no blunder turn
+    await flat.chooseMove(pos, 30);
+    // Two forced mates: the shorter is taken, the longer all but excluded (x0.01), however the roll falls.
+    const mates = new Sparring.Mirror(profile);
+    mates.engine = { rankAsync: () => Promise.resolve([{ move: moves[0], san: 'M1', score: 29999 }, { move: moves[1], san: 'M2', score: 29997 }]),
+                     complexity: () => 0 };
+    Math.random = () => 0.9;
+    const mate = await mates.chooseMove(pos, 30);
+    Math.random = realRandom;
+    check('mirror: a weak target among near-equal moves sets the temperature at its floor', flat.log[0].lambda === 1e-5, flat.log[0].lambda);
+    check('mirror: between two forced mates it plays the shorter even on a high roll', mate.san === 'M1' && mate.intendedLoss === 0, mate.san);
+  }
+
+  {
+    // The roll lands past the first book move, on one that cannot be played here: no book move.
+    const start = new Chess(), key = start.fen().split(' ').slice(0, 4).join(' ');
+    const m = new Sparring.Mirror(profile, { book: { [key]: { e4: { n: 2, score: 1, scored: 2 }, Ke3: { n: 2, score: 1, scored: 2 } } } });
+    const realRandom = Math.random;
+    Math.random = () => 0.99; const high = m.bookMove(start);
+    Math.random = () => 0; const low = m.bookMove(start);
+    Math.random = realRandom;
+    check('mirror: a roll past the first book move that lands on an unplayable one gives no book move; a low roll gives the first',
+      high === null && low && low.move.toSq === 'e4' && low.n === 2 && low.of === 4, String(high) + ' / ' + (low && low.san));
+  }
+  {
+    // A mirror with no profile at all plays at 2000 with no style; a book from before results
+    // were kept apart (no "scored") counts every game, and a move with no scored game is 50%.
+    const plain = new Sparring.Mirror(null);
+    const start = new Chess(), key = start.fen().split(' ').slice(0, 4).join(' ');
+    const old = new Sparring.Mirror(null, { book: { [key]: { e4: { n: 4, score: 3 }, d4: { n: 2, score: 0, scored: 0 } } } });
+    const realRandom = Math.random;
+    Math.random = () => 0; const pick = old.bookMove(start);
+    Math.random = realRandom;
+    check('mirror: no profile is 2000 and no style; an old book entry counts every game',
+      plain.targetElo === 2000 && plain.styleBonus({ san: 'O-O', move: {} }, 5) === 0 && pick && pick.move.toSq === 'e4' && pick.n === 4 && pick.of === 6,
+      plain.targetElo + ' ' + (pick && pick.san));
+    // Advice with no options, Black to move, a position with one clear move; and one already mated.
+    const recapture = new Chess('4k3/8/8/3q4/8/8/3R4/7K b - - 0 1');
+    const adv = await Sparring.dualAdvice(new Engine(), recapture);
+    check('advice: with Black to move, Black\'s moves are Black\'s, the threat is White\'s, and Qxd2 is the only move',
+      adv.sideToMove === 'b' && adv.black[0].san === 'Qxd2' && adv.onlyMove === 'Qxd2' && /If it were White to move: Rxd5/.test(adv.threatNote)
+      && adv.evalCp < 0, JSON.stringify([adv.black.map((c) => c.san), adv.onlyMove, adv.threatNote, adv.evalCp]));
+    const mated = new Chess('6k1/5ppp/8/8/8/8/5PPP/R5K1 w - - 0 1'); mated.move('Ra8#');
+    const done = await Sparring.dualAdvice(new Engine(), mated, { depth: 2, budget: 200 });
+    check('advice: in a mated position there is nothing to suggest and the evaluation is 0',
+      done.evalCp === 0 && done.white.length === 0 && done.black.length === 0 && done.threatNote === null, JSON.stringify(done));
+    check('display: Black having mated is 0-1, Black mating in one is -#1', Sparring.cpDisplay(-30000) === '0-1' && Sparring.cpDisplay(-29999) === '-#1',
+      Sparring.cpDisplay(-30000) + ' ' + Sparring.cpDisplay(-29999));
+  }
   console.log('\n' + passed + ' passed, ' + failed + ' failed');
   process.exitCode = failed ? 1 : 0;
 })();

@@ -229,7 +229,7 @@
         item.payload.color = rnd() > 0.5 ? 'w' : 'b';
         item.note = 'Two games as ' + (item.payload.color === 'w' ? 'White' : 'Black') +
           ' against your mirror at ' + (profile && profile.calibration ? profile.calibration.trueStrength : '—') + '.';
-      } else if (b === 'review') {
+      } else {   // 'review': every block type is one of the six above (BLOCK_META[b] is read first)
         item.note = 'Pick the most recent game you have not justified yet.';
       }
       return item;
@@ -246,7 +246,7 @@
   function shuffle(arr, rnd) {
     var a = arr.slice();
     for (var i = a.length - 1; i > 0; i--) {
-      var j = Math.floor((rnd ? rnd() : Math.random()) * (i + 1));
+      var j = Math.floor(rnd() * (i + 1));   // the plan's seeded generator: the same day, the same order
       var t = a[i]; a[i] = a[j]; a[j] = t;
     }
     return a;

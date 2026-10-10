@@ -144,6 +144,33 @@ const byUser = Object.fromEntries(Titled.players().map((p) => [p.user, p]));
   check('players say whether their numbers are live or from the snapshot',
     mixed.find((p) => p.user === 'EricRosen').live === true && mixed.find((p) => p.user === 'Fins').live === false);
 
+  // ---------------------------------------------------------------- October 2026 coverage round
+  // A history whose every point is after today (a clock set back, a server ahead) has no
+  // twelve months ending today to take a range from: no range, rather than one from the future.
+  const ahead = Titled.historyRanges([{ name: 'Blitz', points: [[2026, 11, 1, 2500], [2026, 11, 5, 2520]] },
+                                      { name: 'Rapid', points: [[2026, 8, 1, 2400], [2026, 11, 5, 2450]] }], new Date(2026, 9, 1));
+  check('history: points only after today give no range; a range ending today leaves later points out',
+    !('blitz' in ahead) && JSON.stringify(ahead.rapid) === JSON.stringify({ lo: 2400, hi: 2400, last: '2026-12-05' }), ahead);
+  // A history request Lichess answers with an error status is no history, not a failure.
+  const refusedHist = await Titled.refresh(['EricRosen'], { pause: 0, today, fetch: async (url) => url.endsWith('/api/users')
+    ? { ok: true, json: async () => [{ username: 'EricRosen', perfs: { blitz: { rating: 2550, games: 9400 } } }] }
+    : { ok: false, status: 404, json: async () => { throw new Error('not read'); } } });
+  check('refresh: a refused history keeps the current rating, and an untitled account has no title',
+    refusedHist.players.EricRosen.s.blitz[0] === 2550 && refusedHist.players.EricRosen.s.blitz[3] === null
+    && refusedHist.players.EricRosen.t === null, refusedHist.players.EricRosen);
+  const realFetch = globalThis.fetch;
+  delete globalThis.fetch;
+  let offline = null;
+  await Titled.refresh(['EricRosen'], { pause: 0 }).catch((e) => { offline = e.message; });
+  globalThis.fetch = realFetch;
+  check('refresh: with no fetch at all (and none passed) it is a plain error', offline === 'No network here.', offline);
+
+  check('rows: a perf with no game count has 0 games, and a provisional one is flagged',
+    JSON.stringify(Titled.rowsFromPerfs({ blitz: { rating: 2500, prov: true }, rapid: { rating: 2400, games: 3 } })) ===
+    JSON.stringify({ blitz: [2500, 0, 1, null, null, null], rapid: [2400, 3, 0, null, null, null] }));
+  check('rows: no rows at all, or rows that are not an object, clean to none; a full row survives whole',
+    JSON.stringify(Titled.withHistory(null, {})) === '{}' && JSON.stringify(Titled.cleanRows('tampered')) === '{}'
+    && JSON.stringify(Titled.cleanRows({ blitz: [2500, 10, 1, 2400, 2600, '2026-01-02'] })) === JSON.stringify({ blitz: [2500, 10, 1, 2400, 2600, '2026-01-02'] }));
   console.log('\n' + passed + ' passed, ' + failed + ' failed');
   process.exit(failed ? 1 : 0);
 })();

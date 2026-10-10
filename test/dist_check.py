@@ -1,15 +1,19 @@
 """Smoke check for the single-file build: dist/Dvoretsky-Lab.html loads on its own and works.
 
-    python tools/build_single_file.py && python test/dist_check.py [path/to/built.html]
+    python tools/build_single_file.py && python test/dist_check.py [path/to/built.html] [--coverage out.json]
 
 The built file is opened from a directory of its own, with nothing beside it, so a script
-or stylesheet left un-inlined fails to load instead of being found in js/ or css/.
+or stylesheet left un-inlined fails to load instead of being found in js/ or css/. With
+--coverage the page's precise V8 block coverage is written out, with each script's source
+so that test/coverage_report.py can map the inlined scripts back to js/.
 """
-import os, shutil, sys, tempfile
+import json, os, shutil, sys, tempfile
 from playwright.sync_api import sync_playwright
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-BUILT = sys.argv[1] if len(sys.argv) > 1 else os.path.join(HERE, "..", "dist", "Dvoretsky-Lab.html")
+COV = sys.argv[sys.argv.index("--coverage") + 1] if "--coverage" in sys.argv else None
+ARGS = [a for i, a in enumerate(sys.argv[1:], 1) if a != "--coverage" and sys.argv[i - 1] != "--coverage"]
+BUILT = ARGS[0] if ARGS else os.path.join(HERE, "..", "dist", "Dvoretsky-Lab.html")
 PGN = os.path.join(HERE, "..", "experiments", "move_predictor", "ermactually_games.pgn")
 
 results = []
@@ -31,13 +35,22 @@ if open(os.path.join(ROOT, "css", "app.css"), encoding="utf-8").read() not in ht
 check("build: every inlined file is the one in the working tree now", not stale, stale[:4])
 
 with sync_playwright() as p:
-    b = p.chromium.launch(channel=os.environ.get("PW_CHANNEL") or None)
+    # With --coverage, V8 must not reuse a script compiled for an earlier page: code from its compilation
+    # cache is counted per function only (no blocks), so after a reload nothing would say which lines ran.
+    # (--no-flush-bytecode as well made the run seven times slower; the report leaves out the odd
+    # function V8 still counts that way, and says so.)
+    b = p.chromium.launch(channel=os.environ.get("PW_CHANNEL") or None,   # PW_CHANNEL=msedge uses an installed Edge
+                          args=["--js-flags=--no-compilation-cache"] if COV else [])
     pg = b.new_page()
     errors, missing = [], []
     pg.on("pageerror", lambda e: errors.append(str(e)))
     pg.on("console", lambda m: m.type == "error" and errors.append(m.text))
     pg.on("requestfailed", lambda r: missing.append(r.url))
     pg.route("**/lichess.org/**", lambda r: r.fulfill(status=200, body="", content_type="application/x-ndjson"))
+    if COV:
+        cdp = pg.context.new_cdp_session(pg)
+        cdp.send("Profiler.enable"); cdp.send("Debugger.enable")   # Debugger: the inlined scripts' sources
+        cdp.send("Profiler.startPreciseCoverage", {"callCount": True, "detailed": True})
     pg.goto("file:///" + alone.replace("\\", "/"))
     pg.wait_for_timeout(800)
     check("load: the page runs, with every tab and panel", pg.evaluate("document.querySelectorAll('.tab').length") == 7
@@ -52,6 +65,11 @@ with sync_playwright() as p:
         sf = False
     check("load: the inlined Stockfish starts and reads the position", sf, " ".join(pg.inner_text("#sfNow").split())[:70])
     check("load: no errors, and nothing it asked for was missing", not errors and not missing, (errors + missing)[:3])
+    if COV:
+        result = cdp.send("Profiler.takePreciseCoverage")["result"]
+        sources = {r["scriptId"]: cdp.send("Debugger.getScriptSource", {"scriptId": r["scriptId"]})["scriptSource"]
+                   for r in result if r["url"].startswith("file:")}
+        with open(COV, "w", encoding="utf-8") as f: json.dump({"result": result, "sources": sources}, f)
     b.close()
 
 print("\n%d passed, %d failed" % (results.count(True), results.count(False)))

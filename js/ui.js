@@ -246,8 +246,7 @@
     var asked = location.hash.slice(1);
     selectTab(tabNames().indexOf(asked) > -1 ? asked : 'strength');
   }
-  function selectTab(name) {
-    if (tabNames().indexOf(name) < 0) name = 'strength';
+  function selectTab(name) {   // always a tab's own name: initTabs turns an unknown hash into 'strength'
     $$('.tab').forEach(function (t) {
       var on = t.dataset.tab === name;
       t.setAttribute('aria-selected', String(on));
@@ -370,8 +369,7 @@
   /* ---------- trajectory ----------
      Every sync leaves a dated mark. Over weeks these marks answer the only
      question that matters: is the measured strength moving, and how fast. */
-  function recordSnapshot() {
-    if (!S.profile || !S.profile.calibration) return;
+  function recordSnapshot() {   // called by rebuild(), just after it has built the profile
     var cal = S.profile.calibration;
     if (!cal.sample) return;
     var track = S.track.slice();   // cleaned on load and on import; storage itself is not re-read raw
@@ -400,8 +398,7 @@
       var x = daysBetween(track[0].day, p.day), y = p.measured;
       sx += x; sy += y; sxx += x * x; sxy += x * y;
     });
-    var denom = n * sxx - sx * sx;
-    if (!denom) return null;
+    var denom = n * sxx - sx * sx;   // above 0: three or more marks over at least 14 days are not all on one day
     var slope = (n * sxy - sx * sy) / denom;        // elo per day
     var intercept = (sy - slope * sx) / n;
     var fitted = intercept + slope * span;
@@ -426,8 +423,7 @@
     var Y = function (v) { return padT + (1 - (v - lo) / (hi - lo)) * (H - padT - padB); };
 
     var s = ['<svg viewBox="0 0 ' + W + ' ' + H + '" class="traj" role="img" aria-label="Measured strength over time against the 2200 line">'];
-    [1800, 1900, 2000, 2100, 2200, 2300].forEach(function (v) {
-      if (v < lo || v > hi) return;
+    [1800, 1900, 2000, 2100, 2200, 2300].forEach(function (v) {   // all inside: lo starts at 1700, hi at 2300
       var goal = v === 2200;
       s.push('<line x1="' + padL + '" y1="' + Y(v) + '" x2="' + (W - padR) + '" y2="' + Y(v) +
         '" stroke="' + (goal ? 'var(--blue)' : 'var(--rule)') + '" stroke-width="1"' +
@@ -984,8 +980,7 @@
     $('#sparStatus').innerHTML = '<span class="spin"></span> Your mirror is thinking.';
     sp.mirror.chooseMove(sp.game, sp.history.length + 1).then(function (res) {
       if (!stillCurrent(sp, fen)) return;   // a new game was started, or this one ended, meanwhile
-      sp.thinking = false;
-      if (!res) { checkSparEnd(); return; }
+      sp.thinking = false;   // never asked in a finished game (onSparMove checks first), so there is a move
       var san = res.san || sp.game.san(res.move);
       sp.game.makeMove(res.move);
       sp.history.push({ san: san, color: res.move.color === Chess.WHITE ? 'w' : 'b',
@@ -1035,8 +1030,8 @@
     sparBoard.interactive = false;
   }
 
-  function renderSparMoves() {
-    var sp = S.spar; if (!sp) return;
+  function renderSparMoves() {   // only ever called with a game on
+    var sp = S.spar;
     var h = '';
     sp.history.forEach(function (m, i) {
       if (i % 2 === 0) h += '<span class="num">' + (i / 2 + 1) + '.</span> ';
@@ -1213,8 +1208,7 @@
     host.innerHTML = h;
 
     var rows = [], lost = { you: [], mirror: [] }, intended = [];
-    sp.history.forEach(function (m, i) {
-      if (!m.fenBefore) return;
+    sp.history.forEach(function (m, i) {   // every move is recorded with the position it was played from
       var v = sfVerdict(m), mine = m.color === sp.myColor;
       if (v && mine) lost.you.push(v.loss);
       if (v && !mine && !m.fromBook) {
@@ -1407,8 +1401,8 @@
   }
 
   function startEndgame(id) {
+    // Only studies with a position can be asked for: the list disables the rest, and the plan never picks them.
     var eg = Training.ENDGAMES.filter(function (e) { return e.id === id; })[0];
-    if (!eg || !eg.fen) { flash('That entry is a concept to read, not a position to play.', 'warn'); return; }
     S.drill = { queue: [], index: 0, endgame: eg };
     $('#drillHome').classList.add('hidden');
     $('#drillStage').classList.remove('hidden');
@@ -1441,8 +1435,7 @@
     drillBoard.interactive = false;   // no second move until the engine has answered the first
     S.engine.rankAsync(game, 4, 1400).then(function (r) {
       if (S.drill !== d || game.fen() !== fen) return;   // quit or restarted meanwhile
-      drillBoard.interactive = true;
-      if (!r.length) return;
+      drillBoard.interactive = true;   // a position with no reply was caught above as over
       game.makeMove(r[0].move);
       drillBoard.setGame(game, { from: r[0].move.fromSq, to: r[0].move.toSq });
       var o = game.gameOver();
@@ -1510,8 +1503,7 @@
     bindDayDetail(today);
   }
 
-  function dayDetail(p) {
-    if (!p) return '';
+  function dayDetail(p) {   // p is one of the plans just drawn: the day buttons are made from them
     var h = '<div class="sheet"><h3>' + p.weekday + ' ' + p.date + '</h3>' +
       '<p class="tiny soft">' + p.totalMinutes + ' minutes planned' +
       (S.completed[p.date] ? ' · logged as done' : '') + '</p>';
@@ -1531,7 +1523,7 @@
   }
 
   function bindDayDetail(p) {
-    var host = $('#dayDetail'); if (!host || !p) return;
+    var host = $('#dayDetail');   // drawn by renderCalendar just before, with p one of its plans
     $$('[data-run]', host).forEach(function (b) {
       b.addEventListener('click', function () {
         var r = b.dataset.run;
@@ -1588,8 +1580,7 @@
   }
 
   function renderReviewStep() {
-    var r = S.review;
-    if (!r) return;
+    var r = S.review;   // its callers have a review on
     if (r.cursor >= r.plies.length) { finishReview(); return; }
     var ply = r.plies[r.cursor];
     var mv = r.game.moves[ply];
@@ -1798,8 +1789,7 @@
         var txt = fr.result;
         if (/^\s*\{/.test(txt)) {
           try {
-            var d = JSON.parse(txt);
-            if (!isObj(d)) throw new Error('not a backup');
+            var d = JSON.parse(txt);   // text starting with "{" parses to an object, or throws
             if (Array.isArray(d.games)) { S.games = hydrate(d.games.filter(isObj)); saveGames(); }
             if (isObj(d.cards)) { S.cardState = cleanCards(d.cards); Store.set('cards', S.cardState); }
             if (d.track) { S.track = cleanTrack(d.track); Store.set('track', S.track); }
@@ -1893,8 +1883,7 @@
   // Which games Sync asks for: all of them, or one Lichess format. Kept beside the button.
   function initSyncPerf() {
     var sel = $('#syncPerf');
-    sel.value = S.settings.perf || 'all';
-    if (sel.value !== (S.settings.perf || 'all')) sel.value = 'all';   // a saved value this list no longer has
+    sel.value = S.settings.perf;   // cleanSettings keeps only the speeds this list has
     sel.addEventListener('change', function () {
       S.settings.perf = sel.value;
       Store.set('settings', S.settings);

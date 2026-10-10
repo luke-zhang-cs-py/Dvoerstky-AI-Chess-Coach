@@ -190,5 +190,44 @@ const play = (g, list) => list.forEach(s => { if (!g.move(s)) throw new Error('i
   check('moves: without verbose they carry none', g.moves().every(m => m.san === undefined));
 }
 
+// ---------------------------------------------------------------- October 2026 coverage round: lenient reading
+{
+  const g = new Chess();
+  check('moves: a UCI move that is not legal here reads as nothing, and a promotion letter must match',
+    g.moveFromSan('e2e5') === null && new Chess('8/4P3/8/8/8/8/8/k6K w - - 0 1').moveFromSan('e7e8n').promo === Chess.KNIGHT
+    && new Chess('4k3/4P3/8/8/8/8/8/7K w - - 0 1').moveFromSan('e7e8q') === null);
+  // A comment or NAG before the first move has no move to go with; a lone "[" or ")" is noise.
+  const p = Chess.parsePGN('{About the game} $3 1. e4 [ ] ) e5 2. Nf3 *');
+  check('pgn: a comment or NAG before the first move, a stray "[" or ")", do not stop or shift the moves',
+    p.moves.map((m) => m.san).join(' ') === 'e4 e5 Nf3' && p.moves[0].comment == null && p.moves[0].nag == null && p.result === '*',
+    p.moves.map((m) => m.san).join(' '));
+}
+{
+  let long = null;
+  try { new Chess('8p/4k3/8/8/8/8/8/4K3 w - - 0 1'); } catch (e) { long = e.message; }
+  check('fen: a rank of more than eight squares is refused, naming the rank', /FEN rank 8 is longer than 8 squares/.test(long || ''), long);
+  const g = new Chess();
+  check('undo: with nothing to undo it returns null and leaves the position', g.undoMove() === null && g.fen() === Chess.START);
+  const mv = g.generate().find((m) => m.toSq === 'e4');
+  check('move: a move object is played as it is; get() names a black piece', g.move(mv) === mv && mv.san === 'e4'
+    && JSON.stringify(g.get('e8')) === '{"type":"k","color":"b"}');
+  // Long algebraic: the piece letter must be the piece's, and with no promotion letter only a queen will do.
+  const promo = new Chess('8/4P3/8/8/8/8/8/k6K w - - 0 1');
+  check('moves: long algebraic with the wrong piece letter is no move; e7e8 with no letter is the queen',
+    new Chess().moveFromSan('Bg1f3') === null && promo.moveFromSan('e7e8').promo === Chess.QUEEN);
+}
+{
+  // PGN text that runs out mid-thing: a ; comment, a { comment and a % line at the very end.
+  const ends = ['1. e4 e5 ; the end', '1. e4 e5 {never closed', '1. e4 e5\n%escaped to the end'].map((t) => Chess.parsePGN(t));
+  check('pgn: a comment or escape that runs to the end of the text ends the game there',
+    ends.every((p) => p.moves.length === 2) && ends[1].moves[1].comment === 'never closed', ends.map((p) => p.moves.length).join());
+  const two = Chess.parsePGN('[Event "A"]\n[Result "1-0"]\n\n1. e4 $1 e5 !? 2. Nf3\n\n[Event "B"]\n\n1. d4 *');
+  check('pgn: the next game\'s tags end this one; a NAG goes on its move; a lone "!?" is passed over; the Result tag gives the result',
+    two.moves.map((m) => m.san).join(' ') === 'e4 e5 Nf3' && two.moves[0].nag === '$1' && two.result === '1-0' && two.tags.Event === 'A',
+    two.moves.map((m) => m.san + (m.nag || '')).join(' ') + ' ' + two.result);
+  let blackErr = null;
+  try { Chess.parsePGN('1. e4 Ke3'); } catch (e) { blackErr = e.message; }
+  check('pgn: a black move that cannot be played is named as Black\'s', /cannot play "Ke3" at move 1 \(Black\)/.test(blackErr || ''), blackErr);
+}
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 process.exitCode = failed ? 1 : 0;

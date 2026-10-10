@@ -29,7 +29,12 @@ def movable(pg, board):
     return pg.evaluate("document.querySelectorAll('#%s .sq.movable').length" % board)
 
 with sync_playwright() as p:
-    b = p.chromium.launch(channel=os.environ.get("PW_CHANNEL") or None)   # PW_CHANNEL=msedge uses an installed Edge
+    # With --coverage, V8 must not reuse a script compiled for an earlier page: code from its compilation
+    # cache is counted per function only (no blocks), so after a reload nothing would say which lines ran.
+    # (--no-flush-bytecode as well made the run seven times slower; the report leaves out the odd
+    # function V8 still counts that way, and says so.)
+    b = p.chromium.launch(channel=os.environ.get("PW_CHANNEL") or None,   # PW_CHANNEL=msedge uses an installed Edge
+                          args=["--js-flags=--no-compilation-cache"] if COV else [])
     ctx = b.new_context(viewport={"width": 1280, "height": 900}, accept_downloads=True)
     pg = ctx.new_page()
     errors = []
@@ -208,6 +213,66 @@ with sync_playwright() as p:
     })""")
     check("board: a promotion asks, and a knight can be chosen", picked.get("promo") == "n", picked)
 
+    # ---- board: the keyboard at the edges, on a flipped board and with the picker open; a board with no onMove
+    keys = pg.evaluate("""() => {
+      const el = document.createElement('div'); el.className = 'board'; el.style.width = '320px';
+      el.setAttribute('aria-label', 'Test board');
+      document.body.appendChild(el);
+      const bd = new Board(el, { fen: '7k/P7/8/8/8/8/8/K7 w - - 0 1', flipped: true, showCoords: false, onMove: () => {} });
+      const key = (target, k) => target.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }));
+      const sq = n => el.querySelector('[data-sq=' + n + ']');
+      const at = () => document.activeElement.dataset.sq || document.activeElement.tagName;
+      const out = { label: el.getAttribute('aria-label'), coords: el.querySelectorAll('.coord').length };
+      sq('e4').focus(); key(sq('e4'), 'ArrowUp'); out.flippedUp = at();           // flipped: up the screen is down the board
+      sq('h1').focus(); key(sq('h1'), 'ArrowLeft'); out.edge = at();              // flipped h1 is the right-hand edge... seen from Black
+      key(sq('h1'), 'Tab'); out.otherKey = at();                                   // not an arrow, Enter or Space: nothing
+      key(el, 'Enter'); out.offSquare = bd.selected;                               // a key on the board itself, off the squares
+      sq('a7').click(); sq('a8').click();                                          // the picker opens
+      key(el.querySelector('[data-promo=q]'), 'Enter'); out.keyOnPicker = !!el.querySelector('.promo-pick');
+      key(el, 'Escape'); out.escaped = !el.querySelector('.promo-pick') && bd.pendingPromotion === null;
+      bd.setDisplayOptions({}); out.optsKept = bd.flipped && !bd.showCoords && bd.pieceSet === 'glyph';
+      bd.cursor = null; sq('b2').focus(); bd.render(); out.noCursor = at();       // the cursor lost: a new one, and focus on it
+      const plain = document.createElement('div'); plain.className = 'board'; document.body.appendChild(plain);
+      const pb = new Board(plain);
+      plain.querySelector('[data-sq=e2]').click(); plain.querySelector('[data-sq=e5]').click();
+      out.notTarget = pb.selected;                                                 // e5 is no move for e2: the selection drops
+      plain.querySelector('[data-sq=e2]').click(); plain.querySelector('[data-sq=e2]').click();
+      out.reclick = pb.selected;                                                   // the selected piece clicked again: put down
+      plain.querySelector('[data-sq=e2]').click(); plain.querySelector('[data-sq=e4]').click();
+      out.noOnMove = [pb.selected, pb.game.fen().split(' ')[0].slice(-8)];         // a legal move with no onMove: nothing played
+      // The picker with no onMove, and the picker closed by a click on the board; a click between squares; a board you cannot move on.
+      const promo = document.createElement('div'); promo.className = 'board'; document.body.appendChild(promo);
+      const pp = new Board(promo, { fen: '1r5k/P7/8/8/8/8/8/K7 w - - 0 1' });
+      promo.querySelector('[data-sq=a7]').click();
+      out.capture = promo.querySelector('[data-sq=b8]').classList.contains('occupied');   // a capture target is marked as such
+      promo.querySelector('[data-sq=b8]').click(); promo.querySelector('[data-promo=r]').click();
+      out.pickNoOnMove = !promo.querySelector('.promo-pick') && pp.pendingPromotion === null;
+      promo.querySelector('[data-sq=a7]').click(); promo.querySelector('[data-sq=a8]').click();
+      promo.querySelector('[data-sq=h1]').click();
+      out.clickedAway = !promo.querySelector('.promo-pick') && pp.pendingPromotion === null;
+      promo.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      out.between = pp.selected;
+      const still = document.createElement('div'); still.className = 'board'; document.body.appendChild(still);
+      const sb = new Board(still, { interactive: false, flipped: true, pieceSet: 'letters' });
+      out.readOnlyStart = sb.cursor;                                               // nothing can move: the corner, h8 when flipped
+      sb.setDisplayOptions();
+      out.letters = still.querySelector('[data-sq=e1] .piece').textContent;
+      still.querySelector('[data-sq=e2]').click();
+      out.readOnly = [sb.selected, sb.cursor];
+      el.remove(); plain.remove(); promo.remove(); still.remove();
+      return out;
+    }""")
+    check("board: a flipped board turns the arrows round, stops at the edge, and ignores other keys",
+          keys["flippedUp"] == "e3" and keys["edge"] == "h1" and keys["otherKey"] == "h1" and keys["offSquare"] is None, keys)
+    check("board: Enter on the picker is the picker's own; Escape closes it", keys["keyOnPicker"] and keys["escaped"], keys)
+    check("board: a label it is given is kept, coordinates can be off, and empty display options change nothing",
+          keys["label"] == "Test board" and keys["coords"] == 0 and keys["optsKept"], keys)
+    check("board: a click on no legal target drops the selection; with no onMove, a move plays nothing",
+          keys["notTarget"] is None and keys["noOnMove"] == [None, "RNBQKBNR"], keys)
+    check("board: a cursor that was lost goes back on a piece that can move, with the focus", keys["noCursor"] == "a1", keys)
+    check("board: a capture is marked; the picker closes with no onMove or a click away; a piece clicked twice is put down; a read-only board only moves the cursor",
+          keys["capture"] and keys["pickNoOnMove"] and keys["clickedAway"] and keys["between"] is None and keys["readOnly"] == [None, "e2"]
+          and keys["readOnlyStart"] == "h8" and keys["reclick"] is None and keys["letters"] == "K", keys)
     # ---- the analysis window: all time by default, a slider to narrow it
     pg.evaluate("localStorage.setItem('dvor:settings', JSON.stringify({minutes: 60, endgameTier: 2, hour: 19, apiKey: '', perf: 'rapid'}))")
     reload(); pg.wait_for_timeout(600)
@@ -886,16 +951,325 @@ with sync_playwright() as p:
     check("tabs: End and Home go to the last and first tab", end == "settings" and p2.evaluate("document.activeElement.dataset.tab") == "strength",
           "%s, %s" % (end, p2.evaluate("document.activeElement.dataset.tab")))
     p2.evaluate("localStorage.setItem('not-this-app', 'kept')")
+    # The confirmed delete reloads the page. Pause on the call to location.reload itself: storage is
+    # read at that moment, and as a reload drops the page's coverage, the coverage is taken there too.
+    dbg = page_cov.get(id(p2)) or c2.new_cdp_session(p2)
+    dbg.send("Debugger.enable")
+    dbg.send("Debugger.setBreakpointOnFunctionCall",
+             {"objectId": dbg.send("Runtime.evaluate", {"expression": "location.reload"})["result"]["objectId"]})
+    at_reload = []
+    def on_reload(ev):
+        at_reload.append(dbg.send("Runtime.evaluate", {"returnByValue": True, "expression":
+            "Object.keys(localStorage).filter(k => k.startsWith('dvor:'))"})["result"]["value"])
+        snap_page(p2)
+        dbg.send("Debugger.resume")
+    dbg.on("Debugger.paused", on_reload)
     p2.evaluate("window.confirm = () => false"); p2.click("button.tab[data-tab=settings]"); p2.click("#wipe")
-    kept = p2.evaluate("localStorage.getItem('dvor:games') !== null")
-    snap_page(p2)   # the confirmed delete reloads the page, and a reload drops its coverage
+    kept = p2.evaluate("localStorage.getItem('dvor:games') !== null") and not at_reload
     p2.evaluate("window.confirm = () => true")
     with p2.expect_navigation(): p2.click("#wipe")
     left = p2.evaluate("Object.keys(localStorage).filter(k => k.startsWith('dvor:'))")
     check("settings: Delete everything asks first, then removes this app's data and nothing else",
           kept and left == [] and p2.evaluate("localStorage.getItem('not-this-app')") == "kept", left)
+    check("settings: the confirmed delete has emptied storage when it reloads, and reloads once", at_reload == [[]], at_reload)
     c2.close()
 
+    # ---- October 2026 coverage round, second part: what the page did that no check watched
+    def stored(page, key, default=None):
+        return page.evaluate("k => JSON.parse(localStorage.getItem('dvor:' + k) || 'null')", key) or default
+    def strong_game(gid, days_ago=1):
+        g = blunder_game(gid, days_ago)
+        g.update({"oppRating": 2700, "score": 1, "result": "1-0", "acpl": 8,
+                  "m": [["e4", 30, "", "", "", "", ""], ["e5", 30, "", "", "", "", ""], ["Nf3", 35, "", "", "", "", ""]]})
+        return g
+    def line_game(gid, sans, days_ago=1, my="w"):
+        g = blunder_game(gid, days_ago, my)
+        g.update({"analysed": False, "acpl": None, "m": [[s, "", "", "", "", "", ""] for s in sans]})
+        return g
+
+    # Trajectory: three or more marks over two weeks or more give a trend; flat, rising, already there.
+    weak = [blunder_game("tw%d" % i, 1 + i) for i in range(4)]
+    strong = [strong_game("ts%d" % i, 1 + i) for i in range(6)]
+    c2, p2 = fresh({"games": weak}); mark = stored(p2, "track")[-1]; m_weak = mark["measured"]; c2.close()
+    import datetime   # days counted from the page's own today, whatever zone Python thinks it is in
+    def day_ago(n): return (datetime.date.fromisoformat(mark["day"]) - datetime.timedelta(days=n)).isoformat()
+    c2, p2 = fresh({"games": strong}); m_strong = stored(p2, "track")[-1]["measured"]; c2.close()
+    def trajectory(games, marks):
+        c, p = fresh({"games": games, "track": [{"day": day_ago(d), "measured": v, "moe": 50, "rating": None, "n": 4} for d, v in marks]})
+        p.click("button.tab[data-tab=strength]")
+        text = " ".join(p.inner_text("#strengthBody").split())
+        c.close()
+        return text
+    flat = trajectory(weak, [(60, m_weak), (30, m_weak)])
+    need = 2200 - m_weak
+    soon = trajectory(weak, [(30, m_weak - 2 * need), (15, m_weak - need)])          # 2 x need a month: under a month
+    later = trajectory(weak, [(30, m_weak - need / 2), (15, m_weak - need / 4)])      # need / 2 a month: two months
+    there = trajectory(strong, [(60, m_strong - 200), (30, m_strong - 100)])
+    check("trajectory: level marks over two months read as flat, with the sign", "the measured strength is flat (+0 per month)" in flat, flat[:120])
+    check("trajectory: a fast climb says under a month, a slower one a number of months",
+          m_weak < 2200 and "2200 arrives in roughly under a month" in soon and "2200 arrives in roughly 2.0 months" in later,
+          "%s | %s" % (soon[soon.find("Measured strength is rising"):][:110], later[later.find("arrives"):][:60]))
+    check("trajectory: rising and already measuring at 2200 or more says so", m_strong >= 2200 and "already measuring at or above 2200" in there, m_strong)
+    c2, p2 = fresh({"games": weak, "track": [{"day": day_ago(400 - i), "measured": 1900, "n": 4} for i in range(400)]})
+    kept = stored(p2, "track")
+    check("trajectory: the marks are capped at the last 400", len(kept) == 400 and kept[-1]["day"] == day_ago(0) and kept[0]["day"] == day_ago(399),
+          "%d, %s .. %s" % (len(kept), kept[0]["day"], kept[-1]["day"]))
+    c2.close()
+
+    # Sync: "all" anchors to the speed most games were played at; a chosen speed to its own rating.
+    def lichess_row(gid, perf, days_ago):
+        return json.dumps({"id": gid, "rated": True, "speed": perf, "perf": perf, "createdAt": NOW - DAY * days_ago, "status": "resign",
+                           "winner": "white", "moves": "e4 e5 Nf3", "players": {"white": {"user": {"name": "luke"}, "rating": 1700},
+                                                                                "black": {"user": {"name": "opp"}, "rating": 1700}}})
+    def mixed_games(route):
+        rows = [lichess_row("mb1", "blitz", 1), lichess_row("mb2", "blitz", 2), lichess_row("mr1", "rapid", 3)]
+        nop = json.loads(rows[2]); del nop["perf"]; rows.append(json.dumps(dict(nop, id="mn1")))   # one with no speed named
+        route.fulfill(status=200, body="\n".join(rows) + "\n", content_type="application/x-ndjson")
+    profile = lambda r: r.fulfill(status=200, content_type="application/json",
+                                  body=json.dumps({"perfs": {"blitz": {"rating": 1650, "games": 300}, "rapid": {"rating": 1910, "games": 40}}}))
+    c2, p2 = fresh({}, routes={"**/lichess.org/api/games/user/luke**": mixed_games, "**/lichess.org/api/user/luke": profile})
+    p2.fill("#handle", "not a handle!"); p2.click("#sync")
+    bad_handle = p2.inner_text("#flash")
+    p2.fill("#handle", "luke"); p2.click("#sync")
+    p2.wait_for_function("/Loaded 4 games/.test(document.querySelector('#flash').innerText)", timeout=10000)
+    anchored_all = stored(p2, "lichessRating")
+    p2.select_option("#syncPerf", "rapid")
+    p2.click("#sync"); p2.wait_for_function("!document.querySelector('#sync').disabled", timeout=10000)
+    anchored_rapid = stored(p2, "lichessRating")
+    check("sync: a handle that cannot be read is refused before any request", "does not look like a Lichess username" in bad_handle, bad_handle)
+    check("sync: with every speed, the rating anchor is the speed most games were at; with one speed, that speed's",
+          anchored_all == 1650 and anchored_rapid == 1910, "%s, %s" % (anchored_all, anchored_rapid))
+    c2.close()
+
+    # The window note: games synced for 30 days do not reach "all time"; with no games, the slider still answers.
+    c2, p2 = fresh({"games": weak, "syncedDays": 30})
+    short_note = p2.inner_text("#winNote")
+    c2.close()
+    c2, p2 = fresh({})
+    p2.evaluate("""() => { const r = document.querySelector('#winDays'); r.value = '2';
+      r.dispatchEvent(new Event('input')); r.dispatchEvent(new Event('change')); }""")
+    empty_note = p2.inner_text("#winNote")
+    no_games_label = p2.inner_text("#winLabel")
+    c2.close()
+    check("window: games synced for 30 days say they do not reach all time; with no games the window still moves",
+          short_note.startswith("Loaded games only go back 30 days.") and empty_note == "" and no_games_label == "Last 30 days",
+          "%s | %r | %s" % (short_note[:50], empty_note, no_games_label))
+
+    # Backups: a damaged one restores what it can; one that is not JSON says so.
+    damaged = {"cards": {"a1:3": "not a card", "ok:1": {"id": "ok:1", "reps": 2}}, "transcripts": {"x": "nope", "y": {"zz": {}, "4": "no", "5": {"text": None, "score": 3}}},
+               "track": [{"day": day_ago(3), "measured": 1800}], "lichessRating": 1750}
+    c2, p2 = fresh({"games": weak})
+    p2.set_input_files("#importFile", write_tmp("damaged.json", json.dumps(damaged))); p2.wait_for_timeout(500)
+    restored = p2.inner_text("#flash")
+    cards = stored(p2, "cards", {}); transcripts = stored(p2, "transcripts", {})
+    games_kept = len(stored(p2, "games", []))
+    p2.set_input_files("#importFile", write_tmp("broken.json", "{ this is not json")); p2.wait_for_timeout(300)
+    broken = p2.inner_text("#flash")
+    check("backup: a damaged backup keeps the good cards, drops the bad entries, and leaves out what it lacks",
+          restored.startswith("Backup restored.") and "a1:3" not in cards and cards.get("ok:1", {}).get("reps") == 2
+          and transcripts.get("x") is None and list(transcripts.get("y", {}).keys()) == ["5"] and transcripts["y"]["5"]["text"] == ""
+          and games_kept == 4 and stored(p2, "lichessRating") == 1750, "%s %s %s" % (restored[:30], sorted(cards), transcripts))
+    check("backup: a file that starts like JSON but is not is refused, saying so", "That JSON did not parse." in broken, broken)
+    c2.close()
+
+    # PGN import: games that name no player are read as White's, and the notice says how many.
+    c2, p2 = fresh({})
+    p2.set_input_files("#importFile", write_tmp("nameless.pgn", "1. e4 e5 2. Nf3 *\n\n1. d4 d5 2. c4 *\n")); p2.wait_for_timeout(800)
+    nameless = " ".join(p2.inner_text("#flash").split())
+    check("import: games with no player names are read as White's, and the notice counts them",
+          "2 name no player, so they were read as played with White" in nameless, nameless[:160])
+    c2.close()
+
+    # Stockfish missing (a build without it): the panel says so instead of waiting.
+    c2, p2 = fresh({"games": [blunder_game("sx1", 1)]})
+    p2.evaluate("delete window.STOCKFISH_SOURCE")
+    p2.click("button.tab[data-tab=sparring]"); p2.select_option("#sparColor", "w"); p2.click("#sparStart")
+    p2.wait_for_function("/cannot start a Web Worker here/.test(document.querySelector('#sfNow').innerText)", timeout=10000)
+    check("stockfish: with no Stockfish in the page, the panel says it is not available", "Stockfish is not available" in p2.inner_text("#sfNow"))
+    c2.close()
+
+    # Sparring to the end, with the mirror's own book: Fool's mate both ways, and a threefold repetition.
+    fools = [line_game("fm%d" % i, ["f3", "e5", "g4", "Qh4#"], 1 + i) for i in range(3)]
+    c2, p2 = fresh({"games": fools})
+    p2.click("button.tab[data-tab=sparring]"); p2.uncheck("#sfOn")
+    p2.select_option("#sparColor", "w"); p2.click("#sparStart")
+    def spar_move(page, a, b, plies):
+        page.click('#sparBoard [data-sq="%s"]' % a); page.click('#sparBoard [data-sq="%s"]' % b)
+        page.wait_for_function("n => document.querySelectorAll('#sparMoves .mv').length >= n", arg=plies, timeout=20000)
+    spar_move(p2, "f2", "f3", 2); spar_move(p2, "g2", "g4", 4)
+    p2.wait_for_function("/Checkmate/.test(document.querySelector('#sparStatus').innerText)", timeout=20000)
+    lost = p2.inner_text("#sparStatus")
+    p2.check("#sfOn")   # Stockfish reads this game: the last position has no move to read
+    p2.select_option("#sparColor", "b"); p2.click("#sparStart")
+    p2.wait_for_function("document.querySelectorAll('#sparMoves .mv').length >= 1", timeout=20000)
+    spar_move(p2, "e7", "e5", 3); spar_move(p2, "d8", "h4", 4)
+    won = p2.inner_text("#sparStatus")
+    p2.wait_for_function("/No legal moves: the game is over/.test(document.querySelector('#sfNow').innerText)", timeout=40000)
+    p2.click("#sparHint")   # the game is over: no advice to ask for
+    hint_after = p2.inner_text("#sparStatus")
+    check("sparring: the mirror mating you is 'Checkmate. You lost.'; you mating it is 'Checkmate. You won.'",
+          lost.startswith("Checkmate. You lost.") and won.startswith("Checkmate. You won.") and hint_after == won, "%s | %s" % (lost[:30], won[:30]))
+    c2.close()
+    knights = [line_game("kn%d" % i, ["Nf3", "Nf6", "Ng1", "Ng8"] * 3, 1 + i) for i in range(3)]
+    c2, p2 = fresh({"games": knights})
+    p2.click("button.tab[data-tab=sparring]"); p2.uncheck("#sfOn")
+    p2.select_option("#sparColor", "b"); p2.click("#sparStart")
+    p2.wait_for_function("document.querySelectorAll('#sparMoves .mv').length >= 1", timeout=20000)
+    spar_move(p2, "g8", "f6", 3); spar_move(p2, "f6", "g8", 5); spar_move(p2, "g8", "f6", 7)
+    p2.click('#sparBoard [data-sq="f6"]'); p2.click('#sparBoard [data-sq="g8"]')
+    p2.wait_for_function("/Drawn/.test(document.querySelector('#sparStatus').innerText)", timeout=20000)
+    check("sparring: the same position three times is a draw by repetition", p2.inner_text("#sparStatus").startswith("Drawn by threefold repetition."),
+          p2.inner_text("#sparStatus")[:60])
+    c2.close()
+
+    # Stockfish's verdict on the mirror's engine moves (no book here), against what it meant to give up.
+    c2, p2 = fresh({"games": [blunder_game("sv%d" % i, 1 + i) for i in range(2)]})
+    p2.click("button.tab[data-tab=sparring]"); p2.select_option("#sparColor", "w"); p2.click("#sparStart")
+    p2.click('#sparBoard [data-sq="d2"]'); p2.click('#sparBoard [data-sq="d4"]')
+    p2.wait_for_function("/Mirror, engine moves: -?\\d+ cp lost per move over 1 read/.test(document.querySelector('#sfLog').innerText)", timeout=60000)
+    verdict = " ".join(p2.inner_text("#sfLog").split())
+    check("stockfish: the mirror's engine move is scored, next to what it meant to give up",
+          re.search(r"Mirror, engine moves: \d+ cp lost per move over 1 read, where it meant to give up \d+\. The (house engine reads|gap is)", verdict) is not None,
+          verdict[:160])
+    c2.close()
+
+    # Drills: an empty queue, the concepts with no position, the Strength tab's Drill as the first drill of the visit,
+    # and quitting an endgame while the engine is still replying.
+    c2, p2 = fresh({"games": [blunder_game("dq1", 1)]})
+    p2.click("button.tab[data-tab=strength]"); p2.wait_for_timeout(200)
+    p2.click('[data-jump="dq1:3"]')
+    first_drill = p2.evaluate("(document.querySelector('.panel.active') || {}).id") == "panel-drills" and p2.inner_text("#drillProgress") == "1 of 1"
+    p2.click("#drillQuit")
+    p2.click("[data-start=motif]")
+    empty_queue = p2.inner_text("#flash")
+    concept = p2.evaluate("[...document.querySelectorAll('#egPick option')].filter(o => o.disabled).map(o => o.value)")
+    p2.select_option("#egPick", "lucena"); p2.click("[data-start=endgame]")
+    p2.click('#drillBoard [data-sq="d1"]'); p2.click('#drillBoard [data-sq="d4"]')
+    p2.click("#drillQuit")
+    p2.wait_for_timeout(2000)   # past the engine's 1.4 s budget: its reply arrives with no drill to land in
+    home = not p2.evaluate("document.querySelector('#drillHome').classList.contains('hidden')")
+    check("drills: the Strength tab's Drill works as the visit's first drill; an empty pattern queue says so; concepts cannot be set up",
+          first_drill and "Nothing in that queue right now." in empty_queue and "wrong-bishop" in concept, "%s | %s" % (empty_queue[:40], concept))
+    check("drills: quitting an endgame while the engine replies leaves the drills page, and the late reply lands nowhere", home)
+    c2.close()
+
+    # The app started after the page has loaded (a script added late): it still boots.
+    root_url = "file:///" + os.path.abspath(os.path.join(HERE, "..")).replace("\\", "/") + "/"
+    late = write_tmp("late.html", open(APP, encoding="utf-8").read()
+                     .replace('<script src="js/ui.js"></script>',
+                              "<script>addEventListener('load', function () { var s = document.createElement('script'); s.src = 'js/ui.js'; document.body.appendChild(s); });</script>")
+                     .replace('src="js/', 'src="' + root_url + 'js/').replace("src = 'js/", "src = '" + root_url + "js/").replace('href="css/', 'href="' + root_url + 'css/'))
+    c2, p2 = fresh({})
+    snap_page(p2)   # its first page is replaced: keep what it ran
+    p2.goto("file:///" + late.replace("\\", "/")); p2.wait_for_function("document.querySelectorAll('.panel.active').length === 1", timeout=10000)
+    check("boot: the app starts even when its script runs after the page has loaded",
+          p2.evaluate("document.readyState") == "complete" and p2.evaluate("(document.querySelector('.panel.active') || {}).id") == "panel-strength")
+    c2.close()
+    # A Stockfish that disagrees with the house engine by five pawns (a stand-in worker): "the gap".
+    FAKE_SF = r"""onmessage = function (e) {
+      var c = String(e.data), sm = / searchmoves (\S+)/.exec(c);
+      if (c === 'uci') postMessage('uciok');
+      else if (c === 'isready') postMessage('readyok');
+      else if (c.indexOf('go') === 0) {
+        postMessage('info depth 12 multipv 1 score cp ' + (sm ? -500 : 0) + ' pv ' + (sm ? sm[1] : 'a1a1'));
+        postMessage('bestmove ' + (sm ? sm[1] : 'a1a1'));
+      }
+    };"""
+    c2, p2 = fresh({"games": [blunder_game("fk%d" % i, 1 + i) for i in range(2)]})
+    p2.evaluate("src => { window.STOCKFISH_SOURCE = src; }", FAKE_SF)
+    p2.click("button.tab[data-tab=sparring]"); p2.select_option("#sparColor", "w"); p2.click("#sparStart")
+    p2.click('#sparBoard [data-sq="d2"]'); p2.click('#sparBoard [data-sq="d4"]')
+    p2.wait_for_function("/Mirror, engine moves/.test(document.querySelector('#sfLog').innerText)", timeout=30000)
+    gap = " ".join(p2.inner_text("#sfLog").split())
+    check("stockfish: a reading far from what the mirror meant to give up is called the house engine's misjudgement",
+          "Mirror, engine moves: 500 cp lost per move over 1 read" in gap and "The gap is the house engine misjudging" in gap
+          and "· Stockfish:" not in gap, gap[:200])
+    c2.close()
+
+    # Guards a visit can reach: no games yet (sparring, drills, review), a key on a tab that is no
+    # tab key, a file dialog closed with no file, a takeback before any game, scout finding no games.
+    c2, p2 = fresh({}, routes={"**/lichess.org/api/games/user/nobody**": lambda r: r.fulfill(status=200, body="", content_type="application/x-ndjson")})
+    p2.click("button.tab[data-tab=sparring]"); p2.click("#sparTakeback"); p2.click("#sparStart")
+    no_profile = p2.inner_text("#flash")
+    p2.click("button.tab[data-tab=drills]")
+    no_drills = p2.inner_text("#drillHome")
+    p2.click("button.tab[data-tab=review]"); p2.click("#revStart")   # no game to review: nothing starts
+    p2.focus("button.tab[data-tab=review]"); p2.keyboard.press("a")
+    still_review = p2.evaluate("document.activeElement.dataset.tab")
+    p2.evaluate("document.querySelector('#importFile').dispatchEvent(new Event('change'))")
+    p2.click("button.tab[data-tab=scout]"); p2.fill("#scoutHandle", "nobody"); p2.click("#scoutBtn")
+    p2.wait_for_function("/No rated games for nobody/.test(document.querySelector('#scoutOut').innerText)", timeout=10000)
+    check("guards: with no games, sparring and drills say to sync first; Start review, a stray key and an empty file pick do nothing",
+          "Sync your games first" in no_profile and "Sync first" in no_drills and still_review == "review"
+          and not p2.evaluate("document.querySelector('#revStage') && !document.querySelector('#revStage').classList.contains('hidden')"),
+          "%s | %s" % (no_profile[:40], no_drills[:60]))
+    check("scout: a player with no games in that time control says so", "No rated games for nobody in that time control" in p2.inner_text("#scoutOut"))
+    c2.close()
+
+    # Storage full for games and settings: the import, the sync and Settings each say so.
+    c2, p2 = fresh({}, routes={"**/lichess.org/api/games/user/luke**": mixed_games, "**/lichess.org/api/user/luke": profile})
+    p2.evaluate("""() => { const real = Storage.prototype.setItem;
+      Storage.prototype.setItem = function (k, v) {
+        if (/^dvor:(games|settings)$/.test(k)) throw new DOMException('full', 'QuotaExceededError');
+        return real.call(this, k, v); }; }""")
+    p2.set_input_files("#importFile", write_tmp("full.pgn", '[White "luke"]\n[Black "x"]\n[Result "1-0"]\n\n1. e4 e5 2. Nf3 1-0\n')); p2.wait_for_timeout(800)
+    import_full = p2.inner_text("#flash")
+    p2.fill("#handle", "luke"); p2.click("#sync"); p2.wait_for_function("!document.querySelector('#sync').disabled", timeout=10000)
+    sync_full = p2.inner_text("#flash")
+    p2.click("button.tab[data-tab=settings]"); p2.click("#saveSettings")
+    settings_full = p2.inner_text("#flash")
+    check("storage full: an import and a sync keep the storage warning up; Settings say they were not saved",
+          import_full.startswith("Local storage is full. Reduce the sync window") and sync_full.startswith("Local storage is full. Reduce the sync window")
+          and "settings were not saved" in settings_full, "%s | %s | %s" % (import_full[:40], sync_full[:40], settings_full[:50]))
+    c2.close()
+
+    # Stored games that cannot all be read: a game with no id gets one, an unplayable stored move ends the game
+    # there, and a games entry that is not a list at all is no games rather than a broken page.
+    no_id = blunder_game("x", 1); del no_id["id"]
+    cut = blunder_game("cut", 2); cut["m"] = [["e4", 30, "", "", "", "", ""], ["Ke3", 30, "", "", "", "", ""], ["Nf3", 30, "", "", "", "", ""]]
+    c2, p2 = fresh({"games": [no_id, cut]})
+    p2.set_input_files("#importFile", write_tmp("one_more.pgn", '[White "luke"]\n[Black "y"]\n[Result "1-0"]\n\n1. d4 d5 1-0\n')); p2.wait_for_timeout(800)
+    kept_games = [g for g in stored(p2, "games", []) if g.get("eco") == "C20"]   # the two seeded ones, saved again with the import
+    c2.close()
+    seen = len(errors)
+    c2, p2 = fresh({"games": {"not": "a list"}, "cards": "not cards", "transcripts": 7})
+    broken_games = p2.evaluate("document.querySelectorAll('#revGame option').length")
+    check("stored games: one with no id gets one; an unplayable move ends that game there",
+          len(kept_games) == 2 and sorted(len(g["m"]) for g in kept_games) == [1, 5]
+          and [g for g in kept_games if len(g["m"]) == 1][0]["id"] == "cut" and re.match(r"^g[0-9a-z]+$", [g for g in kept_games if len(g["m"]) == 5][0]["id"]),
+          [(g.get("id"), len(g["m"])) for g in kept_games])
+    check("stored data: games, cards and notes that are not what they should be load as none", broken_games == 0 and len(errors) == seen, broken_games)
+    c2.close()
+
+    # Trend: three marks inside two weeks are not yet a trend; the window labels count years.
+    c2, p2 = fresh({"games": weak, "track": [{"day": day_ago(d), "measured": 1900, "n": 4} for d in (6, 3)]})
+    p2.click("button.tab[data-tab=strength]")
+    early = " ".join(p2.inner_text("#strengthBody").split())
+    labels = []
+    for i in (6, 7):
+        p2.evaluate("""i => { const r = document.querySelector('#winDays'); r.value = String(i); r.dispatchEvent(new Event('input')); }""", i)
+        labels.append(p2.inner_text("#winLabel"))
+    check("trajectory: three marks inside two weeks are not yet a trend", "Trend needs at least three marks spanning two weeks. 3 so far." in early,
+          early[early.find("Trend"):][:80])
+    check("window: a year and two years are named in years", labels == ["Last year", "Last 2 years"], labels)
+    c2.close()
+    # Scout: a player whose blunders come with the clock nearly gone is told the clock comes first.
+    def scout_pressed(route):
+        rows = [json.dumps({"id": "sp%d" % i, "rated": True, "speed": "blitz", "perf": "blitz", "createdAt": NOW - DAY * (i + 1),
+                "status": "resign", "winner": "black", "moves": "e4 e5 Ba6 bxa6 Nf3", "clock": {"initial": 300, "increment": 0},
+                "clocks": [30000, 30000, 2000, 2000, 1900], "opening": {"eco": "C20", "name": "King's Pawn Game"},
+                "analysis": [{"eval": 30}, {"eval": 30}, {"eval": -300, "best": "g1f3", "judgment": {"name": "Blunder"}}, {"eval": -300}, {"eval": -300}],
+                "players": {"white": {"user": {"name": "pressed"}, "rating": 1700}, "black": {"user": {"name": "opp"}, "rating": 1700}}})
+                for i in range(4)]
+        route.fulfill(status=200, body="\n".join(rows) + "\n", content_type="application/x-ndjson")
+    c2, p2 = fresh({}, routes={"**/lichess.org/api/games/user/pressed**": scout_pressed})
+    p2.click("button.tab[data-tab=scout]"); p2.fill("#scoutHandle", "pressed"); p2.click("#scoutBtn")
+    p2.wait_for_selector("#scoutAdopt", timeout=10000)
+    pressed = " ".join(p2.inner_text("#scoutOut").split())
+    check("scout: errors made with under fifteen percent of the clock are counted, and clock discipline comes first",
+          "100% of their errors come with under fifteen percent of the clock left." in pressed and "Clock discipline before anything else" in pressed,
+          pressed[pressed.find("%") - 20:][:120])
+    c2.close()
     check("page: no uncaught errors throughout", not errors, errors[:3])
 
     if COV:

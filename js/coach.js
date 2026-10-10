@@ -152,8 +152,9 @@
         Math.round(phaseCost.opening + phaseCost.middlegame + phaseCost.endgame) +
         ' lost centipawns came in the ' + worstPhase + '.');
     }
-    if (weakest && entries.length >= 3) narrative.push(WEAK_TEXT[weakest]);
-    else if (entries.length < 3) narrative.push('You justified only ' + entries.length + ' moves. The transcript is the exercise; a game reviewed without it is a game watched, not studied.');
+    // With three notes the rubric has numbers, so there is always a weakest habit to name.
+    if (entries.length >= 3) narrative.push(WEAK_TEXT[weakest]);
+    else narrative.push('You justified only ' + entries.length + ' moves. The transcript is the exercise; a game reviewed without it is a game watched, not studied.');
 
     var homework = [];
     // "positional" (a quiet move was best) and "unclassified" name no pattern to drill,

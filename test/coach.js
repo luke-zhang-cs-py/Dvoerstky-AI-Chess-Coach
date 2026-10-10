@@ -12,6 +12,44 @@ function check(name, ok, detail) {
 const reply = (text, ctx) => Coach.respond({ score: Coach.scoreJustification(text, ctx) }, ctx).join(' | ');
 
 (async () => {
+  // ---------------------------------------------------------------- October 2026 coverage round
+  const blank = Coach.scoreJustification(undefined, {});
+  check('score: no note at all is zero words and zero lines, not an error', blank.words === 0 && blank.lines === 0, JSON.stringify(blank));
+
+  // A game reviewed with no transcript and no mined errors: nothing to average, nothing turned.
+  const bare = Coach.summarizeGame({ id: 'g0', myColor: 'b' }, undefined, undefined, null);
+  check('summary: no notes and no errors is an empty rubric, the coverage warning, and no homework',
+    bare.rubric.coverage === 0 && bare.rubric.concreteness === null && bare.weakest === null && bare.turningPoints.length === 0
+    && bare.narrative.length === 2 && /an unlabelled opening as Black with the position intact/.test(bare.narrative[0])
+    && /You justified only 0 moves/.test(bare.narrative[1]) && bare.homework.length === 0, JSON.stringify(bare.narrative));
+
+  // Two costly moves, the second later: "It came after the first one". A note saved without a
+  // score (an old transcript) counts as zero, and an error with no motifs names none.
+  const two = Coach.summarizeGame({ id: 'g1', myColor: 'w', openingName: 'Italian Game' },
+    { 4: { text: 'Bc4' }, 10: { text: 'Nf3 because e5 is attacked', score: Coach.scoreJustification('Nf3 because e5 is attacked', {}) },
+      12: { text: 'castle', score: Coach.scoreJustification('castle', {}) } },
+    [{ gameId: 'g1', moveNo: 14, played: 'Qd2', best: 'Qe2', cpLoss: 300, phase: 'middlegame' },
+     { gameId: 'g1', moveNo: 20, played: 'Rd1', cpLoss: 150, phase: 'middlegame', motifs: ['pin'] },
+     { gameId: 'other', moveNo: 3, played: 'h4', cpLoss: 900, phase: 'opening' }], null);
+  check('summary: a second costly move after the first is "It came after the first one"; another game\'s error is not counted',
+    two.narrative.some((l) => l === 'One further costly move came at move 20. It came after the first one: the damage in this game is sequential, not independent.')
+    && two.turningPoints.length === 2 && two.phaseCost.middlegame === 450 && two.phaseCost.opening === 0, JSON.stringify(two.narrative));
+  check('summary: a note with no score averages as zero; three notes name the weakest habit',
+    two.rubric.coverage === 3 && two.rubric.concreteness < 0.2 && two.weakest !== null && two.motifs.join() === 'pin'
+    && two.homework.some((h) => /Drill pin/.test(h)), JSON.stringify(two.rubric));
+
+  const three = Coach.summarizeGame({ id: 'g2', myColor: 'w' }, {},
+    [{ gameId: 'g2', moveNo: 9, played: 'a3', best: 'Nf3', cpLoss: 400, phase: 'middlegame' },
+     { gameId: 'g2', moveNo: 12, played: 'b3', cpLoss: 200, phase: 'middlegame' }, { gameId: 'g2', moveNo: 15, played: 'c3', cpLoss: 150, phase: 'endgame' }], null);
+  check('summary: two further costly moves after the first are "They came after the first one"',
+    three.narrative.some((l) => l === '2 further costly moves came at moves 12 and 15. They came after the first one: the damage in this game is sequential, not independent.'),
+    JSON.stringify(three.narrative));
+
+  const prompt = Coach.buildPrompt({ myColor: 'b', result: '0-1' }, { 3: { san: 'Nf6', cpLoss: 80 } }, null, null);
+  check('prompt: no opening name, no engine move, no note: each has a plain stand-in',
+    prompt.includes('Game: unknown opening, student played Black, result 0-1.') && prompt.includes('- Move 2 (Nf6): "" [cost 80cp; engine preferred ?]')
+    && prompt.includes('around 2100') && prompt.includes('across all of their loaded games: not yet measured.'), prompt.split('\n').slice(2, 6).join(' / '));
+
   // ---------------------------------------------------------------- respond
   let r = reply('Nf3', { cpLoss: 0 });
   check('respond: a note of a word or two is an assertion', /assertion, not an analysis/.test(r), r);
@@ -95,6 +133,10 @@ const reply = (text, ctx) => Coach.respond({ score: Coach.scoreJustification(tex
   r = await call({ apiKey: 'k' });
   check('callLLM: an answer with no text is an error naming the stop reason, and the default model is asked',
     r === 'err The model sent no text (stop reason: max_tokens).' && JSON.parse(sent.opts.body).model === 'claude-sonnet-4-6', r);
+
+  answer({ ok: true, json: () => Promise.resolve({}) });
+  r = await call({ apiKey: 'k' });
+  check('callLLM: an answer with no content and no stop reason says so plainly', r === 'err The model sent no text (stop reason: none given).', r);
 
   globalThis.fetch = keep;
   console.log('\n' + passed + ' passed, ' + failed + ' failed');
