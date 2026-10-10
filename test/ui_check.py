@@ -494,6 +494,9 @@ with sync_playwright() as p:
         g["m"] = [["e4", 30, "", "", "", "", ""], ["e5", 30, "", "", "", "", ""],
                   ["Qh5", -80, "Inaccuracy", "g1f3", "", "Nf3", ""], ["Nc6", -80, "", "", "", "", ""]]
         return g
+    page_cov = {}
+    def snap_page(page):
+        if id(page) in page_cov: snapshots.extend(page_cov[id(page)].send("Profiler.takePreciseCoverage")["result"])
     def fresh(seed, hash_="", routes=None):
         """A new context (its own storage), seeded once before the page's scripts run."""
         c = b.new_context(viewport={"width": 1280, "height": 900}, accept_downloads=True)
@@ -502,6 +505,18 @@ with sync_playwright() as p:
         page = c.new_page()
         page.on("pageerror", lambda e: errors.append(str(e)))
         page.on("dialog", lambda d: d.accept())
+        if COV:
+            # Each fresh page is its own document: measure it too, and take its coverage
+            # before the context closes (or the page reloads), or it goes unrecorded.
+            pcdp = c.new_cdp_session(page)
+            pcdp.send("Profiler.enable")
+            pcdp.send("Profiler.startPreciseCoverage", {"callCount": True, "detailed": True})
+            page_cov[id(page)] = pcdp
+            real_close = c.close
+            def close_measured(*a, **k):
+                snap_page(page)
+                return real_close(*a, **k)
+            c.close = close_measured
         js = "".join("localStorage.setItem(%s, %s);" % (json.dumps("dvor:" + k), json.dumps(json.dumps(v))) for k, v in seed.items())
         page.add_init_script('if (!sessionStorage.getItem("seeded")) { localStorage.clear(); %s sessionStorage.setItem("seeded", "1"); }' % js)
         page.goto("file:///" + os.path.abspath(APP).replace("\\", "/") + hash_)
@@ -691,6 +706,194 @@ with sync_playwright() as p:
     cap2 = p2.inner_text("#rulerCaption")
     check("scout: after loading a scouted profile, moving the window re-measures their games, not yours",
           re.search(r"Last 7 days:\s*5\s*games", cap2) is not None, cap2[:60])
+    c2.close()
+
+    # ---- October 2026 coverage round: paths no check walked before
+    # Scout: a player whose games carry Lichess's analysis gets the full report; a failed read says why.
+    def scout_analysed(route):
+        rows = [json.dumps({"id": "sa%d" % i, "rated": True, "speed": "rapid", "perf": "rapid", "createdAt": NOW - DAY * (i + 1),
+                "status": "resign", "winner": "black", "moves": "e4 e5 Ba6 bxa6 Nf3", "opening": {"eco": "C20", "name": "King's Pawn Game"},
+                "analysis": [{"eval": 30}, {"eval": 30}, {"eval": -300, "best": "g1f3", "judgment": {"name": "Blunder"}}, {"eval": -300}, {"eval": -300}],
+                "players": {"white": {"user": {"name": "analysed"}, "rating": 1700}, "black": {"user": {"name": "opp"}, "rating": 1700}}})
+                for i in range(4)]
+        route.fulfill(status=200, body="\n".join(rows) + "\n", content_type="application/x-ndjson")
+    c2, p2 = fresh({}, routes={"**/lichess.org/api/games/user/analysed**": scout_analysed,
+                               "**/lichess.org/api/games/user/broken**": lambda r: r.fulfill(status=500, body="")})
+    p2.click("button.tab[data-tab=scout]"); p2.click("#scoutBtn")
+    check("scout: no handle, no request, and the notice says what to paste", "Paste a Lichess profile link" in p2.inner_text("#flash"))
+    p2.fill("#scoutHandle", "https://lichess.org/@/analysed"); p2.click("#scoutBtn")
+    p2.wait_for_selector("#scoutAdopt", timeout=10000)
+    rep = p2.inner_text("#scoutOut")
+    check("scout: the report names the recurring weakness and the opening that loses",
+          "Recurring weaknesses:" in rep and "left material loose" in rep and "Openings under water: King's Pawn Game as White (0%)" in rep
+          and "Repair or replace King's Pawn Game" in rep, " ".join(rep.split())[:200])
+    p2.fill("#scoutHandle", "broken"); p2.click("#scoutBtn")
+    p2.wait_for_function("/Lichess returned 500/.test(document.querySelector('#scoutOut').innerText)", timeout=10000)
+    check("scout: a failed read is shown in the report's place", "Lichess returned 500." in p2.inner_text("#scoutOut"))
+    c2.close()
+
+    # Review to the end: the session summary, then the written verdict (no key: the prompt; a key: the API's text).
+    def anthropic(route):
+        cors = {"Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "*", "Access-Control-Allow-Methods": "POST"}
+        if route.request.method == "OPTIONS": return route.fulfill(status=204, headers=cors)
+        key = route.request.headers.get("x-api-key")
+        if key == "sk-bad": return route.fulfill(status=401, headers=cors, body='{"error":"invalid x-api-key"}')
+        route.fulfill(status=200, headers=cors, content_type="application/json",
+                      body=json.dumps({"content": [{"type": "text", "text": "Your habit is skipping his replies."}], "stop_reason": "end_turn"}))
+    c2, p2 = fresh({"games": [blunder_game("rv1", 1)]}, routes={"**/api.anthropic.com/**": anthropic})
+    p2.click("button.tab[data-tab=review]"); p2.select_option("#revGame", "0"); p2.click("#revStart")
+    p2.click("#revNext")
+    check("review: Next before writing anything asks for the justification first", "Write your justification first" in p2.inner_text("#flash")
+          and p2.inner_text("#revProgress").endswith("1 of 3"), p2.inner_text("#revProgress"))
+    for note in ["e4 or d4, his reply e5, equal", "Ba6 because it felt natural", "Nf3 or d3, his threat is bxa6 kept, worse"]:
+        p2.fill("#revText", note); p2.click("#revSubmit"); p2.click("#revNext")
+    summary = p2.inner_text("#revFeedback")
+    check("review: after the last move, the summary names the turning point and sets homework",
+          "Game complete." in p2.text_content("#revPrompt") and "The game turned on move 2. You played Ba6 where Nf3 held" in summary
+          and "find Nf3 from a cold start" in summary and p2.is_disabled("#revText"), " ".join(summary.split())[:160])
+    p2.click("#llmBtn")
+    prompt = p2.input_value("#llmOut textarea")
+    check("review: with no API key the verdict button hands over the prompt, the notes in it",
+          "No API key set" in p2.inner_text("#llmOut") and '- Move 2 (Ba6): "Ba6 because it felt natural" [cost 330cp; engine preferred Nf3]' in prompt,
+          [l for l in prompt.splitlines() if l.startswith("- Move")][:3])
+    p2.evaluate("() => { const s = JSON.parse(localStorage.getItem('dvor:settings') || '{}'); s.apiKey = 'sk-good'; localStorage.setItem('dvor:settings', JSON.stringify(s)); }")
+    p2.click("button.tab[data-tab=settings]"); p2.fill("#setKey", "sk-good"); p2.click("#saveSettings")
+    p2.click("button.tab[data-tab=review]"); p2.click("#llmBtn")
+    p2.wait_for_function("/habit/.test(document.querySelector('#llmOut').innerText)", timeout=10000)
+    check("review: with a key, the model's verdict is shown", p2.inner_text("#llmOut").strip() == "Your habit is skipping his replies.", p2.inner_text("#llmOut")[:80])
+    p2.click("button.tab[data-tab=settings]"); p2.fill("#setKey", "sk-bad"); p2.click("#saveSettings")
+    p2.click("button.tab[data-tab=review]"); p2.click("#llmBtn")
+    p2.wait_for_function("/API 401/.test(document.querySelector('#llmOut').innerText)", timeout=10000)
+    check("review: a refused key is shown as the API's error", "API 401" in p2.inner_text("#llmOut"), p2.inner_text("#llmOut")[:80])
+    p2.click("#revRestart")
+    check("review: Review another game closes the summary and frees the text box",
+          p2.evaluate("document.querySelector('#revStage').classList.contains('hidden')") and not p2.is_disabled("#revText"))
+    p2.click("#revStart"); p2.click("#revSkip")
+    check("review: Skip moves on to the next of your moves without a note", p2.inner_text("#revProgress").endswith("2 of 3"), p2.inner_text("#revProgress"))
+    c2.close()
+
+    # Drills: the right move is accepted and graded; a pattern queue; the Strength tab's Drill buttons.
+    no_best = blunder_game("nb1", 2)
+    no_best["m"][2] = ["Ba6", -300, "Blunder", "", "", "", ""]   # Lichess gave no better move: no puzzle
+    c2, p2 = fresh({"games": [blunder_game("a1", 1), no_best]})
+    p2.click("button.tab[data-tab=drills]"); p2.click("[data-start=all]")
+    p2.click('#drillBoard [data-sq="g1"]'); p2.click('#drillBoard [data-sq="f3"]'); p2.wait_for_timeout(200)
+    grades = p2.evaluate("[...document.querySelectorAll('#drillGrades button')].map(b => (b.disabled ? '-' : '') + b.dataset.grade + (b.classList.contains('primary') ? '*' : '')).join()")
+    check("drills: the right move at the first try is Correct, every grade open, Instant suggested",
+          p2.inner_text("#drillFeedback").startswith("Correct: Nf3.") and grades == "0,1,2,3*", "%s; %s" % (p2.inner_text("#drillFeedback")[:40], grades))
+    p2.click('[data-grade="3"]'); p2.wait_for_timeout(200)
+    card = p2.evaluate("JSON.parse(localStorage.getItem('dvor:cards'))['a1:3']")
+    done = p2.evaluate("Object.keys(JSON.parse(localStorage.getItem('dvor:completed') || '{}')).length")
+    check("drills: grading it schedules the card two days on, ends the queue and logs the day",
+          card["reps"] == 1 and card["interval"] == 2 and card["history"][-1]["g"] == 3 and done == 1
+          and not p2.evaluate("document.querySelector('#drillHome').classList.contains('hidden')"), "%s; done %d" % ({k: card[k] for k in ("reps", "interval")}, done))
+    motif = p2.evaluate("[...document.querySelectorAll('#drillMotif option')].map(o => o.value).filter(Boolean)[0] || ''")
+    p2.select_option("#drillMotif", motif); p2.click("[data-start=motif]")
+    check("drills: a pattern chosen from the list drills the cards with that pattern", bool(motif) and p2.inner_text("#drillProgress") == "1 of 1",
+          "%s: %s" % (motif, p2.inner_text("#drillProgress")))
+    p2.click("#drillQuit")
+    p2.click("button.tab[data-tab=strength]"); p2.wait_for_timeout(200)
+    p2.click('[data-jump="nb1:3"]')
+    check("strength: Drill on a mistake with no known better move says it cannot be a puzzle", "cannot be a puzzle" in p2.inner_text("#flash"))
+    p2.click('[data-jump="a1:3"]'); p2.wait_for_timeout(200)
+    check("strength: Drill on a mistake opens that position as a puzzle",
+          p2.evaluate("(document.querySelector('.panel.active') || {}).id") == "panel-drills" and p2.inner_text("#drillProgress") == "1 of 1"
+          and "You played Ba6 here" in p2.inner_text("#drillPrompt"), p2.inner_text("#drillPrompt")[:80])
+    c2.close()
+
+    # Calendar: a day marked done and unmarked; the endgame, sparring and review blocks open their tabs.
+    c2, p2 = fresh({"games": [blunder_game("b%d" % i, 1) for i in range(4)], "settings": {"windowDays": 0, "minutes": 120, "hour": 19, "endgameTier": 2}})
+    p2.click("button.tab[data-tab=calendar]")
+    p2.click("[data-day]"); day = p2.get_attribute("[data-day]", "data-day")
+    p2.click("#markDone")
+    marked = p2.evaluate("d => d in JSON.parse(localStorage.getItem('dvor:completed') || '{}')", day)
+    p2.click('[data-day="%s"]' % day); p2.click("#markDone")
+    unmarked = p2.evaluate("d => !(d in JSON.parse(localStorage.getItem('dvor:completed') || '{}'))", day)
+    check("calendar: a day can be marked done, and unmarked", marked and unmarked, "%s %s" % (marked, unmarked))
+    opened = {}
+    for kind in ("eg", "spar", "review"):
+        p2.click("button.tab[data-tab=calendar]")
+        for d in p2.query_selector_all("[data-day]"):
+            d.click()
+            btn = p2.query_selector('#dayDetail [data-run="%s"]' % kind)
+            if btn:
+                colour = btn.get_attribute("data-color")
+                btn.click(); p2.wait_for_timeout(300)
+                panel = p2.evaluate("(document.querySelector('.panel.active') || {}).id")
+                opened[kind] = (panel, p2.inner_text("#drillProgress") if kind == "eg" else
+                                p2.input_value("#sparColor") == colour if kind == "spar" else True)
+                break
+    check("calendar: Set up, Play and Open review take the block to its tab, ready",
+          opened.get("eg") == ("panel-drills", "Endgame study") and opened.get("spar") == ("panel-sparring", True)
+          and opened.get("review") == ("panel-review", True), opened)
+    c2.close()
+
+    # Sparring: taking back as White leaves your turn; Stockfish that cannot start says so.
+    c2, p2 = fresh({"games": [blunder_game("a1", 1)]})
+    p2.evaluate("window.STOCKFISH_SOURCE = 'throw new Error(\"sf-start-check\")'")
+    p2.click("button.tab[data-tab=sparring]"); p2.select_option("#sparColor", "w"); p2.click("#sparStart")
+    p2.click('#sparBoard [data-sq="e2"]'); p2.click('#sparBoard [data-sq="e4"]')
+    p2.wait_for_function("document.querySelectorAll('#sparMoves .mv').length >= 2", timeout=20000)
+    corner = lambda: p2.evaluate("document.querySelector('#sparBoard [data-sq]').dataset.sq")
+    unflipped = corner(); p2.click("#sparFlip"); flipped = corner(); p2.click("#sparFlip")
+    check("sparring: Flip turns the board round, and back", unflipped == "a8" and flipped == "h1" and corner() == "a8",
+          "%s, %s, %s" % (unflipped, flipped, corner()))
+    p2.click("#sparTakeback"); p2.wait_for_timeout(500)
+    check("sparring: a takeback as White undoes both moves and it is your move again",
+          p2.evaluate("document.querySelectorAll('#sparMoves .mv').length") == 0 and movable(p2, "sparBoard") > 0, movable(p2, "sparBoard"))
+    p2.uncheck("#sparCoach")
+    off = p2.inner_text("#sparAdvice")
+    p2.click("#sparHint")
+    p2.wait_for_function("(t => t && !/Live advice is off|Reading the position/.test(t))(document.querySelector('#sparAdvice').innerText)", timeout=20000)
+    check("sparring: with live advice off it says so, and One hint still reads the position once",
+          "Live advice is off" in off and "Live advice is off" not in p2.inner_text("#sparAdvice") and not p2.is_checked("#sparCoach"),
+          " ".join(p2.inner_text("#sparAdvice").split())[:80])
+    try:
+        p2.wait_for_function("/Stockfish did not start/.test(document.querySelector('#sfNow').innerText)", timeout=10000); sf_said = True
+    except Exception:
+        sf_said = False
+    check("stockfish: a worker that fails to start is reported, not waited on", sf_said, p2.inner_text("#sfNow")[:80])
+    errors[:] = [e for e in errors if "sf-start-check" not in e]   # the error that check provoked on purpose
+    c2.close()
+
+    # Failures that reach the screen: Lichess down for a sync and for the titled refresh; an unreadable game.
+    c2, p2 = fresh({"games": [blunder_game("a1", 1)]}, routes={"**/lichess.org/api/games/**": lambda r: r.fulfill(status=500, body=""),
+                                                              "**/lichess.org/api/users": lambda r: r.fulfill(status=503, body="")})
+    p2.fill("#handle", "luke"); p2.press("#handle", "Enter")   # Enter in the handle box syncs, as the button does
+    p2.wait_for_function("/Could not reach Lichess/.test(document.querySelector('#flash').innerText)", timeout=10000)
+    check("sync: Lichess failing is reported with its status, and the games stay", "Lichess returned 500." in p2.inner_text("#flash")
+          and len(stored_games(p2)) == 1 and not p2.is_disabled("#sync"), p2.inner_text("#flash")[:80])
+    p2.click("button.tab[data-tab=strength]"); p2.click("#cmpRefresh")
+    p2.wait_for_function("/Could not reach Lichess/.test((document.querySelector('#cmpStatus') || {}).textContent || '')", timeout=10000)
+    check("titled: a refresh Lichess refuses keeps the snapshot and says so",
+          "Lichess answered 503." in p2.inner_text("#cmpStatus") and "2026-10-01 ratings" in p2.inner_text("#cmpStatus")
+          and not p2.is_disabled("#cmpRefresh"), p2.inner_text("#cmpStatus"))
+    p2.set_input_files("#importFile", write_tmp("bad.pgn", '[White "luke"]\n[Black "x"]\n[Result "1-0"]\n\n1. e4 e5 2. Ke3 1-0\n\n'
+                                                '[White "luke"]\n[Black "y"]\n[Result "1-0"]\n\n1. d4 d5 1-0\n'))
+    p2.wait_for_timeout(1200)
+    check("import: a game whose moves cannot be read is left out, and the notice counts it",
+          "Left out 1 game whose moves could not be read." in p2.inner_text("#flash"), p2.inner_text("#flash")[:120])
+    c2.close()
+
+    # Chrome: text size, the Home and End keys on the tabs, and deleting everything.
+    c2, p2 = fresh({"games": [blunder_game("a1", 1)]})
+    p2.select_option("#uiScale", "1.25")
+    check("chrome: a larger text size is applied and remembered",
+          p2.evaluate("document.documentElement.style.getPropertyValue('--ui-scale')") == "1.25"
+          and p2.evaluate("JSON.parse(localStorage.getItem('dvor:settings')).uiScale") == "1.25")
+    p2.focus("button.tab[data-tab=sparring]"); p2.keyboard.press("End")
+    end = p2.evaluate("document.activeElement.dataset.tab"); p2.keyboard.press("Home")
+    check("tabs: End and Home go to the last and first tab", end == "settings" and p2.evaluate("document.activeElement.dataset.tab") == "strength",
+          "%s, %s" % (end, p2.evaluate("document.activeElement.dataset.tab")))
+    p2.evaluate("localStorage.setItem('not-this-app', 'kept')")
+    p2.evaluate("window.confirm = () => false"); p2.click("button.tab[data-tab=settings]"); p2.click("#wipe")
+    kept = p2.evaluate("localStorage.getItem('dvor:games') !== null")
+    snap_page(p2)   # the confirmed delete reloads the page, and a reload drops its coverage
+    p2.evaluate("window.confirm = () => true")
+    with p2.expect_navigation(): p2.click("#wipe")
+    left = p2.evaluate("Object.keys(localStorage).filter(k => k.startsWith('dvor:'))")
+    check("settings: Delete everything asks first, then removes this app's data and nothing else",
+          kept and left == [] and p2.evaluate("localStorage.getItem('not-this-app')") == "kept", left)
     c2.close()
 
     check("page: no uncaught errors throughout", not errors, errors[:3])

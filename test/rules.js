@@ -180,5 +180,15 @@ const play = (g, list) => list.forEach(s => { if (!g.move(s)) throw new Error('i
         r2[0].san !== 'Ng8' && draw && draw.score === 0, r2.slice(0, 2).map(x => x.san + ' ' + x.score).join(' | ') + ' | Ng8 ' + (draw && draw.score));
 }
 
+// ---------------------------------------------------------------- verbose moves
+{
+  const g = new Chess('r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1');
+  const v = g.moves({ verbose: true });
+  check('moves: verbose moves carry their SAN, castling and checks included',
+        v.length === g.generate().length && v.some(m => m.san === 'O-O-O') && v.some(m => m.san === 'Rxa8+') && v.every(m => m.san === g.san(m)),
+        v.slice(0, 4).map(m => m.san).join());
+  check('moves: without verbose they carry none', g.moves().every(m => m.san === undefined));
+}
+
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 process.exitCode = failed ? 1 : 0;

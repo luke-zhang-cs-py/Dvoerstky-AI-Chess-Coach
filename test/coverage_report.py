@@ -76,7 +76,9 @@ def main():
     files = sorted(glob.glob(os.path.join(ROOT, "js", "*.js")))
     report = []
     for path in files:
-        src = open(path, encoding="utf-8").read()
+        # newline="": V8 counts offsets in the file as it is, and a checkout with CRLF
+        # endings (git on Windows) would otherwise shift every offset by a line's worth.
+        src = open(path, encoding="utf-8", newline="").read()
         key = os.path.normcase(os.path.normpath(path))
         n = len(src)
         covered_any = bytearray(n)      # 1 where some run executed this character
@@ -138,7 +140,7 @@ def write_html(report, runs):
         code = []
         for no, text in enumerate(r["src"].split("\n"), 1):
             cls = "m" if no in miss else "p" if no in part else ""
-            code.append('<tr class="%s"><td class=ln>%d</td><td><pre>%s</pre></td></tr>' % (cls, no, html.escape(text)))
+            code.append('<tr class="%s"><td class=ln>%d</td><td><pre>%s</pre></td></tr>' % (cls, no, html.escape(text.rstrip("\r"))))
         bodies.append('<section id="%s"><h2>%s <span>%.1f%% of %d lines &middot; %d/%d functions</span></h2>'
                       '<p class=un>Functions never called: %s</p><table class=src>%s</table></section>'
                       % (fid, r["file"], pct, r["lines"], r["funcs_hit"], r["funcs"],

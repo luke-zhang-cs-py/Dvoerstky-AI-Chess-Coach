@@ -166,5 +166,133 @@ const sans = g => g.moves.map(m => m.san).join(' ');
   check('stockfish: ...and mate in 1 still reads as #1', Sparring.cpDisplay(StockfishReader.whiteCp({ kind: 'mate', value: 1 }, true)) === '#1');
 }
 
-console.log('\n' + passed + ' passed, ' + failed + ' failed' + (skipped ? ', ' + skipped + ' skipped' : ''));
-process.exitCode = failed ? 1 : 0;
+// ---------------------------------------------------------------- Lichess sync: one game from the API
+{
+  // Luke has Black against the computer and walks into Qxf7#. Lichess sends the evals
+  // from White's side, one per ply, the clock in centiseconds, and its judgment and best move.
+  const api = { id: 'abcd1234', rated: true, speed: 'blitz', perf: 'blitz', createdAt: 1000, lastMoveAt: 2000, status: 'mate', winner: 'white',
+    players: { white: { aiLevel: 5 }, black: { user: { name: 'Luke' }, rating: 1900, ratingDiff: -6, analysis: { acpl: 31, accuracy: 74, blunder: 1 } } },
+    pgn: '[Event "Rated blitz game"]\n\n1. e4 e5 2. Qh5 Nc6 3. Bc4 Nf6 4. Qxf7# 1-0',
+    analysis: [{ eval: 30 }, { eval: 25 }, { eval: 0 }, { eval: 20 }, { eval: 20 },
+               { mate: 1, best: 'g7g6', variation: 'g6 Qf3', judgment: { name: 'Blunder', comment: 'Checkmate is now unavoidable.' } }],
+    clocks: [18003, 18003, 17500, 17700], clock: { initial: 180, increment: 2 }, opening: { eco: 'C20', name: "King's Pawn Game: Wayward Queen Attack", ply: 3 } };
+  const g = Data.normalizeLichess(api, 'luke');
+  check('lichess: the side with the handle (any case) is mine; the computer is named by its level',
+    g.myColor === 'b' && g.myName === 'Luke' && g.oppName === 'Stockfish L5' && g.score === 0 && g.result === '1-0',
+    [g.myColor, g.myName, g.oppName, g.score, g.result].join(' '));
+  check('lichess: the moves come from the PGN, every one', g.moves.map(m => m.san).join(' ') === 'e4 e5 Qh5 Nc6 Bc4 Nf6 Qxf7#',
+    g.moves.map(m => m.san).join(' '));
+  const nf6 = g.moves[5];
+  check('lichess: a mate in the analysis is the +-10000 eval and the mate count, with the judgment and best move',
+    nf6.evalAfter === 10000 && nf6.mateAfter === 1 && nf6.judgment === 'Blunder' && nf6.serverBest === 'g7g6' && nf6.serverLine === 'g6 Qf3',
+    JSON.stringify({ e: nf6.evalAfter, m: nf6.mateAfter, j: nf6.judgment, b: nf6.serverBest }));
+  check('lichess: plies past the analysis have no eval; ordinary ones have no mate', g.moves[6].evalAfter === undefined &&
+    g.moves[2].evalAfter === 0 && g.moves[2].mateAfter === null, g.moves[6].evalAfter + ' / ' + g.moves[2].evalAfter);
+  check('lichess: clocks are read in seconds, only as far as they go', g.moves[2].clock === 175 && g.moves[3].clock === 177 &&
+    g.moves[4].clock === undefined && g.clockInitial === 180 && g.clockIncrement === 2, g.moves.map(m => m.clock).join());
+  check('lichess: my analysis summary, the opening and the rating change are kept',
+    g.analysed && g.acpl === 31 && g.accuracy === 74 && g.oppAcpl === null && JSON.stringify(g.counts) === '{"inaccuracy":0,"mistake":0,"blunder":1}' &&
+    g.eco === 'C20' && g.openingPly === 3 && g.myRating === 1900 && g.oppRating === undefined && g.ratingDiff === -6 && g.url === 'https://lichess.org/abcd1234',
+    JSON.stringify([g.acpl, g.counts, g.eco, g.openingPly, g.ratingDiff]));
+  const errs = Analysis.mineErrors([g]);
+  check('lichess: ...and mining reads it: Nf6 into a mate in one is a blunder, Lichess\'s move the answer',
+    errs.length === 1 && errs[0].played === 'Nf6' && errs[0].severity === 'blunder' && errs[0].best === 'g6' && errs[0].judgment === 'Blunder',
+    errs.map(e => e.played + ' ' + e.severity + ' ' + e.best).join());
+  const bare = Data.normalizeLichess({ id: 'x2', players: { white: { user: { name: 'luke' } }, black: {} }, moves: 'e4 e5 Nf3' }, 'luke');
+  check('lichess: a game sent as bare moves with no winner is a draw against an anonymous player, not analysed',
+    bare.moves.length === 3 && bare.score === 0.5 && bare.result === '1/2-1/2' && bare.oppName === 'Anonymous' && !bare.analysed && bare.counts === null,
+    [bare.moves.length, bare.score, bare.oppName].join(' '));
+  const broken = Data.normalizeLichess({ id: 'x3', players: { white: { user: { name: 'luke' } }, black: {} }, moves: 'e4 e5 Ke3' }, 'luke');
+  check('lichess: moves that cannot be played leave the game with none, rather than a wrong half', broken.moves.length === 0, broken.moves.length);
+}
+
+// ---------------------------------------------------------------- local storage: only this app's keys
+{
+  const mem = {};
+  globalThis.localStorage = {
+    get length() { return Object.keys(mem).length; }, key: i => Object.keys(mem)[i],
+    getItem: k => (k in mem ? mem[k] : null), setItem: (k, v) => { mem[k] = String(v); }, removeItem: k => { delete mem[k]; }
+  };
+  mem['other:app'] = '1';
+  Data.Store.set('games', [1, 2]); Data.Store.set('settings', { hour: 7 });
+  check('store: values go in under "dvor:" as JSON and come back', mem['dvor:games'] === '[1,2]' && Data.Store.get('settings').hour === 7);
+  check('store: keys() lists this app\'s keys only, without the prefix', Data.Store.keys().sort().join() === 'games,settings', Data.Store.keys().join());
+  Data.Store.del('games');
+  check('store: del() removes the key, and get() then gives the default', !('dvor:games' in mem) && Data.Store.get('games', 'none') === 'none' &&
+    mem['other:app'] === '1');
+  mem['dvor:bad'] = '{not json';
+  check('store: a value that is not JSON reads as the default', Data.Store.get('bad', 42) === 42);
+  delete globalThis.localStorage;
+}
+
+// ---------------------------------------------------------------- the Stockfish reader: stopping, and failing to start
+(async () => {
+  const posted = [];
+  let terminated = 0;
+  class SilentWorker {   // answers "isready" and nothing else: a read stays in hand
+    postMessage(cmd) { posted.push(cmd); if (cmd === 'isready') setTimeout(() => this.onmessage({ data: 'readyok' }), 1); }
+    terminate() { terminated++; }
+  }
+  const realWorker = globalThis.Worker;
+  globalThis.Worker = SilentWorker;
+  const r = new StockfishReader.Reader('/* engine */');
+  await r.start();
+  const inHand = r.read(Chess.START, { movetime: 50, multipv: 3 }), waiting = r.read(Chess.START, { movetime: 50 });
+  check('reader: a read asking for three lines sets MultiPV before it searches',
+    posted.indexOf('setoption name MultiPV value 3') > -1 && posted.indexOf('setoption name MultiPV value 3') < posted.indexOf('go movetime 50'),
+    posted.join(' | '));
+  r.terminate();   // what becomes of the two reads is test/regress.js's check
+  check('reader: terminate() stops the search and ends the worker', terminated === 1 && r.worker === null && !r.isReady &&
+    posted[posted.length - 1] === 'stop', terminated + ' ' + posted[posted.length - 1]);
+  await r.start();
+  check('reader: ...and start() afterwards makes a new worker', r.isReady && r.worker instanceof SilentWorker);
+
+  class BrokenWorker { postMessage() { setTimeout(() => this.onerror({ message: 'Uncaught SyntaxError' }), 1); } terminate() {} }
+  globalThis.Worker = BrokenWorker;
+  const broken = new StockfishReader.Reader('not javascript');
+  const started = broken.start().then(() => 'started', e => e.message);
+  const queued = broken.read(Chess.START).then(() => 'read', e => e.message);
+  const res = await Promise.all([started, queued]);
+  check('reader: a worker that fails to start rejects start() and every read waiting on it, saying why',
+    res[0] === 'Stockfish did not start: Uncaught SyntaxError' && res[1] === res[0] && broken.queue.length === 0, res.join(' | '));
+  globalThis.Worker = class { constructor() { throw new Error('Workers are blocked'); } };
+  const blocked = await new StockfishReader.Reader('x').start().then(() => 'started', e => e.message);
+  check('reader: a browser that refuses the worker rejects start()', blocked === 'Workers are blocked', blocked);
+
+  // Two lines asked for: Stockfish's info lines come in any order, the reader returns them by rank.
+  class TwoLineWorker {
+    postMessage(cmd) {
+      const say = (l, t) => setTimeout(() => this.onmessage({ data: l }), t);
+      if (cmd === 'isready') say('readyok', 1);
+      if (cmd.startsWith('go')) {
+        say('info depth 10 multipv 2 score cp 15 pv d2d4 d7d5', 2);
+        say('info depth 10 multipv 1 score mate 2 pv e2e4 e7e5', 3);
+        say('bestmove e2e4', 4);
+      }
+    }
+    terminate() {}
+  }
+  globalThis.Worker = TwoLineWorker;
+  const two = new StockfishReader.Reader('x');
+  await two.start();
+  const read = await two.read(Chess.START.replace(' w ', ' b '), { multipv: 2 });
+  check('reader: several lines come back best first, from White' + "'" + 's side, the top one as the reading',
+    read.lines.length === 2 && read.lines[0].pv[0] === 'e2e4' && read.lines[1].cp === -15 && read.mate === -2 && read.best === 'e2e4' && read.depth === 10,
+    JSON.stringify(read.lines.map(l => [l.pv[0], l.cp, l.mate])));
+
+  // Rating history: Lichess refusing, or the network failing, is an empty history, not an error.
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = () => Promise.resolve({ ok: false, status: 404 });
+  const refused = await Data.fetchRatingHistory('nobody');
+  globalThis.fetch = () => Promise.reject(new Error('offline'));
+  const offline = await Data.fetchRatingHistory('nobody');
+  globalThis.fetch = () => Promise.resolve({ ok: true, json: () => Promise.resolve([{ name: 'Blitz', points: [] }]) });
+  const ok = await Data.fetchRatingHistory('somebody');
+  globalThis.fetch = realFetch;
+  check('rating history: refused or offline reads as no history; an answer is passed through',
+    Array.isArray(refused) && !refused.length && Array.isArray(offline) && !offline.length && ok[0].name === 'Blitz', JSON.stringify([refused, offline, ok]));
+  globalThis.Worker = realWorker;
+})().catch(e => check('reader: the checks ran to the end', false, e.stack)).then(() => {
+  console.log('\n' + passed + ' passed, ' + failed + ' failed' + (skipped ? ', ' + skipped + ' skipped' : ''));
+  process.exitCode = failed ? 1 : 0;
+});

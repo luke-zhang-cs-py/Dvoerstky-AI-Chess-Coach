@@ -196,6 +196,16 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     const turn = out.narrative.find(l => /further/i.test(l)) || '';
     check('coach: one further loss is called "One further"', /^One further/.test(turn), turn);
   }
+  {
+    // October 2026 coverage round: the homework said "Drill positional until you stop needing
+    // to calculate it" -- "positional" (a quiet move was best) is no pattern to drill.
+    const errs = [{ gameId: 'p', phase: 'middlegame', moveNo: 20, cpLoss: 250, motifs: ['positional'] },
+                  { gameId: 'p', phase: 'middlegame', moveNo: 25, cpLoss: 150, motifs: ['unclassified', 'pin'] }];
+    const hw = Coach.summarizeGame({ id: 'p', myColor: 'w' }, {}, errs, null).homework;
+    const drills = hw.filter(h => /^Drill /.test(h));
+    check('coach: homework drills only real patterns, never "positional" or "unclassified"',
+          drills.length === 1 && /^Drill pin /.test(drills[0]), drills.join(' | '));
+  }
 
   // ---------------------------------------------------------------- mistakes, judged by winning chances
   {
@@ -309,6 +319,17 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     r.clear();
     const d = await Promise.all([dropped, queued]);
     check('reader: clear() drops the queue and the position in hand', d[0] === null && d[1] === null, JSON.stringify(d));
+    // October 2026 coverage round: terminate() left the read in hand pending for ever --
+    // clear() waits for its "bestmove", and a terminated worker sends none.
+    answers.w = [];   // this time the worker never answers the search
+    const t = new SR.Reader('/* engine */');
+    await t.start();
+    const inHand = t.read(f0, { movetime: 100 }), behind = t.read(f1, { movetime: 100 });
+    await sleep(20);
+    t.terminate();
+    const ends = await Promise.race([Promise.all([inHand, behind]), sleep(500).then(() => 'still pending')]);
+    check('reader: terminate() resolves the read in hand and the queue, rather than leaving them pending',
+          Array.isArray(ends) && ends[0] === null && ends[1] === null, JSON.stringify(ends));
     globalThis.Worker = realWorker;
   }
 

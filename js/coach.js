@@ -156,7 +156,9 @@
     else if (entries.length < 3) narrative.push('You justified only ' + entries.length + ' moves. The transcript is the exercise; a game reviewed without it is a game watched, not studied.');
 
     var homework = [];
-    motifList.slice(0, 2).forEach(function (m) {
+    // "positional" (a quiet move was best) and "unclassified" name no pattern to drill,
+    // as the plan's motif drills and the scout report already leave them out.
+    motifList.filter(function (m) { return m !== 'positional' && m !== 'unclassified'; }).slice(0, 2).forEach(function (m) {
       homework.push('Drill ' + m + ' until you stop needing to calculate it. It cost you material in this game alone.');
     });
     if (turning.length) {

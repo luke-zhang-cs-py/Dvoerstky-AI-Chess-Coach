@@ -149,8 +149,11 @@
     this.queue.splice(0).forEach(function (j) { j.reject(err); });
   };
 
+  /* clear() leaves the position in hand to resolve when its "bestmove" arrives; a
+     terminated worker sends none, so that read resolves null here instead of never. */
   Reader.prototype.terminate = function () {
     this.clear();
+    if (this.current) { this.current.resolve(null); this.current = null; }
     if (this.worker) this.worker.terminate();
     this.worker = null; this.ready = null; this.isReady = false;
   };

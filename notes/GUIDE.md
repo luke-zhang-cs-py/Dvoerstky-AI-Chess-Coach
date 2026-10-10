@@ -223,7 +223,7 @@ js/stockfish-reader.js  Stockfish in a Web Worker: UCI parsing, an ordered read 
 js/vendor/          Stockfish.js 10.0.2 (GPL-3.0), wrapped as a string so file:// can run it
 js/ui.js            all seven workspaces
 test/               Node suites: perft.js, rules.js, eng.js (engine), an.js (analysis), integration.js,
-                    spar.js (sparring), regress.js, titled.js, coach.js, app.js (PGN import, mining,
+                    spar.js (sparring), regress.js, titled.js, coach.js, app.js (PGN import, sync, mining,
                     calendar); ui_check.py (the UI in a real browser); dist_check.py (the single-file
                     build on its own); engine_gauntlet.py (the engine over UCI, refereed by
                     python-chess); and coverage_report.py
@@ -250,7 +250,8 @@ for t in test/*.js; do [ "$t" = test/tactics.js ] || node "$t" || break; done
 audits, written to fail on the code before its fix; `notes/CODE_AUDIT_2026-10.md` writes the
 audits up, including the one check that did not fail there until it was tightened.
 `titled.js` covers the titled-player comparison, `coach.js` the written-verdict rubric and
-the API call, and `app.js` PGN import, mistake mining and the calendar.
+the API call, and `app.js` PGN import, the Lichess sync format, mistake mining, the calendar,
+local storage and the Stockfish reader's lifecycle.
 
 **The time zone matters for two checks.** "14 days across the clock change" (regress.js)
 and "02:00 on the day the clocks go forward" (app.js) need a zone with daylight saving, so
@@ -324,4 +325,8 @@ python test/coverage_report.py --out coverage.html
 
 `coverage_report.py` runs every Node suite and the browser check under V8's own block
 coverage and merges them, so a line counts as covered if any test ran it. Chromium drops
-a page's coverage when it reloads, so the browser check snapshots it before each reload.
+a page's coverage when it reloads, so the browser check snapshots it before each reload,
+and measures each fresh page it opens until that page closes. Offsets are read from the
+files byte for byte, so a Windows checkout with CRLF endings measures the same as CI.
+On 10 October 2026: 99.96% of 4,756 lines (every line but the two after "Delete
+everything" reloads the page) and 678 of 681 functions.
