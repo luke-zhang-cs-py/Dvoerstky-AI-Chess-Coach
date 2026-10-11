@@ -466,7 +466,7 @@
           clockFrac = mv.clock / game.clockInitial;
           timePressure = clockFrac < 0.15;
         }
-        var bestUci = mv.serverBest || null;
+        var bestUci = typeof mv.serverBest === 'string' && mv.serverBest ? mv.serverBest : null;   // stored data is untrusted
         var bestSan = null;
         if (bestUci) {   // fenBefore has loaded once already (phaseOf above), and a move that is not one is null
           var tmp = new Chess(mv.fenBefore);

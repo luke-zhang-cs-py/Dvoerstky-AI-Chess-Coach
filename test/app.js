@@ -101,6 +101,14 @@ const sans = g => g.moves.map(m => m.san).join(' ');
     mild.length === 1 && mild[0].severity === 'inaccuracy', mild.map(e => e.severity).join());
   moves[6].evalAfter = 10000; moves[6].mateAfter = 3;   // a slower mate is still a mate
   check('mining: a slower mate is not an error', Analysis.mineErrors([{ id: 'm', myColor: 'w', moves: moves, analysed: true, date: Date.now() }]).length === 0);
+  // Stored games are untrusted: a serverBest that is no string (a hand-edited or damaged save) must not throw; the line stands in.
+  moves[6].evalAfter = 800; moves[6].mateAfter = null; moves[6].serverLine = 'Qxf7# Kxf7';
+  const odd = [5, { a: 1 }, ['x'], true].map(b => {
+    moves[6].serverBest = b;
+    try { const e = Analysis.mineErrors([{ id: 'm', myColor: 'w', moves: moves, analysed: true, date: Date.now() }]); return e.length === 1 ? e[0].best : 'n=' + e.length; }
+    catch (err) { return 'threw ' + err.message; }
+  });
+  check('mining: a serverBest that is not a string does not throw, and the line is the answer', odd.every(b => b === 'Qxf7#'), odd.join(' | '));
 }
 
 // ---------------------------------------------------------------- book and tree: games set up from a position
@@ -336,6 +344,21 @@ const sans = g => g.moves.map(m => m.san).join(' ');
   Data.Store.set('cards', { a: 1 }); Data.Store.wipe(); Data.Store.set('games', [3]); Data.Store.set('cards', { b: 2 });
   check('store: after wipe() nothing of this app is left, and a late save writes nothing', Data.Store.keys().length === 0,
         Data.Store.keys().join());
+  // The reload did not happen (a cancelled "Leave site?"): resume() lets the page that lives on save again.
+  Data.Store.resume(); Data.Store.set('games', [4]);
+  check('store: resume() after a reload that never came lets saves through again', mem['dvor:games'] === '[4]', mem['dvor:games']);
+  // A storage that cannot be listed or cleared: wipe() says so, and does not block later saves.
+  {
+    const real = globalThis.localStorage;
+    globalThis.localStorage = { get length() { throw new Error('denied'); }, key: real.key, getItem: real.getItem, setItem: real.setItem, removeItem: real.removeItem };
+    let failed1;
+    try { failed1 = Data.Store.wipe(); } catch (e) { failed1 = 'threw ' + e.message; }
+    const blockedAfterFail = Data.Store.wiped === true;
+    globalThis.localStorage = real;
+    Data.Store.set('games', [5]);
+    check('store: wipe() on a storage that cannot be listed reports failure and leaves saves working',
+      failed1 === false && !blockedAfterFail && mem['dvor:games'] === '[5]', failed1 + ' ' + blockedAfterFail + ' ' + mem['dvor:games']);
+  }
   // A storage that refuses even to delete (a locked-down browser) is not an error.
   globalThis.localStorage = { removeItem() { throw new Error('denied'); } };
   let delThrew = false;
@@ -366,6 +389,12 @@ const sans = g => g.moves.map(m => m.san).join(' ');
     posted[posted.length - 1] === 'stop', terminated + ' ' + posted[posted.length - 1]);
   await r.start();
   check('reader: ...and start() afterwards makes a new worker', r.isReady && r.worker instanceof SilentWorker);
+  // The new worker is at MultiPV 1 again: a read asking for 3 lines must send the setoption again.
+  posted.length = 0;
+  r.read(Chess.START, { movetime: 50, multipv: 3 });
+  check('reader: after terminate() a read with MultiPV 3 sends setoption again (the new worker is back at 1)',
+    posted.indexOf('setoption name MultiPV value 3') > -1, posted.join(' | '));
+  r.terminate();
 
   class BrokenWorker { postMessage() { setTimeout(() => this.onerror({ message: 'Uncaught SyntaxError' }), 1); } terminate() {} }
   globalThis.Worker = BrokenWorker;

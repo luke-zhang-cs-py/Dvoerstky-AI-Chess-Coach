@@ -337,7 +337,10 @@ never ran, and partial lines are listed), statements, branches (both arms of eve
 the implicit else included, every `?:` arm, every `&&`/`||`/`??` operand, every case),
 V8's blocks, and functions. Statements, branches and the function list come from the
 TypeScript parser (VS Code carries one; `--ts` names another), because V8 does not list
-a function nested in one that never ran. Offsets are V8's UTF-16 units into the file as
+a function nested in one that never ran. With no parser the report prints a `PROBLEM` line
+and exits 1 (so does a `--ts` that is not a file); `--no-ts` asks for the report without
+statements and branches. `--node` may be VS Code's `Code.exe`: it is then run with
+`ELECTRON_RUN_AS_NODE=1`. Offsets are V8's UTF-16 units into the file as
 it is on disk, so a CRLF checkout measures the same as CI. Two things V8 does not tell:
 a statement after a call that threw counts as run, and a function V8 counts per function
 only (code reused from its compilation cache) has none of its lines credited; the browser
@@ -347,8 +350,8 @@ functions as run, and the figure before this round, 99.96% of lines, was really 
 code lines, 21 functions), and on a scratch copy given a function no test calls, which it
 reported as never called, with its nested function, its lines, statements and branches.
 
-On 10 October 2026: all 4,713 lines and all 681 functions; 4,162 of 4,181 statements
-(99.5%), 3,383 of 3,523 branches (96.0%), 2,725 of 2,848 V8 blocks (a few `ui.js`
+On 11 October 2026: all 4,731 lines and all 684 functions; 4,178 of 4,201 statements
+(99.5%), 3,405 of 3,547 branches (96.0%), 2,738 of 2,864 V8 blocks (a few `ui.js`
 branches that depend on timing come and go between runs). Outside `ui.js` all that is
 left is the defensive `catch` around the motif classifier in `mineErrors`, and the
 equal-names arm of the titled players' sort (no two have the same name). The rest is in

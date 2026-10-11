@@ -569,7 +569,8 @@ with sync_playwright() as p:
         for pat, fn in (routes or {}).items(): c.route(pat, fn)
         page = c.new_page()
         page.on("pageerror", lambda e: errors.append(str(e)))
-        page.on("dialog", lambda d: d.accept())
+        page.accept_dialogs = lambda d: d.accept()   # kept, so a check can swap in its own answer
+        page.on("dialog", page.accept_dialogs)
         if COV:
             # Each fresh page is its own document: measure it too, and take its coverage
             # before the context closes (or the page reloads), or it goes unrecorded.
@@ -974,6 +975,29 @@ with sync_playwright() as p:
     check("settings: the confirmed delete has emptied storage when it reloads, and reloads once", at_reload == [[]], at_reload)
     c2.close()
 
+    # Delete everything where the reload does not happen (a "Leave site?" prompt answered Stay): the page lives on, and its
+    # saves must work again, or the app reports success on every later save while writing nothing.
+    c2, p2 = fresh({"games": [blunder_game("w1", 1)]})
+    left_prompts = []
+    p2.remove_listener("dialog", p2.accept_dialogs)
+    def stay_on_page(d):
+        if d.type == "beforeunload": left_prompts.append(1); d.dismiss()
+        else: d.accept()
+    p2.on("dialog", stay_on_page)
+    p2.evaluate("window.addEventListener('beforeunload', e => { e.preventDefault(); e.returnValue = ''; })")
+    p2.evaluate("window.__tab = 'still here'")
+    p2.click("button.tab[data-tab=settings]"); p2.click("#wipe")
+    emptied = p2.evaluate("Object.keys(localStorage).filter(k => k.startsWith('dvor:'))") == []
+    try:
+        p2.wait_for_function("() => { Data.Store.set('probe', 1); return localStorage.getItem('dvor:probe') !== null; }", timeout=8000, polling=250)
+        saves_again = True
+    except Exception:
+        saves_again = False
+    check("settings: if the reload after Delete everything does not happen, the page can save again",
+          left_prompts and emptied and p2.evaluate("window.__tab") == "still here" and saves_again,
+          "prompts %d, emptied %s, saves %s" % (len(left_prompts), emptied, saves_again))
+    c2.close()
+
     # ---- October 2026 coverage round, second part: what the page did that no check watched
     def stored(page, key, default=None):
         return page.evaluate("k => JSON.parse(localStorage.getItem('dvor:' + k) || 'null')", key) or default
@@ -1144,13 +1168,21 @@ with sync_playwright() as p:
     empty_queue = p2.inner_text("#flash")
     concept = p2.evaluate("[...document.querySelectorAll('#egPick option')].filter(o => o.disabled).map(o => o.value)")
     p2.select_option("#egPick", "lucena"); p2.click("[data-start=endgame]")
+    # Watch the engine's answer arrive: the wrapper settles just before the app's own handler, which runs a tick later.
+    p2.evaluate("""() => { window.__replied = false; const real = Engine.prototype.rankAsync;
+      Engine.prototype.rankAsync = function () { return real.apply(this, arguments).then(r => { window.__replied = true; return r; }); }; }""")
     p2.click('#drillBoard [data-sq="d1"]'); p2.click('#drillBoard [data-sq="d4"]')
     p2.click("#drillQuit")
-    p2.wait_for_timeout(2000)   # past the engine's 1.4 s budget: its reply arrives with no drill to land in
+    DRILL_STATE = "() => [document.querySelector('#drillBoard').innerHTML, document.querySelector('#drillFeedback').innerHTML].join('|')"
+    state_at_quit = p2.evaluate(DRILL_STATE)
+    p2.wait_for_function("window.__replied === true", timeout=20000)   # the reply is in, with no drill to land in
+    p2.evaluate("() => new Promise(r => setTimeout(r, 0))")           # and the app's handler for it has run
+    state_after = p2.evaluate(DRILL_STATE)
     home = not p2.evaluate("document.querySelector('#drillHome').classList.contains('hidden')")
     check("drills: the Strength tab's Drill works as the visit's first drill; an empty pattern queue says so; concepts cannot be set up",
           first_drill and "Nothing in that queue right now." in empty_queue and "wrong-bishop" in concept, "%s | %s" % (empty_queue[:40], concept))
-    check("drills: quitting an endgame while the engine replies leaves the drills page, and the late reply lands nowhere", home)
+    check("drills: quitting an endgame while the engine replies leaves the drills page, and the late reply lands nowhere",
+          home and "Engine replying" in state_at_quit and state_after == state_at_quit, state_after[-120:])
     c2.close()
 
     # The app started after the page has loaded (a script added late): it still boots.
@@ -1269,6 +1301,52 @@ with sync_playwright() as p:
     check("scout: errors made with under fifteen percent of the clock are counted, and clock discipline comes first",
           "100% of their errors come with under fifteen percent of the clock left." in pressed and "Clock discipline before anything else" in pressed,
           pressed[pressed.find("%") - 20:][:120])
+    c2.close()
+    # Stored data is untrusted. A serverBest that is no string must not stop the app starting (mining threw on it), and the
+    # game's own line stands in for it; a track day that is no calendar day ("2026-13-01") must not write NaN into the page.
+    errs_before = len(errors)
+    odd_best = []
+    for i, best in enumerate((5, {"a": 1}, ["x"], True)):
+        g = blunder_game("ob%d" % i, 1 + i); g["m"][2][3] = best
+        odd_best.append(g)
+    c2, p2 = fresh({"games": odd_best})
+    p2.click("button.tab[data-tab=strength]")
+    n_loaded = p2.evaluate("document.querySelectorAll('#revGame option').length")
+    mined = p2.evaluate("document.querySelector('#panel-strength').innerText")
+    check("storage: games whose serverBest is a number, an object, a list or true load, and mining falls back to the line (Nf3)",
+          len(errors) == errs_before and n_loaded == 4 and "Nf3" in mined, "%d games, %d new errors" % (n_loaded, len(errors) - errs_before))
+    c2.close()
+    errs_before = len(errors)
+    bad_days = ["2026-13-01", "2026-02-31", "2026-00-10", "2026-1-5", 20261301, None]
+    marks = [{"day": d, "measured": 1900, "moe": 50, "n": 4} for d in bad_days] +             [{"day": day_ago(d), "measured": 1900 + (60 - d) * 2, "moe": 50, "rating": None, "n": 4} for d in (60, 30)]
+    c2, p2 = fresh({"games": weak, "track": marks})
+    p2.click("button.tab[data-tab=strength]")
+    strength_text = " ".join(p2.inner_text("#strengthBody").split())
+    kept_days = p2.evaluate("(JSON.parse(localStorage.getItem('dvor:track')) || []).map(p => p.day)")
+    check("trajectory: a track day that is no calendar day (month 13, February 31...) is dropped, and the page has no NaN",
+          "NaN" not in strength_text and "trajectory towards 2200" in strength_text.lower() and not any(d in kept_days for d in bad_days[:4]) and len(errors) == errs_before,
+          "%s | %s" % (kept_days, strength_text[strength_text.lower().find("trajectory"):][:80]))
+    c2.close()
+
+    # A promotion picker left open when the position changes (Takeback, the next card) must go with the old position.
+    c2, p2 = fresh({})
+    promo = p2.evaluate("""() => {
+      const el = document.createElement('div'); document.body.appendChild(el);
+      const moves = [];
+      const bd = new Board(el, { fen: '7k/P7/8/8/8/8/8/K7 w - - 0 1', onMove: (m, g) => moves.push(m.fromSq + m.toSq) });
+      const open = () => { el.querySelector('[data-sq=a7]').click(); el.querySelector('[data-sq=a8]').click(); return !!el.querySelector('.promo-pick'); };
+      const out = { opened: open() };
+      bd.setFen('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1');
+      out.afterSetFen = !!el.querySelector('.promo-pick') || bd.pendingPromotion !== null;
+      bd.setFen('7k/P7/8/8/8/8/8/K7 w - - 0 1');
+      out.reopened = open();
+      bd.setGame(new Chess('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'));
+      out.afterSetGame = !!el.querySelector('.promo-pick') || bd.pendingPromotion !== null;
+      out.moves = moves;
+      return out;
+    }""")
+    check("board: setFen and setGame close a promotion picker left open for the old position",
+          promo["opened"] and promo["reopened"] and not promo["afterSetFen"] and not promo["afterSetGame"] and promo["moves"] == [], promo)
     c2.close()
     check("page: no uncaught errors throughout", not errors, errors[:3])
 

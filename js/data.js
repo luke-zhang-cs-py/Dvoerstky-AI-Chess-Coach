@@ -17,7 +17,18 @@
       catch (e) { console.warn('storage full', e); return false; }
     },
     del: function (k) { try { localStorage.removeItem(Store.key(k)); } catch (e) {} },
-    wipe: function () { Store.wiped = true; Store.keys().forEach(Store.del); },
+    // Deletes every key of this app, and only if that worked blocks later saves (see set) until resume() or a reload.
+    // Returns whether storage is now empty: a storage that cannot be listed or deleted from leaves the flag off.
+    wipe: function () {
+      try {
+        Store.keys().forEach(function (k) { localStorage.removeItem(Store.key(k)); });
+        if (Store.keys().length) return false;
+      } catch (e) { return false; }
+      Store.wiped = true;
+      return true;
+    },
+    // The reload after wipe() did not happen (a cancelled "Leave site?" prompt): the page lives on and must save again.
+    resume: function () { Store.wiped = false; },
     keys: function () {
       var out = [];
       for (var i = 0; i < localStorage.length; i++) {

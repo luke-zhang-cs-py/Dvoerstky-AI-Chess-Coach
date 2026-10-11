@@ -1,7 +1,7 @@
 """Coverage of js/ from every test CI runs, merged: lines, statements, branches, V8 blocks
 and functions. No npm packages needed. Exits 1 if any run failed or recorded nothing.
 
-    python test/coverage_report.py [--node path/to/node] [--ts path/to/typescript.js] [--out coverage.html] [--keep]
+    python test/coverage_report.py [--node path/to/node] [--ts path/to/typescript.js | --no-ts] [--out coverage.html] [--keep]
 
 What is measured: every .js file under js/, at any depth, except js/vendor/ (Stockfish:
 third-party, shipped as one generated string). A file no run loaded is listed at 0%.
@@ -48,12 +48,20 @@ The figures:
 Statements, branches and functions come from the TypeScript parser (any typescript.js:
 --ts, COVERAGE_TS, require('typescript'), or the copy inside VS Code, whose Code.exe also
 runs as Node). V8 alone does not list a function nested in one that never ran. Without the
-parser, statements and branches are skipped and functions are V8's list, and it says so.
+parser the report does not run: it prints a PROBLEM line and exits 1, because a report with
+no statements and branches in it must not be mistaken for a full one. --no-ts asks for
+exactly that report (lines, blocks and V8's function list only) and says so in its output. A --ts
+(or COVERAGE_TS) that is not a file is an error too. --node may be VS Code's Code.exe or any
+Electron binary: the child processes then get ELECTRON_RUN_AS_NODE=1, so it runs as Node.
 Offsets are V8's, UTF-16 units into the file as it is on disk, so a checkout with CRLF
 endings measures the same as CI.
 """
 import bisect, glob, html, json, os, re, shutil, subprocess, sys, tempfile
 from urllib.parse import unquote
+
+# The report names files with characters a Windows console cannot print: write what it can, not a traceback.
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.normpath(os.path.join(HERE, ".."))
@@ -61,6 +69,7 @@ JS = os.path.join(ROOT, "js")
 VENDOR = os.path.join(JS, "vendor")
 arg = lambda k, d=None: sys.argv[sys.argv.index(k) + 1] if k in sys.argv else d
 NODE = arg("--node", shutil.which("node") or "node")
+NO_TS = "--no-ts" in sys.argv
 OUT = arg("--out", os.path.join(ROOT, "coverage.html"))
 NOT_CI = {"tactics.js"}   # scored by the clock, asserts nothing, not run by CI
 SUITES = sorted(s for s in glob.glob(os.path.join(HERE, "*.js")) if os.path.basename(s) not in NOT_CI)
@@ -81,9 +90,20 @@ def norm(url):
     return key_of(p if re.match(r"^[A-Za-z]:", p) else "/" + p)
 
 # ---------------------------------------------------------------- collecting the runs
+def is_electron(path):
+    """Code.exe, electron.exe and their siblings run as Node only with ELECTRON_RUN_AS_NODE=1."""
+    return os.path.splitext(os.path.basename(path))[0].lower() in ("code", "code - insiders", "electron", "codium")
+
+def node_env(cmd, env):
+    return dict(env, ELECTRON_RUN_AS_NODE="1") if cmd and cmd[0] == NODE and is_electron(NODE) else env
+
 def run(cmd, env, timeout):
+    env = node_env(cmd, env)
     try:
         return subprocess.run(cmd, cwd=ROOT, env=env, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout)
+    except FileNotFoundError:
+        raise SystemExit("PROBLEM: cannot run %r: no such program. Put node on PATH, or pass --node path/to/node "
+                         "(VS Code's Code.exe works too)." % cmd[0])
     except subprocess.TimeoutExpired as e:   # a hung run is a failed run, reported like any other
         out = lambda b: (b.decode("utf-8", "replace") if isinstance(b, bytes) else b or "")
         return subprocess.CompletedProcess(cmd, 124, out(e.stdout), out(e.stderr) + "\n(stopped after %d s)" % timeout)
@@ -299,10 +319,12 @@ process.stdout.write(JSON.stringify(out));
 
 def find_ts():
     p = arg("--ts", os.environ.get("COVERAGE_TS"))
-    if p: return p if os.path.exists(p) else None
+    if p:
+        if not os.path.isfile(p): raise SystemExit("PROBLEM: the TypeScript parser %r (from --ts or COVERAGE_TS) is not a file." % p)
+        return p
     try:
         r = subprocess.run([NODE, "-e", "process.stdout.write(require.resolve('typescript'))"], cwd=ROOT,
-                           capture_output=True, text=True, timeout=60)
+                           env=node_env([NODE], os.environ), capture_output=True, text=True, timeout=60)
         if r.returncode == 0 and os.path.exists(r.stdout.strip()): return r.stdout.strip()
     except Exception: pass
     d = os.path.dirname(os.path.abspath(NODE))
@@ -312,8 +334,7 @@ def find_ts():
         if hits: return hits[-1]
     return None
 
-def inventory(files, tmp):
-    ts = find_ts()
+def inventory(files, tmp, ts):
     if not ts: return None, None
     tmp = os.path.join(tmp, "ast.js")
     with open(tmp, "w", encoding="utf-8") as f: f.write(AST_JS)
@@ -417,9 +438,17 @@ def main():
         else: shutil.rmtree(tmp, ignore_errors=True)
 
 def report(tmp):
+    if shutil.which(NODE) is None and not os.path.isfile(NODE):
+        raise SystemExit("PROBLEM: node not found (%r). Put node on PATH, or pass --node path/to/node "
+                         "(VS Code's Code.exe works too)." % NODE)
+    ts = None if NO_TS else find_ts()   # before the runs: no parser is known in seconds, not after twenty minutes
+    if not ts and not NO_TS:
+        print("PROBLEM: no TypeScript parser found, so statements and branches cannot be measured. "
+              "Pass --ts path/to/typescript.js (or set COVERAGE_TS), or --no-ts for a report without them.")
+        sys.exit(1)
     runs = collect(tmp)
     files = measured_files()
-    inv, ts = inventory(files, tmp)
+    inv, ts = inventory(files, tmp, ts)
     keys = {key_of(p): p for p in files}
     per_file, problems = {k: [] for k in keys}, []
     for label, code, scripts, _ in runs:
@@ -454,7 +483,7 @@ def report(tmp):
         if gaps:
             print("\n" + r["file"])
             for t, v in gaps: print("  %s: %s" % (t, ", ".join(map(str, v))))
-    if not ts: print("\nno TypeScript parser found (--ts): statements and branches skipped, functions are V8's list")
+    if not ts: print("\n--no-ts: statements and branches skipped, functions are V8's list")
     print("\nparser:", ts or "none")
     print("runs:", ", ".join("%s (exit %d, %d records)" % (l, c, len(s)) for l, c, s, _ in runs))
     print("report:", OUT)

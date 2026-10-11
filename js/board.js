@@ -46,6 +46,7 @@
   Board.prototype.setFen = function (fen, lastMove) {
     this.game = new Chess(fen);
     this.selected = null;
+    this.pendingPromotion = null;   // a picker left open for the old position must not promote in this one
     this.lastMove = lastMove || null;
     this.render();
   };
@@ -53,6 +54,7 @@
   Board.prototype.setGame = function (game, lastMove) {
     this.game = game;
     this.selected = null;
+    this.pendingPromotion = null;
     this.lastMove = lastMove || null;
     this.render();
   };

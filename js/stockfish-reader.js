@@ -156,6 +156,7 @@
     if (this.current) { this.current.resolve(null); this.current = null; }
     if (this.worker) this.worker.terminate();
     this.worker = null; this.ready = null; this.isReady = false;
+    this.multipv = 1;   // a fresh worker starts at MultiPV 1, so the next read must send setoption again
   };
 
   root.StockfishReader = { Reader: Reader, parseInfo: parseInfo, whiteCp: whiteCp, MATE: MATE };

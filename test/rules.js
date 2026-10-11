@@ -194,8 +194,16 @@ const play = (g, list) => list.forEach(s => { if (!g.move(s)) throw new Error('i
 {
   const g = new Chess();
   check('moves: a UCI move that is not legal here reads as nothing, and a promotion letter must match',
-    g.moveFromSan('e2e5') === null && new Chess('8/4P3/8/8/8/8/8/k6K w - - 0 1').moveFromSan('e7e8n').promo === Chess.KNIGHT
-    && new Chess('4k3/4P3/8/8/8/8/8/7K w - - 0 1').moveFromSan('e7e8q') === null);
+    g.moveFromSan('e2e5') === null && new Chess('4k3/4P3/8/8/8/8/8/7K w - - 0 1').moveFromSan('e7e8q') === null);
+  {
+    // Where e7e8 is legal (e8 is empty), the letter picks the piece: e7e8q is the queen move only, e7e8n the knight move only.
+    const pg = new Chess('8/4P3/8/8/8/8/8/k6K w - - 0 1');
+    const promos = pg.generate().filter(m => m.fromSq === 'e7' && m.toSq === 'e8').map(m => m.promo).sort().join();
+    const q = pg.moveFromSan('e7e8q'), n = pg.moveFromSan('e7e8n'), r = pg.moveFromSan('e7e8r');
+    check('moves: e7e8 is legal here with four promotions, and the letter picks one: q the queen, n the knight, r the rook',
+      promos === [Chess.KNIGHT, Chess.BISHOP, Chess.ROOK, Chess.QUEEN].sort().join() &&
+      q && q.promo === Chess.QUEEN && n && n.promo === Chess.KNIGHT && r && r.promo === Chess.ROOK && q !== n, promos);
+  }
   // A comment or NAG before the first move has no move to go with; a lone "[" or ")" is noise.
   const p = Chess.parsePGN('{About the game} $3 1. e4 [ ] ) e5 2. Nf3 *');
   check('pgn: a comment or NAG before the first move, a stray "[" or ")", do not stop or shift the moves',

@@ -34,9 +34,15 @@
     if (!g.id) g.id = 'g' + Math.random().toString(36).slice(2, 10);
     return g;
   }
+  // 'YYYY-MM-DD' that is a day on the calendar: "2026-13-01" and "2026-02-31" are not, and would make dates NaN.
+  function isRealDay(s) {
+    if (typeof s !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+    var t = Date.parse(s);
+    return isFinite(t) && new Date(t).toISOString().slice(0, 10) === s;
+  }
   function cleanTrack(list) {
     return (Array.isArray(list) ? list : []).filter(function (p) {
-      return isObj(p) && /^\d{4}-\d{2}-\d{2}$/.test(p.day) && isFinite(+p.measured);
+      return isObj(p) && isRealDay(p.day) && isFinite(+p.measured);
     }).map(function (p) {
       return { day: p.day, measured: +p.measured, moe: numOrNull(p.moe) || 0, rating: numOrNull(p.rating),
                acpl: numOrNull(p.acpl), n: numOrNull(p.n) || 0 };
@@ -186,7 +192,7 @@
           san: mv.san, ply: i + 1, color: mv.color === Chess.WHITE ? 'w' : 'b',
           fenBefore: before, fenAfter: g.fen(),
           evalAfter: row[1] === '' ? null : +row[1],
-          judgment: row[2] || null, serverBest: row[3] || null,
+          judgment: row[2] || null, serverBest: typeof row[3] === 'string' && row[3] ? row[3] : null,
           clock: row[4] === '' ? null : +row[4], serverLine: row[5] || null,
           mateAfter: row[6] == null || row[6] === '' ? null : +row[6]
         });
@@ -399,6 +405,7 @@
       sx += x; sy += y; sxx += x * x; sxy += x * y;
     });
     var denom = n * sxx - sx * sx;   // above 0: three or more marks over at least 14 days are not all on one day
+    if (!isFinite(denom) || denom <= 0) return null;
     var slope = (n * sxy - sx * sy) / denom;        // elo per day
     var intercept = (sy - slope * sx) / n;
     var fitted = intercept + slope * span;
@@ -1837,8 +1844,10 @@
     });
     $('#wipe').addEventListener('click', function () {
       if (!confirm('Delete all local data for this app?')) return;
-      Store.wipe();
+      if (!Store.wipe()) { flash('Could not delete everything: this browser refused to clear its stored data.', 'bad'); return; }
       location.reload();
+      // A reload that was cancelled leaves this page running; until then late saves are held back, after it they work again.
+      setTimeout(Store.resume, 2500);
     });
   }
 

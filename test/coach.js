@@ -45,6 +45,12 @@ const reply = (text, ctx) => Coach.respond({ score: Coach.scoreJustification(tex
     three.narrative.some((l) => l === '2 further costly moves came at moves 12 and 15. They came after the first one: the damage in this game is sequential, not independent.'),
     JSON.stringify(three.narrative));
 
+  // Three notes with no rubric scores name no weakest habit: no line "undefined" in the narrative.
+  const unscored = Coach.summarizeGame({ id: 'g3' }, { 1: { score: {} }, 2: { score: {} }, 3: { score: {} } }, [], null);
+  check('summary: three notes with no scores have no weakest habit, and no narrative line that is not text',
+    unscored.weakest === null && unscored.narrative.every((l) => typeof l === 'string' && l !== 'undefined'),
+    JSON.stringify([unscored.weakest, unscored.narrative]));
+
   const prompt = Coach.buildPrompt({ myColor: 'b', result: '0-1' }, { 3: { san: 'Nf6', cpLoss: 80 } }, null, null);
   check('prompt: no opening name, no engine move, no note: each has a plain stand-in',
     prompt.includes('Game: unknown opening, student played Black, result 0-1.') && prompt.includes('- Move 2 (Nf6): "" [cost 80cp; engine preferred ?]')
