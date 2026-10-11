@@ -74,7 +74,7 @@ passant out of a pin, castling into check, underpromotion) with counts taken fro
 one from python-chess. In Chromium: 196 browser checks and 6 on the single-file build. Every
 suite exits non-zero on a failure, which is what CI reads. Every bug fixed has a check that
 failed on the code before its fix. The browser checks run the real Stockfish. Together
-they run all 4,732 code lines in `js/` and all 687 of its functions, 99.8% of its 4,197
+they run all 4,732 code lines in `js/` and all 688 of its functions, 99.8% of its 4,198
 statements and 99.7% of its 3,471 branches (`test/coverage_report.py`, 11 October 2026;
 the guide lists what is left and why).
 

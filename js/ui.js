@@ -1869,9 +1869,10 @@
     $('#wipe').addEventListener('click', function () {
       if (!confirm('Delete all local data for this app?')) return;
       if (!Store.wipe()) { flash('Could not delete everything: this browser refused to clear its stored data.', 'bad'); return; }
+      // A reload that was cancelled leaves this page running; late saves stay held back until the page is used again.
+      // Not a timer: a timer also fires in a reload that is only slow, and its saves wrote the deleted data back.
+      ['pointerdown', 'keydown'].forEach(function (t) { document.addEventListener(t, Store.resume, { capture: true, once: true }); });
       location.reload();
-      // A reload that was cancelled leaves this page running; until then late saves are held back, after it they work again.
-      setTimeout(Store.resume, 2500);
     });
   }
 

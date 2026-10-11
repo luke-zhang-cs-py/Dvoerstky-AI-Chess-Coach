@@ -976,7 +976,9 @@ with sync_playwright() as p:
     c2.close()
 
     # Delete everything where the reload does not happen (a "Leave site?" prompt answered Stay): the page lives on, and its
-    # saves must work again, or the app reports success on every later save while writing nothing.
+    # saves must work again once it is used, or the app reports success on every later save while writing nothing. Time
+    # alone must not let them through: a reload that is only slow passes the same time, and its late saves would put the
+    # deleted data back (CI saw it: a timer resumed saves and the games and cards were there after the reload).
     c2, p2 = fresh({"games": [blunder_game("w1", 1)]})
     left_prompts = []
     p2.remove_listener("dialog", p2.accept_dialogs)
@@ -988,14 +990,14 @@ with sync_playwright() as p:
     p2.evaluate("window.__tab = 'still here'")
     p2.click("button.tab[data-tab=settings]"); p2.click("#wipe")
     emptied = p2.evaluate("Object.keys(localStorage).filter(k => k.startsWith('dvor:'))") == []
-    try:
-        p2.wait_for_function("() => { Data.Store.set('probe', 1); return localStorage.getItem('dvor:probe') !== null; }", timeout=8000, polling=250)
-        saves_again = True
-    except Exception:
-        saves_again = False
-    check("settings: if the reload after Delete everything does not happen, the page can save again",
-          left_prompts and emptied and p2.evaluate("window.__tab") == "still here" and saves_again,
-          "prompts %d, emptied %s, saves %s" % (len(left_prompts), emptied, saves_again))
+    probe = "() => { Data.Store.set('probe', 1); return localStorage.getItem('dvor:probe') !== null; }"
+    p2.wait_for_timeout(3000)   # longer than the 2.5 s timer this replaced
+    held = not p2.evaluate(probe)
+    p2.click("button.tab[data-tab=strength]")
+    saves_again = p2.evaluate(probe)
+    check("settings: if the reload after Delete everything does not happen, saves wait for the page to be used, then work",
+          left_prompts and emptied and p2.evaluate("window.__tab") == "still here" and held and saves_again,
+          "prompts %d, emptied %s, held %s, saves %s" % (len(left_prompts), emptied, held, saves_again))
     c2.close()
 
     # ---- October 2026 coverage round, second part: what the page did that no check watched
