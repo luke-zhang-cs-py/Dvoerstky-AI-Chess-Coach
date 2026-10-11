@@ -350,13 +350,16 @@ functions as run, and the figure before this round, 99.96% of lines, was really 
 code lines, 21 functions), and on a scratch copy given a function no test calls, which it
 reported as never called, with its nested function, its lines, statements and branches.
 
-On 11 October 2026: all 4,731 lines and all 684 functions; 4,178 of 4,201 statements
-(99.5%), 3,405 of 3,547 branches (96.0%), 2,738 of 2,864 V8 blocks (a few `ui.js`
-branches that depend on timing come and go between runs). Outside `ui.js` all that is
-left is the defensive `catch` around the motif classifier in `mineErrors`, and the
-equal-names arm of the titled players' sort (no two have the same name). The rest is in
-`ui.js` and is not reachable from the page as it is: guards for an element the page
-always has, buttons that are hidden whenever their guard would matter (grading with no
-card, Next with no review), a board move while the board is locked, the Stockfish cache
-filling up, a read failing after a newer game started, and `||` defaults for settings
-that `cleanSettings` has already filled. They are left as guards, not tested by contrivance.
+On 11 October 2026: all 4,731 lines and all 687 functions; 4,187 of 4,195 statements
+(99.8%), 3,457 of 3,469 branches (99.7%), 2,925 of 2,934 V8 blocks. Outside `ui.js` all
+that is left is the equal-names arm of the titled players' sort (no two have the same
+name). In `ui.js`, none of what is left is reachable from the page as it is: guards for an
+element the page always has (a tab's panel, the titled sheet's body, its status line and
+a checkbox it has just redrawn, the Stockfish panel, the masthead, the window note, the
+day's Mark button), Refresh pressed while it is disabled, grading while the grade buttons
+are hidden or disabled, an endgame move after the study was quit (its board is hidden), and
+the Stockfish cache passing 400 readings, which takes about 200 moves read in one visit.
+They are left as guards, not tested by contrivance. Fallbacks that could never be taken
+(`||` defaults for settings that `cleanSettings` has already filled, for lists the code
+that builds them always fills, and checks that a value its only callers always pass is
+there) were removed instead.

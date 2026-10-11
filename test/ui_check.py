@@ -1348,6 +1348,477 @@ with sync_playwright() as p:
     check("board: setFen and setGame close a promotion picker left open for the old position",
           promo["opened"] and promo["reopened"] and not promo["afterSetFen"] and not promo["afterSetGame"] and promo["moves"] == [], promo)
     c2.close()
+
+    # ---- October 2026 coverage round, third part: the branches no check took, each with what it does
+    # A finished review keeps its buttons on screen. Commit after "Game complete" scored an empty text for the
+    # last move and wrote it over that move's justification (and over the session summary).
+    c2, p2 = fresh({"games": [blunder_game("rc1", 1)]})
+    p2.click("button.tab[data-tab=review]"); p2.click("#revStart")
+    for i in range(3):
+        p2.fill("#revText", "Candidates for move %d: Nf3 and d4, the line Nf3 Nc6 d4, about equal." % (i + 1))
+        p2.click("#revSubmit"); p2.click("#revNext")
+    complete = p2.inner_text("#revPrompt")
+    p2.click("#revSubmit"); p2.click("#revNext"); p2.click("#revSkip")
+    last_note = (stored(p2, "transcripts", {}).get("rc1") or {}).get("4", {}).get("text", "")
+    check("review: Commit, Next and Skip after the game is complete leave the last justification and the summary alone",
+          complete.lower() == "game complete." and last_note.startswith("Candidates for move 3") and "session summary" in p2.inner_text("#revFeedback").lower()
+          and len(errors) == 0, "%r | %r" % (last_note[:30], p2.inner_text("#revFeedback")[:40]))
+    c2.close()
+    # A restored backup's settings are shown where they are set. The form kept the old values, so Save settings
+    # put them back over the restored ones; Sync used the restored speed while its list showed the old one.
+    c2, p2 = fresh({"games": [blunder_game("rs1", 1)]})
+    p2.click("button.tab[data-tab=settings]")
+    p2.set_input_files("#importFile", write_tmp("settings-backup.json", json.dumps({"settings": {
+        "minutes": 45, "hour": 7, "endgameTier": 3, "boardTheme": "green", "pieceSet": "letters", "showCoords": False,
+        "perf": "blitz", "uiScale": "1.25", "windowDays": 30}})))
+    p2.wait_for_function("document.querySelector('#flash').innerText.trim() === 'Backup restored.'", timeout=10000)
+    shown = p2.evaluate("""() => ({ minutes: document.querySelector('#setMinutes').value, hour: document.querySelector('#setHour').value,
+      tier: document.querySelector('#setTier').value, theme: document.querySelector('#setBoardTheme').value,
+      pieces: document.querySelector('#setPieceSet').value, coords: document.querySelector('#setShowCoords').checked,
+      perf: document.querySelector('#syncPerf').value, scale: document.querySelector('#uiScale').value,
+      scaleOn: getComputedStyle(document.documentElement).getPropertyValue('--ui-scale').trim(),
+      window: document.querySelector('#winLabel').textContent })""")
+    p2.click("#saveSettings")
+    kept = stored(p2, "settings", {})
+    check("settings: a restored backup's settings show in the form, beside Sync and on the slider, and Save keeps them",
+          shown == {"minutes": "45", "hour": "7", "tier": "3", "theme": "green", "pieces": "letters", "coords": False, "perf": "blitz",
+                    "scale": "1.25", "scaleOn": "1.25", "window": "Last 30 days"}
+          and [kept.get(k) for k in ("minutes", "hour", "endgameTier", "boardTheme", "pieceSet", "showCoords", "perf", "windowDays")]
+              == [45, 7, 3, "green", "letters", False, "blitz", 30], "%s | %s" % (shown, kept))
+    c2.close()
+
+    # Stored data the app did not write as it is: a score that is no result's, no date, a start position that does
+    # not load, moves that are not a list, a clock with a fraction; settings with a bad value, an unknown theme
+    # and text size, letters for pieces, and no window yet (saved before the window existed, on blitz).
+    damaged = blunder_game("dmg1", 1); damaged.update({"score": 7, "fen": "not a position"}); del damaged["date"]; del damaged["endedAt"]
+    no_moves = blunder_game("dmg2", 2); no_moves["m"] = "not a list"; del no_moves["endedAt"]
+    clocked = blunder_game("dmg3", 3); clocked.update({"clockInitial": 300, "clockIncrement": 0})
+    for row, clk in zip(clocked["m"], (290, 288, 20.4, 286, 15)): row[4] = clk
+    c2, p2 = fresh({"games": [damaged, no_moves, clocked], "settings": {"minutes": "lots", "hour": 19, "endgameTier": 2, "perf": "blitz",
+                    "boardTheme": "Not A Theme!", "pieceSet": "letters", "uiScale": "huge"},
+                    "myRatings": {"user": "bob", "rows": {"blitz": [1900, 500, 0, None, None, None]}}})
+    loaded = p2.evaluate("""() => ({ minutes: document.querySelector('#setMinutes').value, theme: document.documentElement.getAttribute('data-board-theme'),
+      pieces: document.querySelector('#setPieceSet').value, scale: document.querySelector('#uiScale').value,
+      perf: document.querySelector('#syncPerf').value, settings: JSON.parse(localStorage.getItem('dvor:settings')) })""")
+    clock_card = " ".join(p2.inner_text("#strengthBody").split())
+    you_row = " ".join(p2.inner_text("#titledBody .cmp-row.you").split())
+    p2.type("#handle", "b"); p2.wait_for_timeout(200)   # a key that is not Enter does not sync
+    typed = [p2.evaluate("document.querySelector('#flash').classList.contains('hidden')"), p2.is_disabled("#sync")]
+    p2.click("button.tab[data-tab=settings]")
+    with p2.expect_download() as dl:
+        p2.click("#exportAll")
+    saved = {g["id"]: g for g in json.load(open(dl.value.path(), encoding="utf-8"))["games"]}
+    check("stored settings: a bad budget, an unknown theme and text size fall back; letters for pieces are kept",
+          loaded["minutes"] == "60" and loaded["theme"] == "cyan" and loaded["pieces"] == "letters" and loaded["scale"] == "1", loaded)
+    check("stored settings from before the window move to all time, and a speed other than rapid stays",
+          loaded["settings"].get("windowDays") == 0 and loaded["settings"].get("perf") == "blitz" and loaded["perf"] == "blitz", loaded["settings"])
+    d1, d2, d3 = saved.get("dmg1", {}), saved.get("dmg2", {}), saved.get("dmg3", {})
+    check("stored games: a score that is no result's is a draw, a missing date is today, a missing end is its start",
+          d1.get("score") == 0.5 and abs(d1.get("date", 0) - time.time() * 1000) < 120000 and d1.get("endedAt") == d1.get("date")
+          and d2.get("endedAt") == d2.get("date") == no_moves["date"], [(d.get("score"), d.get("date"), d.get("endedAt")) for d in (d1, d2)])
+    check("stored games: a start position that does not load is the initial one; moves that are not a list are none",
+          "fen" not in d1 and [r[0] for r in d1.get("m", [])] == ["e4", "e5", "Ba6", "bxa6", "Nf3"] and d2.get("m") == [], [d1.get("m"), d2.get("m")])
+    check("stored games: clocks come back, are saved to the second, and errors under time pressure are counted and called out",
+          [r[4] for r in d3.get("m", [])] == [290, 288, 20, 286, 15] and "Errors under time pressure 100%" in clock_card
+          and "More than a quarter of your errors arrive with under fifteen percent of the clock" in clock_card,
+          [[r[4] for r in d3.get("m", [])], clock_card[clock_card.find("Errors under"):][:40]])
+    check("titled: ratings stored for an account while no handle is set are not shown as yours",
+          "sync to add your Lichess ratings" in you_row and "bob" not in you_row, you_row)
+    check("handle box: typing a letter is not Enter, so nothing is synced", typed == [True, False], typed)
+    c2.close()
+
+    # Titled players from stored data: a speed that is none, your ratings under the handle in other capitals, a live
+    # player with no title, one with no established rating; one speed with and without a public history; a refresh
+    # that fails after an earlier one worked.
+    live = {"date": "2026-10-05", "players": {"EricRosen": {"t": None, "s": {"blitz": [2544, 9309, 0, 2500, 2600, None]}}, "Fins": {"t": "IM", "s": {}}}}
+    c2, p2 = fresh({"games": [blunder_game("ti%d" % i, 1 + i) for i in range(3)], "handle": "luke", "titledSpeed": "warp", "titledLive": live,
+                    "titledPicks": ["Kingscrusher-YouTube", "CheckRaiseMate", "EricRosen", "Fins"],
+                    "myRatings": {"user": "LUKE", "rows": {"blitz": [1900, 500, 0, None, None, None]}}},
+                   routes={"**/lichess.org/api/users": lambda r: r.fulfill(status=503, body="")})
+    p2.click("button.tab[data-tab=strength]")
+    speed = p2.evaluate("document.querySelector('#cmpSpeed').value")
+    sheet_all = " ".join(p2.inner_text("#titledBody").split())
+    eric_tags = p2.evaluate("[...document.querySelectorAll('#titledBody .cmp-name')].filter(n => /Eric Rosen/.test(n.innerText)).map(n => n.querySelector('.tag').innerText)")
+    p2.select_option("#cmpSpeed", "blitz")
+    rows = p2.evaluate("Object.fromEntries([...document.querySelectorAll('#titledBody tbody tr')].map(r => [r.cells[0].innerText, [r.cells[1].innerText, r.cells[2].innerText]]))")
+    p2.click("#cmpRefresh")
+    p2.wait_for_function("/Could not reach Lichess/.test(document.querySelector('#cmpStatus').innerText)", timeout=10000)
+    check("titled: a stored speed that is none is all speeds; ratings saved under LUKE are luke's",
+          speed == "all" and "Lichess, LUKE" in sheet_all, "%s | %s" % (speed, sheet_all[:80]))
+    check("titled: a live player with no title shows '?', and one with no established rating is named as such",
+          eric_tags == ["?"] and "No established rating on Lichess: John Bartholomew." in sheet_all, "%s | %s" % (eric_tags, sheet_all[-120:]))
+    check("titled: one speed shows the current rating with the last game where the history is public, and says when it is not",
+          rows.get("Tryfon Gavriel", ["", ""])[1].endswith("now 2334, last played 2026-09-19") and rows.get("Nate Solon", ["", ""])[1].endswith("history not public")
+          and rows.get("Eric Rosen", ["", ""]) == ["?", "2500–2600 now 2544"], rows)
+    check("titled: a failed refresh after an earlier one keeps the last fetched ratings and says so",
+          "Showing the last fetched ratings." in p2.inner_text("#cmpStatus"), p2.inner_text("#cmpStatus"))
+    c2.close()
+
+    # Sync: a window of 30 days asks for 300 games and says so when there are none; games whose speed Lichess does
+    # not name take the rating of rapid; mostly analysed games are no warning; their clocks are saved.
+    asked = []
+    def lichess_rows(route):
+        asked.append(route.request.url)
+        if "luke2" not in route.request.url: return route.fulfill(status=200, body="", content_type="application/x-ndjson")
+        rows = [json.dumps({"id": "nsp%d" % i, "rated": True, "speed": "rapid", "createdAt": NOW - DAY * (i + 1), "status": "resign", "winner": "white",
+                "moves": "e4 e5 Nf3", "clock": {"initial": 600, "increment": 0}, "clocks": [60000, 59950, 59025], "analysis": [{"eval": 30}, {"eval": 30}, {"eval": 35}],
+                "players": {"white": {"user": {"name": "luke2"}, "rating": 1800, "analysis": {"acpl": 20}}, "black": {"user": {"name": "opp"}, "rating": 1800}}})
+                for i in range(2)]
+        route.fulfill(status=200, body="\n".join(rows) + "\n", content_type="application/x-ndjson")
+    c2, p2 = fresh({"settings": {"windowDays": 30, "minutes": 60, "hour": 19, "endgameTier": 2}},
+                   routes={"**/lichess.org/api/games/user/**": lichess_rows,
+                           "**/lichess.org/api/user/luke2": lambda r: r.fulfill(status=200, body='{"perfs":{"rapid":{"rating":1850,"games":300}}}', content_type="application/json")})
+    p2.fill("#handle", "luke"); p2.click("#sync")
+    p2.wait_for_function("/No rated/.test(document.querySelector('#flash').innerText)", timeout=10000)
+    empty_note = " ".join(p2.inner_text("#flash").split())
+    p2.fill("#handle", "luke2"); p2.click("#sync")
+    p2.wait_for_function("/Loaded 2 games/.test(document.querySelector('#flash').innerText)", timeout=10000)
+    loaded_note, loaded_cls = p2.inner_text("#flash").strip(), p2.evaluate("document.querySelector('#flash').className")
+    check("sync: a 30-day window asks for 300 games, and an empty answer says 'in the last 30 days' with no loaded games to mention",
+          len(asked) >= 1 and "max=300" in asked[0] and "for luke in the last 30 days." in empty_note and "unchanged" not in empty_note,
+          "%s | %s" % (asked[:1], empty_note[:120]))
+    check("sync: games Lichess sends with no speed name take your rapid rating; mostly analysed is no warning; clocks are kept to the second",
+          stored(p2, "lichessRating") == 1850 and loaded_note == "Loaded 2 games, 2 with server analysis." and "warn" not in loaded_cls
+          and [r[4] for r in stored(p2, "games", [{}])[0].get("m", [])] == [600, 600, 590],
+          "%s | %s | %s" % (stored(p2, "lichessRating"), loaded_note, loaded_cls))
+    c2.close()
+
+    # Sparring, with a scripted mirror where the point is what the page does with a given reply.
+    SCRIPTED = """() => { window.__script = [];
+      Sparring.Mirror.prototype.chooseMove = function (g) {
+        const s = window.__script.shift(), r = typeof s === 'string' ? { san: s } : s, m = g.moveFromSan(r.san);
+        return Promise.resolve({ move: m, san: g.san(m), fromBook: false, intendedLoss: r.loss || 0, blunderTurn: !!r.lapse });
+      }; }"""
+    def spar_play(page, line, my="w"):
+        # Plays line (SAN from the start) to its end: your moves clicked on the board, the mirror's from its script.
+        return page.evaluate("""async ([line, my]) => {
+          const count = () => document.querySelectorAll('#sparMoves .mv').length;
+          const wait = (f) => new Promise((res, rej) => { const t0 = Date.now(); (function poll() {
+            if (f()) res(); else if (Date.now() - t0 > 20000) rej(new Error('stuck after ' + count() + ' moves')); else setTimeout(poll, 15); })(); });
+          const g = new Chess();
+          for (let i = 0; i < line.length; i++) {
+            const m = g.moveFromSan(line[i]);
+            if (count() <= i && (i % 2 === 0) === (my === 'w')) {
+              await wait(() => count() === i);
+              document.querySelector('#sparBoard [data-sq=' + m.fromSq + ']').click();
+              document.querySelector('#sparBoard [data-sq=' + m.toSq + ']').click();
+            }
+            g.makeMove(m);
+          }
+          await wait(() => count() === line.length);
+          return document.querySelector('#sparStatus').innerText;
+        }""", [line, my])
+    def spar_game(page, line, my="w", script=None):
+        page.evaluate("s => { window.__script = s; }", script if script is not None else [s for i, s in enumerate(line) if (i % 2 == 0) != (my == "w")])
+        page.select_option("#sparColor", my); page.click("#sparStart")
+        return spar_play(page, line, my)
+    pgn_result = lambda page: re.search(r'\[Result "([^"]*)"\]', page.evaluate("document.querySelector('#sparPgn').value")).group(1)
+    c2, p2 = fresh({"games": [blunder_game("sp%d" % i, 1 + i) for i in range(2)]})
+    p2.click("button.tab[data-tab=sparring]"); p2.uncheck("#sfOn"); p2.uncheck("#sparCoach")
+    status0 = p2.inner_text("#sparStatus")
+    p2.click('#sparBoard [data-sq="e2"]'); p2.click('#sparBoard [data-sq="e4"]'); p2.click("#sparResign")
+    untouched = p2.evaluate("[!!document.querySelector('#sparBoard [data-sq=e2] .piece'), !!document.querySelector('#sparBoard [data-sq=e4] .piece'), document.querySelector('#sparMoves').innerText.trim(), document.querySelector('#sparPgn').value]")
+    check("sparring: before a game, a move on the board and Resign do nothing",
+          untouched == [True, False, "", ""] and p2.inner_text("#sparStatus") == status0, "%s | %r" % (untouched, p2.inner_text("#sparStatus")))
+    p2.select_option("#sparColor", "random")
+    colours = []
+    for roll in (0.9, 0.1):
+        p2.evaluate("r => { const real = Math.random; Math.random = () => r; document.querySelector('#sparStart').click(); Math.random = real; }", roll)
+        colours.append(p2.inner_text("#sparStatus").split(" against")[0])
+        p2.click("#sparResign"); colours.append(pgn_result(p2))
+    check("sparring: Random plays Black or White by the roll; resigning as Black is 1-0, as White 0-1",
+          colours == ["Playing as Black", "1-0", "Playing as White", "0-1"], colours)
+    p2.evaluate(SCRIPTED)
+    # Take back at once as Black, before the mirror's first move: its first move and the one the takeback asks for
+    # are both scheduled, and the second finds it is your turn. The mirror moves once, never for you.
+    p2.select_option("#sparColor", "b")
+    p2.evaluate("() => { window.__script = ['e4', 'd4']; document.querySelector('#sparStart').click(); document.querySelector('#sparTakeback').click(); }")
+    p2.wait_for_timeout(700)
+    once = p2.evaluate("[[...document.querySelectorAll('#sparMoves .mv')].map(m => m.innerText), window.__script.length, document.querySelectorAll('#sparBoard .sq.movable').length]")
+    check("sparring: a takeback before the mirror's first move as Black leaves one mirror move, and your turn",
+          once[0] == ["e4"] and once[1] == 1 and once[2] > 0, once)
+    p2.click("#sparResign")
+    won = spar_game(p2, ["e4", "f6", "d4", "g5", "Qh5#"])
+    check("sparring: mating the mirror as White is 'Checkmate. You won.' and 1-0", won.startswith("Checkmate. You won.") and pgn_result(p2) == "1-0", won[:40])
+    p2.evaluate("s => { window.__script = s; }", [{"san": "e5", "lapse": True}, {"san": "d5", "loss": 120}])
+    p2.select_option("#sparColor", "w"); p2.click("#sparStart")
+    lapse = spar_play(p2, ["a3", "e5"]); marked = p2.evaluate("[...document.querySelectorAll('#sparMoves .mv.blunder')].map(m => m.innerText)")
+    costly = spar_play(p2, ["a3", "e5", "a4", "d5"])
+    check("sparring: the mirror's deliberate lapse is said and marked; a move giving up more than 60 cp says how much",
+          lapse == "Played e5 — and that one was a deliberate lapse, at the rate you lapse." and marked == ["e5"]
+          and costly == "Played d5 (giving up 120 centipawns, within your own error band)", "%s | %s | %s" % (lapse, marked, costly))
+    loyd = ["e3", "a5", "Qh5", "Ra6", "Qxa5", "h5", "h4", "Rah6", "Qxc7", "f6", "Qxd7+", "Kf7", "Qxb7", "Qd3", "Qxb8", "Qh7", "Qxc8", "Kg6", "Qe6"]
+    stale = spar_game(p2, loyd); stale_result = pgn_result(p2)
+    # Two long games found by a seeded random walk over js/core.js's moves: 100 knight moves with no position three
+    # times, and captures down to king and knight against king.
+    fifty_line = ["Nf3","Nh6","Na3","Na6","Nh4","Nf5","Nf3","Nc5","Nb5","Nb3","Ng5","Na5","Ne6","Ng3","Nc5","Nh5","Nb3","Ng3","N3d4","Nh5",
+                  "Nf3","Ng3","Nh4","Nh5","Nf3","Nc6","Nc3","Nd4","Nd5","Nb3","Nf4","Nf6","Nd3","Ng8","Nf4","Nf6","Nd4","Na5","Nb5","Nc4",
+                  "Na3","Ne3","Nd3","Nf5","Nb1","Nh5","Nc3","Nf6","Ne5","Nd5","Nf3","Nfe3","Ne5","Nf6","Na4","Neg4","Nc3","Nh5","Nb5","Nh6",
+                  "Nc4","Ng3","Nba3","Ng4","Na5","Ne4","Nb5","Nd6","Na3","Nh6","N3c4","Nb5","Ne5","Ng8","Ng6","Nh6","Ne5","Ng4","Ng6","Nd6",
+                  "Nc6","Nf6","Nb8","Ng8","Nf4","Ne4","Nh3","Ng3","Ng5","Nf6","Na6","Nfh5","Ne6","Ne4","Ng5","Neg3","Nh3","Ne4","Nc5","Nc3"]
+    fifty = spar_game(p2, fifty_line)
+    bare_line = ["d4","Nf6","e3","c5","dxc5","Qa5+","Nd2","Qxa2","Rxa2","h6","Rxa7","Rxa7","Ba6","bxa6","Nb3","e6","Qxd7+","Bxd7","Bd2","Bxc5",
+                 "Nxc5","Nh5","Nxe6","a5","Nxg7+","Nxg7","Bxa5","Rxa5","b4","Ra3","Nh3","Rxe3+","fxe3","Bxh3","gxh3","Na6","O-O","Nxb4","Rxf7","Nxc2",
+                 "Rxg7","Nxe3","Rg6","Nd5","Rxh6","Rxh6","Kf1","Rxh3","Kg1","Rxh2","Kxh2"]
+    bare = spar_game(p2, bare_line)
+    check("sparring: stalemate, the fifty-move rule and bare kings each end the game as a draw, and say which",
+          stale.startswith("Stalemate.") and stale_result == "1/2-1/2" and fifty.startswith("Drawn by the fifty-move rule.")
+          and bare.startswith("Drawn: neither side can mate.") and pgn_result(p2) == "1/2-1/2", "%s | %s | %s" % (stale[:30], fifty[:30], bare[:30]))
+    spar_game(p2, ["b4", "a5", "Nf3", "axb4", "Nd4", "b3", "Nf3", "bxa2", "Ng1", "axb1=Q"])
+    check("sparring: the mirror's promotion is played and written down", "5. Ng1 axb1=Q *" in p2.evaluate("document.querySelector('#sparPgn').value"),
+          p2.evaluate("document.querySelector('#sparPgn').value")[-40:])
+    p2.check("#sparCoach")
+    spar_game(p2, ["e4", "e5", "Nf3", "Qg5"])
+    p2.wait_for_function("/only move/.test(document.querySelector('#sparAdvice').innerText)", timeout=20000)
+    only = " ".join(p2.inner_text("#sparAdvice").split())
+    spar_game(p2, ["f3", "e5", "Kf2", "Qh4+"])
+    p2.wait_for_function("document.querySelectorAll('#sparAdvice .side').length === 2", timeout=20000)
+    in_check = p2.evaluate("[...document.querySelectorAll('#sparAdvice .side')].map(s => s.innerText.replace(/\\s+/g, ' ').trim())")
+    in_check_note = p2.inner_text("#sparAdvice")
+    spar_game(p2, ["e4"], my="b")
+    p2.wait_for_function("document.querySelectorAll('#sparAdvice .side').length === 2", timeout=20000)
+    as_black = p2.evaluate("[...document.querySelectorAll('#sparAdvice .side')].map(s => [!!s.querySelector('.tomove'), s.querySelectorAll('.cand').length])")
+    check("advice: a queen left en prise has one move, and the advice names it", "Nxg5 looks like the only move." in only, only[-120:])
+    check("advice: in check there is no threat to read for the other side", in_check[1].endswith("No candidates.") and "If it were" not in in_check_note, in_check)
+    check("advice: playing Black, Black is the side to move and both sides get candidates", as_black == [[False, 3], [True, 3]], as_black)
+    c2.close()
+
+    # Stockfish, a stand-in worker with no principal variation and a score four pawns for Black: its best move is the
+    # line; the house engine is the more hopeful for White; the mirror's move that is Stockfish's own costs nothing.
+    FAKE_SF2 = r"""var fen = '';
+    onmessage = function (e) {
+      var c = String(e.data), sm = / searchmoves (\S+)/.exec(c), white = fen.split(' ')[1] === 'w';
+      if (c === 'uci') postMessage('uciok');
+      else if (c === 'isready') postMessage('readyok');
+      else if (c.indexOf('position fen ') === 0) fen = c.slice(13);
+      else if (c.indexOf('go') === 0) {
+        postMessage('info depth 12 multipv 1 score cp ' + (white ? -400 : 400));
+        postMessage('bestmove ' + (sm ? sm[1] : white ? 'e2e4' : 'e7e5'));
+      }
+    };"""
+    c2, p2 = fresh({"games": [blunder_game("fs%d" % i, 1 + i) for i in range(2)]})
+    p2.evaluate("src => { window.STOCKFISH_SOURCE = src; }", FAKE_SF2); p2.evaluate(SCRIPTED)
+    p2.click("button.tab[data-tab=sparring]"); p2.evaluate("s => { window.__script = s; }", ["e5"])
+    p2.select_option("#sparColor", "w"); p2.click("#sparStart")
+    p2.wait_for_function("/House engine/.test(document.querySelector('#sfNow').innerText)", timeout=20000)
+    sf_now = " ".join(p2.inner_text("#sfNow").split())
+    spar_play(p2, ["e4", "e5"])
+    p2.wait_for_function("/Mirror, engine moves/.test(document.querySelector('#sfLog').innerText)", timeout=20000)
+    sf_log = " ".join(p2.inner_text("#sfLog").split())
+    check("stockfish: with no line, its best move is what it plays; four pawns for Black is the house engine more hopeful for White",
+          "Stockfish plays e4" in sf_now and re.search(r"House engine: \S+ — more hopeful for White by \d+\.\d\d\.", sf_now) is not None, sf_now)
+    check("stockfish: the mirror's move that is Stockfish's own costs nothing, which is what it meant to give up",
+          "Mirror, engine moves: 0 cp lost per move over 1 read, where it meant to give up 0. The house engine reads the position about as Stockfish does." in sf_log,
+          sf_log[:200])
+    c2.close()
+    # A Stockfish that scores the start as the house engine does: the two agree. (The page's own house engine, asked
+    # first, gives the number; the stand-in answers with it.)
+    c2, p2 = fresh({"games": [blunder_game("fa%d" % i, 1 + i) for i in range(2)]})
+    house = p2.evaluate("async () => (await Sparring.dualAdvice(new Engine(), new Chess(), { depth: 3, budget: 800 })).evalCp")
+    p2.evaluate("src => { window.STOCKFISH_SOURCE = src; }", "onmessage = function (e) { var c = String(e.data);"
+                " if (c === 'uci') postMessage('uciok'); else if (c === 'isready') postMessage('readyok');"
+                " else if (c.indexOf('go') === 0) { postMessage('info depth 12 multipv 1 score cp %d pv e2e4'); postMessage('bestmove e2e4'); } };" % house)
+    p2.click("button.tab[data-tab=sparring]"); p2.select_option("#sparColor", "w"); p2.click("#sparStart")
+    p2.wait_for_function("/House engine/.test(document.querySelector('#sfNow').innerText)", timeout=20000)
+    agree = " ".join(p2.inner_text("#sfNow").split())
+    check("stockfish: a reading within 30 cp of the house engine's is called agreement", "agrees with Stockfish." in agree, agree)
+    c2.close()
+    # A read dropped when Stockfish is switched off, which then fails, is not Stockfish failing: on again, it reads.
+    FAKE_SF3 = r"""var fen = '', timer = null;
+    onmessage = function (e) {
+      var c = String(e.data), white = fen.split(' ')[1] === 'w';
+      if (c === 'uci') postMessage('uciok');
+      else if (c === 'isready') postMessage('readyok');
+      else if (c.indexOf('position fen ') === 0) fen = c.slice(13);
+      else if (c === 'stop') { clearTimeout(timer); throw new Error('the stopped read failed'); }
+      else if (c.indexOf('go') === 0) timer = setTimeout(function () {
+        postMessage('info depth 9 multipv 1 score cp 25 pv ' + (white ? 'e2e4' : 'e7e5'));
+        postMessage('bestmove ' + (white ? 'e2e4' : 'e7e5'));
+      }, 700);
+    };"""
+    c2, p2 = fresh({"games": [blunder_game("fo%d" % i, 1 + i) for i in range(2)]}); errs_before = len(errors)
+    p2.evaluate("src => { window.STOCKFISH_SOURCE = src; }", FAKE_SF3)
+    p2.click("button.tab[data-tab=sparring]"); p2.uncheck("#sparCoach")
+    p2.select_option("#sparColor", "w"); p2.click("#sparStart"); p2.wait_for_timeout(300)
+    p2.uncheck("#sfOn"); p2.wait_for_timeout(300); p2.check("#sfOn")
+    p2.wait_for_function("/Stockfish plays|did not start/.test(document.querySelector('#sfNow').innerText)", timeout=20000)
+    worker_errors = errors[errs_before:]; del errors[errs_before:]   # the stand-in's own throw, reported as the page's: expected
+    check("stockfish: a read that fails after Stockfish was switched off does not disable it; switched on, it reads",
+          "Stockfish plays e4" in p2.inner_text("#sfNow") and all("the stopped read failed" in e for e in worker_errors),
+          "%s | %s" % (p2.inner_text("#sfNow")[:80], worker_errors))
+    c2.close()
+
+    # Drills and review on harder cards: Black to move, no opening name, short of time, no line after the move; a
+    # solution that is no move; two wrong tries; the right move at the second. Review: the 4th move, the judgments
+    # marked, a mistake with no better move known.
+    black_err = blunder_game("bk1", 1, "b"); black_err.update({"openingName": None, "clockInitial": 300, "clockIncrement": 0,
+        "m": [["e4", 30, "", "", 290, "", ""], ["e5", 30, "", "", 290, "", ""], ["Nf3", 30, "", "", 280, "", ""],
+              ["Qg5", 900, "Blunder", "b8c6", 10, "", ""], ["Nxg5", 900, "", "", 275, "", ""]]})
+    no_move = blunder_game("zz1", 2); no_move["m"][2] = ["Ba6", -300, "Blunder", "", "", "zz9 Nc6", ""]
+    judged = blunder_game("rv4", 3); judged.update({"oppName": "judged", "analysed": False,
+        "m": [["e4", "", "", "", "", "", ""], ["e5", "", "", "", "", "", ""], ["Nf3", "", "", "", "", "", ""], ["Nc6", "", "Inaccuracy", "", "", "", ""],
+              ["Bc4", "", "Mistake", "", "", "", ""], ["Bc5", "", "", "", "", "", ""], ["d3", "", "", "", "", "", ""], ["d6", "", "", "", "", "", ""],
+              ["Nc3", "", "", "", "", "", ""]]})
+    nobest = blunder_game("nb2", 4); nobest["oppName"] = "nobest"; nobest["m"][2] = ["Ba6", -300, "Blunder", "", "", "", ""]
+    unfinished = [line_game("uf%d" % i, ["c4", "c5", "Nc3"], 5 + i) for i in range(2)]
+    for g in unfinished: g.update({"result": "*", "score": None})
+    c2, p2 = fresh({"games": [black_err, no_move, judged, nobest] + unfinished})
+    p2.click("button.tab[data-tab=strength]")
+    tree = " ".join(p2.inner_text("#strengthBody").split())
+    worst_black = p2.evaluate("[...document.querySelectorAll('#strengthBody tr')].filter(r => r.querySelector('[data-jump=\"bk1:4\"]')).map(r => r.cells[1].innerText)")
+    p2.click('[data-jump="bk1:4"]')
+    prompt = " ".join(p2.evaluate("document.querySelector('#drillPrompt').textContent").split())
+    tries = []
+    for sq_from, sq_to in (("a7", "a6"), ("h7", "h6"), ("b8", "c6")):
+        p2.click('#drillBoard [data-sq="%s"]' % sq_from); p2.click('#drillBoard [data-sq="%s"]' % sq_to); p2.wait_for_timeout(100)
+        tries.append(p2.inner_text("#drillFeedback").strip())
+    suggested = p2.evaluate("[...document.querySelectorAll('#drillGrades button.primary')].map(b => b.dataset.grade)")
+    p2.click("#drillQuit"); p2.click("button.tab[data-tab=strength]"); p2.click('[data-jump="zz1:3"]')
+    board_before = p2.evaluate("document.querySelector('#drillBoard').innerHTML")
+    p2.click("#drillReveal")
+    revealed = p2.inner_text("#drillFeedback").strip()
+    pieces_same = p2.evaluate("b => { const t = document.createElement('div'); t.innerHTML = b; const at = r => [...r.querySelectorAll('.sq')].map(s => s.dataset.sq + (s.querySelector('.piece') || {}).textContent).join(); return at(t) === at(document.querySelector('#drillBoard')); }", board_before)
+    open_grades = p2.evaluate("[...document.querySelectorAll('#drillGrades button')].filter(b => !b.disabled).map(b => b.dataset.grade)")
+    check("drills: Black to move, no opening, short of time: the card says so", prompt.startswith("Black to move. Find what you missed.")
+          and "Your game, move 2," in prompt and " · " not in prompt and "You were short of time." in prompt and worst_black == ["2…"], "%s | %s" % (prompt[:160], worst_black))
+    check("drills: two wrong tries get the stronger hint, the right one at the second try suggests Hard, with no line to show",
+          tries[0] == "Not a6. Try again — or show the move, and grade the card Missed it or Hard." and tries[1] == "Not h6. Look at what your opponent is allowed to do after it."
+          and tries[2] == "Correct: Nc6." and suggested == ["2"], "%s | %s" % (tries, suggested))
+    check("drills: a stored solution that is no move is shown as written, with the board left as it was",
+          revealed == "The move was zz9. zz9 Nc6" and pieces_same and open_grades == ["0", "1"], "%r | %s | %s" % (revealed, pieces_same, open_grades))
+    check("strength: an opening line reached only in unfinished games has no result", "1. c4 2 games no result" in tree, tree[tree.find("1. c4"):][:60])
+    p2.click("#drillQuit"); p2.click("button.tab[data-tab=review]")
+    p2.evaluate("""() => { const s = document.querySelector('#revGame');
+      s.value = [...s.options].filter(o => /judged/.test(o.text))[0].value; }""")
+    p2.click("#revStart"); p2.click("#revSkip"); p2.click("#revSkip"); p2.click("#revSkip")
+    fourth = " ".join(p2.evaluate("document.querySelector('#revPrompt').textContent").split())
+    marks = p2.evaluate("[...document.querySelectorAll('#revMoves .mv')].map(m => m.innerText + ':' + m.className.replace('mv', '').trim())")
+    p2.click("#revSkip"); p2.click("#revSkip"); p2.click("#revRestart")
+    p2.evaluate("""() => { const s = document.querySelector('#revGame');
+      s.value = [...s.options].filter(o => /nobest/.test(o.text))[0].value; }""")
+    p2.click("#revStart"); p2.click("#revSkip")
+    p2.fill("#revText", "I played Ba6 to provoke b5, the line Ba6 bxa6 and I am lost."); p2.click("#revSubmit")
+    no_best_note = " ".join(p2.inner_text("#revFeedback").split())
+    check("review: the 4th of your moves is called the 4th", "You are about to play your 4th move." in fourth, fourth[:60])
+    check("review: the move list marks inaccuracies and mistakes", "Nc6:inacc" in marks and "Bc4:mistake" in marks, marks)
+    check("review: an expensive move with no better move known says what it cost, and no engine move",
+          "You played Ba6, cost 3.3 pawns." in no_best_note and "engine wanted" not in no_best_note, no_best_note[-80:])
+    c2.close()
+    # A card graded after its game went (a backup restored mid-drill) keeps the grade. It has no line: the reveal shows the move alone.
+    gone = blunder_game("gone2", 1); gone["m"][2][5] = ""
+    c2, p2 = fresh({"games": [gone]})
+    p2.click("button.tab[data-tab=strength]"); p2.click('[data-jump="gone2:3"]'); p2.click("#drillReveal")
+    bare_reveal = p2.inner_text("#drillFeedback").strip()
+    p2.click("button.tab[data-tab=settings]")
+    p2.set_input_files("#importFile", write_tmp("other-games.json", json.dumps({"games": [blunder_game("other2", 2)]})))
+    p2.wait_for_function("document.querySelector('#flash').innerText.trim() === 'Backup restored.'", timeout=10000)
+    p2.click("button.tab[data-tab=drills]"); p2.click('[data-grade="0"]')
+    kept_card = stored(p2, "cards", {}).get("gone2:3", {})
+    check("drills: a card graded after its game was replaced keeps the grade",
+          bare_reveal == "The move was Nf3." and [h.get("g") for h in kept_card.get("history", [])] == [0] and kept_card.get("lapses") == 1
+          and not p2.evaluate("document.querySelector('#drillHome').classList.contains('hidden')"), "%r | %s" % (bare_reveal, kept_card))
+    c2.close()
+
+    # Scout: a listed rating, analysed games, an opening under water as Black; then loaded as yours, the window
+    # moved to 30 days and back to all time keeps their games.
+    def scout_black(route):
+        rows = [json.dumps({"id": "sb%d" % i, "rated": True, "speed": "blitz", "perf": "blitz", "createdAt": NOW - DAY * (i + 1), "status": "resign",
+                "winner": "white", "moves": "e4 c5 Nf3 d6 d4", "clock": {"initial": 300, "increment": 0},
+                "opening": {"eco": "B50", "name": "Sicilian Defense"}, "analysis": [{"eval": 30}, {"eval": 40}, {"eval": 40}, {"eval": 45}, {"eval": 50}],
+                "players": {"white": {"user": {"name": "opp"}, "rating": 1800}, "black": {"user": {"name": "scoutb"}, "rating": 1700, "analysis": {"acpl": 40}}}})
+                for i in range(4)]
+        route.fulfill(status=200, body="\n".join(rows) + "\n", content_type="application/x-ndjson")
+    c2, p2 = fresh({}, routes={"**/lichess.org/api/games/user/scoutb**": scout_black,
+                               "**/lichess.org/api/user/scoutb": lambda r: r.fulfill(status=200, body='{"perfs":{"blitz":{"rating":1750,"games":400}}}', content_type="application/json")})
+    p2.click("button.tab[data-tab=scout]"); p2.fill("#scoutHandle", "scoutb"); p2.click("#scoutBtn")
+    p2.wait_for_selector("#scoutAdopt", timeout=10000)
+    report = " ".join(p2.inner_text("#scoutOut").split())
+    p2.click("#scoutAdopt")
+    windows = []
+    for i in (2, 9):
+        p2.evaluate("""i => { const r = document.querySelector('#winDays'); r.value = String(i); r.dispatchEvent(new Event('input')); r.dispatchEvent(new Event('change')); }""", i)
+        windows.append(" ".join(p2.inner_text("#rulerCaption").split()))
+    check("scout: the listed rating, the analysed games and an opening under water as Black are reported",
+          "against a listed rating of 1750" in report and "(4 with engine analysis)" in report and "Sicilian Defense as Black (0%)" in report, report[:240])
+    check("scout: a profile loaded as yours keeps its games as the window moves to 30 days and back to all time",
+          windows[0].startswith("Last 30 days: 4 games") and windows[1].startswith("All time: 4 games"), windows)
+    c2.close()
+
+    # Chrome and imports: no ResizeObserver; the arrow keys on the tabs; one nameless game; several games left out
+    # each way; a storage that will not clear; games older than the window; a stored theme the list does not have.
+    c2, p2 = fresh({"games": [blunder_game("ch1", 1)], "syncedDays": 30, "settings": {"windowDays": 60, "minutes": 60, "hour": 19, "endgameTier": 2, "boardTheme": "zz"}})
+    win_note = p2.inner_text("#winNote")
+    snap_page(p2)   # the page is replaced: keep what it ran
+    p2.add_init_script("delete window.ResizeObserver"); p2.reload(); p2.wait_for_timeout(500)
+    booted = p2.evaluate("[typeof ResizeObserver, document.querySelectorAll('.panel.active').length, getComputedStyle(document.documentElement).getPropertyValue('--mast-h').trim()]")
+    p2.focus("button.tab[data-tab=sparring]"); p2.keyboard.press("ArrowLeft")
+    left = p2.evaluate("document.activeElement.dataset.tab"); p2.keyboard.press("ArrowRight")
+    right = p2.evaluate("document.activeElement.dataset.tab")
+    p2.click("button.tab[data-tab=settings]")
+    blank_theme = p2.evaluate("document.querySelector('#setBoardTheme').value")
+    p2.click("#saveSettings")
+    p2.click("button.tab[data-tab=sparring]")
+    theme_after = p2.evaluate("[document.documentElement.getAttribute('data-board-theme'), document.querySelector('#sparBoard [data-sq=e1] .piece').textContent]")
+    p2.set_input_files("#importFile", write_tmp("one-nameless.pgn", "1. e4 e5 2. Nf3 *\n")); p2.wait_for_timeout(800)
+    one_nameless = " ".join(p2.inner_text("#flash").split())
+    p2.set_input_files("#importFile", write_tmp("mixed.pgn",
+        '[Variant "Chess960"]\n[White "a"]\n[Black "b"]\n[Result "*"]\n\n1. e4 *\n\n' * 2 +
+        '[White "a"]\n[Black "b"]\n[Result "*"]\n\n1. e4 e5 2. Ke3 *\n\n' * 2 +
+        '[White "a"]\n[Black "b"]\n[Result "1-0"]\n\n1. d4 d5 2. c4 1-0\n')); p2.wait_for_timeout(800)
+    mixed = " ".join(p2.inner_text("#flash").split())
+    p2.evaluate("() => { Storage.prototype.__remove = Storage.prototype.removeItem; Storage.prototype.removeItem = function () {}; }")
+    p2.click("button.tab[data-tab=settings]"); p2.click("#wipe"); p2.wait_for_timeout(300)
+    refused = p2.inner_text("#flash")
+    still = p2.evaluate("localStorage.getItem('dvor:games') !== null")
+    p2.evaluate("() => { Storage.prototype.removeItem = Storage.prototype.__remove; }")
+    check("window: games synced over 30 days, with a 60-day window, say they only go back 30 days",
+          win_note == "Loaded games only go back 30 days. Press Sync to fetch the rest of this window.", win_note)
+    check("chrome: with no ResizeObserver the page still boots and measures its masthead",
+          booted[0] == "undefined" and booted[1] == 1 and booted[2].endswith("px"), booted)
+    check("tabs: the left and right arrows move to the neighbouring tabs", left == "strength" and right == "sparring", "%s, %s" % (left, right))
+    check("settings: a stored theme the list does not have saves as the default cyan board, outline pieces",
+          blank_theme == "" and theme_after == ["cyan", "♔"], "%r %s" % (blank_theme, theme_after))
+    check("import: one game with no player names is counted in the singular",
+          "1 names no player, so it was read as played with White" in one_nameless, one_nameless[:160])
+    check("import: several games left out each way are counted in the plural",
+          "Left out 2 games in Chess960" in mixed and "Left out 2 games whose moves could not be read." in mixed, mixed[:200])
+    check("delete everything: a storage that will not clear says so, and nothing is reloaded or lost",
+          refused.startswith("Could not delete everything: this browser refused to clear its stored data.") and still, refused[:80])
+    c2.close()
+
+    # Endgame studies: promoting to a queen in the Saavedra walks into the stalemate; the engine taking the last
+    # knight is a draw by material; studied as Black, the evaluation is still White's.
+    def eg_play(page, moves):
+        return page.evaluate("""async (moves) => {
+          const fb = () => document.querySelector('#drillFeedback').innerText;
+          const wait = (f) => new Promise((res, rej) => { const t0 = Date.now(); (function poll() {
+            if (f()) res(); else if (Date.now() - t0 > 20000) rej(new Error('no reply: ' + fb())); else setTimeout(poll, 15); })(); });
+          const out = [];
+          for (const [a, b, promo] of moves) {
+            document.querySelector('#drillBoard [data-sq=' + a + ']').click(); document.querySelector('#drillBoard [data-sq=' + b + ']').click();
+            if (promo) document.querySelector('#drillBoard [data-promo=' + promo + ']').click();
+            await wait(() => !/Engine replying/.test(fb()));
+            out.push(fb().trim());
+          }
+          return out;
+        }""", moves)
+    c2, p2 = fresh({"games": [blunder_game("eg1", 1)]})
+    p2.click("button.tab[data-tab=drills]")
+    p2.select_option("#egPick", "saavedra"); p2.click("[data-start=endgame]")
+    saavedra = eg_play(p2, [["c6", "c7"], ["b6", "b5"], ["b5", "b4"], ["b4", "b3"], ["b3", "c2"], ["c7", "c8", "q"], ["c8", "c4"]])
+    p2.click("#drillQuit"); p2.select_option("#egPick", "bn-mate"); p2.click("[data-start=endgame]")
+    bn = eg_play(p2, [["f1", "g3"], ["d1", "c2"]])
+    p2.click("#drillQuit"); p2.select_option("#egPick", "philidor"); p2.click("[data-start=endgame]")
+    philidor = eg_play(p2, [["b6", "c6"]])
+    check("endgame: the Saavedra's queen promotion is met by Rc4+, and taking the rook is stalemate",
+          [s.split(".")[0] for s in saavedra[:6]] == ["Engine plays Rd6+", "Engine plays Rd5+", "Engine plays Rd4+", "Engine plays Rd3+", "Engine plays Rd4", "Engine plays Rc4+"]
+          and saavedra[6] == "Stalemate.", saavedra)
+    check("endgame: the engine taking the last knight ends the study as a draw, said in words",
+          bn[0].startswith("Engine plays Kf4.") and bn[1] == "Drawn: neither side can mate.", bn)
+    m = re.search(r"Evaluation ([+-]?)(\d+\.\d+|#\d+) \(White’s view\)", philidor[0])
+    check("endgame: studied as Black, the evaluation is White's, who has the extra pawn", m is not None and m.group(1) != "-", philidor)
+    c2.close()
+
     check("page: no uncaught errors throughout", not errors, errors[:3])
 
     if COV:

@@ -170,13 +170,13 @@
       ['id','source','url','speed','perf','rated','date','endedAt','status','myColor','myName','oppName',
        'myRating','oppRating','score','result','eco','openingName','openingPly','analysed','acpl','oppAcpl',
        'accuracy','clockInitial','clockIncrement','ratingDiff','counts'].forEach(function (k) { c[k] = g[k]; });
-      c.m = (g.moves || []).map(function (mv) {
+      c.m = g.moves.map(function (mv) {
         return [mv.san, mv.evalAfter == null ? '' : mv.evalAfter, mv.judgment || '',
                 mv.serverBest || '', mv.clock == null ? '' : Math.round(mv.clock), mv.serverLine || '',
                 mv.mateAfter == null ? '' : mv.mateAfter];
       });
       // a game set up from a position (a PGN with a [FEN] tag) is replayed from that position
-      var start = g.moves && g.moves[0] && g.moves[0].fenBefore;
+      var start = g.moves[0] && g.moves[0].fenBefore;
       if (start && start !== Chess.START) c.fen = start;
       return c;
     });
@@ -219,7 +219,7 @@
                     transcripts: 'written justification' };
   function save(key, value) {
     var ok = Store.set(key, value);
-    if (!ok) flash('Local storage is full, so your ' + (SAVE_WHAT[key] || key) + ' was not saved. ' +
+    if (!ok) flash('Local storage is full, so your ' + SAVE_WHAT[key] + ' was not saved. ' +
       'Export a backup in Settings, then free some space (a shorter sync window keeps fewer games).', 'bad');
     return ok;
   }
@@ -285,7 +285,7 @@
     var btn = $('#sync'); btn.disabled = true;
     var orig = btn.textContent; btn.innerHTML = '<span class="spin"></span> Syncing';
 
-    var days = S.settings.windowDays || 0, perf = S.settings.perf || 'all';
+    var days = S.settings.windowDays || 0, perf = S.settings.perf;
     Promise.all([
       Data.fetchProfile(user).catch(function () { return null; }),
       // 300 games are plenty for a window of up to 90 days; a longer one, or all time,
@@ -361,11 +361,11 @@
 
   // Every card's review history is kept, not only the deck's: a card whose game is not
   // loaded now (a narrower sync, say) has its schedule back when the game returns.
-  function persistCards() {
+  // also: cards to keep that the deck may no longer hold (one graded after its game went, by a restore mid-drill).
+  function persistCards(also) {
     var slim = Object.assign({}, S.cardState);
-    Object.keys(S.deck).forEach(function (k) {
-      var c = S.deck[k];
-      slim[k] = { id: c.id, ease: c.ease, interval: c.interval, reps: c.reps,
+    Object.keys(S.deck).map(function (k) { return S.deck[k]; }).concat(also || []).forEach(function (c) {
+      slim[c.id] = { id: c.id, ease: c.ease, interval: c.interval, reps: c.reps,
         lapses: c.lapses, due: c.due, last: c.last, history: c.history.slice(-10) };
     });
     S.cardState = slim;
@@ -404,8 +404,9 @@
       var x = daysBetween(track[0].day, p.day), y = p.measured;
       sx += x; sy += y; sxx += x * x; sxy += x * y;
     });
-    var denom = n * sxx - sx * sx;   // above 0: three or more marks over at least 14 days are not all on one day
-    if (!isFinite(denom) || denom <= 0) return null;
+    // Above 0, so no guard: the first mark is at x = 0 and the last at x = span >= 14 (days are real calendar
+    // days, cleaned on load), so the x are not all equal and denom = sum over pairs of (xi - xj)^2 > 0.
+    var denom = n * sxx - sx * sx;
     var slope = (n * sxy - sx * sy) / denom;        // elo per day
     var intercept = (sy - slope * sx) / n;
     var fitted = intercept + slope * span;
@@ -626,9 +627,9 @@
     var speed = titledSpeed(), picks = titledPicks(), live = titledLive(), mine = myRatings();
     var all = Titled.players(live);
     var shown = all.filter(function (p) { return picks.indexOf(p.user) > -1; });
-    var cal = S.profile && S.profile.calibration;
-    var measured = cal ? { lo: cal.trueStrength - cal.marginOfError, hi: cal.trueStrength + cal.marginOfError,
-      rating: cal.trueStrength, moe: cal.marginOfError } : null;
+    var cal = S.profile.calibration;   // the sheet is only drawn by renderStrength, with a profile
+    var measured = { lo: cal.trueStrength - cal.marginOfError, hi: cal.trueStrength + cal.marginOfError,
+      rating: cal.trueStrength, moe: cal.marginOfError };
     var yours = mine ? Titled.range(mine.rows, speed) : null;
     var ranges = shown.map(function (p) { return Titled.range(p.rows, speed); });
     return { speed: speed, picks: picks, live: live, mine: mine, all: all, shown: shown, ranges: ranges,
@@ -653,7 +654,7 @@
   function titledRow(sc, row) {
     var r = row.range;
     var h = '<li class="cmp-row ' + (row.cls || '') + '"><div class="cmp-who"><span class="cmp-name">' + row.label + '</span>' +
-      (row.sub ? '<span class="tiny soft">' + row.sub + '</span>' : '') + '</div>';
+      '<span class="tiny soft">' + row.sub + '</span></div>';
     h += '<div class="cmp-track" aria-hidden="true">';
     // the FIDE floors run down through every row, so a bar can be read against them
     Titled.TITLE_FLOORS.forEach(function (f) { h += '<span class="cmp-guide" style="left:' + sc.pos(f.rating) + '%"></span>'; });
@@ -706,7 +707,7 @@
     h.push('</div><ul class="cmp-rows">');
     h.push(titledRow(sc, { label: '<b>You</b>', sub: v.mine ? 'Lichess, ' + esc(v.mine.user) : 'sync to add your Lichess ratings',
       range: v.yours, cls: 'you' }));
-    if (v.measured) h.push(titledRow(sc, { label: 'Measured strength', sub: '± ' + v.measured.moe, range: v.measured, cls: 'measured' }));
+    h.push(titledRow(sc, { label: 'Measured strength', sub: '± ' + v.measured.moe, range: v.measured, cls: 'measured' }));
     var missing = [];
     v.shown.forEach(function (p, i) {
       if (!v.ranges[i]) { missing.push(p); return; }
@@ -823,7 +824,7 @@
   function motifTable(p) {
     var list = p.motifs.slice(0, 12);
     if (!list.length) return '<div class="empty">No classified errors yet. Error mining needs games with Lichess computer analysis.</div>';
-    var max = list[0].cpLost || 1;
+    var max = list[0].cpLost;
     var h = '<table><thead><tr><th>Pattern</th><th class="num">times</th><th class="num">avg cost</th><th style="width:28%"></th></tr></thead><tbody>';
     list.forEach(function (m) {
       h += '<tr><td>' + esc(m.motif) + (m.blunders ? ' <span class="tag red">' + m.blunders + ' blunders</span>' : '') + '</td>' +
@@ -856,7 +857,7 @@
   var OPENING_TREE_MAX_CHILDREN = 8;  // per level, so a wide root doesn't swamp the panel
 
   function openingTree(p) {
-    var kids = (p.openingTree && p.openingTree.childList) || [];
+    var kids = p.openingTree.childList;
     if (!kids.length) return '<div class="empty">Not enough repeated lines yet — needs a handful of analysed games sharing the same opening moves.</div>';
     return '<ul class="opening-tree">' + kids.slice(0, OPENING_TREE_MAX_CHILDREN).map(openingTreeNode).join('') + '</ul>';
   }
@@ -879,7 +880,7 @@
       '<span class="stat' + (scoreBad ? ' bad' : '') + '">' + (node.scorePct == null ? 'no result' : node.scorePct + '% score') + '</span>' +
       '<span class="stat' + (dropBad ? ' bad' : '') + '">' + dropLabel + '</span>' +
       '</div>';
-    var kids = node.childList || [];
+    var kids = node.childList;
     if (kids.length) h += '<ul>' + kids.slice(0, OPENING_TREE_MAX_CHILDREN).map(openingTreeNode).join('') + '</ul>';
     return h + '</li>';
   }
@@ -940,7 +941,7 @@
       mirror: new Sparring.Mirror(S.profile, {
         book: S.book,
         targetElo: +$('#sparElo').value || S.profile.calibration.trueStrength,
-        budgetMs: +$('#sparThink').value || 900
+        budgetMs: +$('#sparThink').value
       }),
       history: [], advice: null, thinking: false, over: false
     };
@@ -988,7 +989,7 @@
     sp.mirror.chooseMove(sp.game, sp.history.length + 1).then(function (res) {
       if (!stillCurrent(sp, fen)) return;   // a new game was started, or this one ended, meanwhile
       sp.thinking = false;   // never asked in a finished game (onSparMove checks first), so there is a move
-      var san = res.san || sp.game.san(res.move);
+      var san = res.san;
       sp.game.makeMove(res.move);
       sp.history.push({ san: san, color: res.move.color === Chess.WHITE ? 'w' : 'b',
         fromBook: res.fromBook, loss: res.intendedLoss, blunderTurn: res.blunderTurn,
@@ -1020,12 +1021,16 @@
   function checkSparEnd() {
     var sp = S.spar, over = sp.game.gameOver();
     if (!over) return false;
-    var msg = over === 'checkmate'
-      ? (sp.game.turnColor() === sp.myColor ? 'Checkmate. You lost.' : 'Checkmate. You won.')
-      : over === 'stalemate' ? 'Stalemate.' : over === 'fifty' ? 'Drawn by the fifty-move rule.'
-      : over === 'repetition' ? 'Drawn by threefold repetition.' : 'Drawn: neither side can mate.';
+    var msg = overMessage(over) + (over === 'checkmate' ? (sp.game.turnColor() === sp.myColor ? ' You lost.' : ' You won.') : '');
     endSpar(msg, over === 'checkmate' ? (sp.game.turnColor() === 'w' ? '0-1' : '1-0') : '1/2-1/2');
     return true;
+  }
+
+  // How a game that is over reads, from what Chess.gameOver() says. The endgame studies use it too:
+  // they showed the bare word ("material.").
+  function overMessage(over) {
+    return over === 'checkmate' ? 'Checkmate.' : over === 'stalemate' ? 'Stalemate.' : over === 'fifty' ? 'Drawn by the fifty-move rule.'
+      : over === 'repetition' ? 'Drawn by threefold repetition.' : 'Drawn: neither side can mate.';
   }
 
   // result: the PGN result; none given is a resignation by the user
@@ -1091,8 +1096,9 @@
     sf.pending = {};
     sf.gen++;
   }
+  // Each key is remembered once: sfRead asks only for a key neither cached nor on its way.
   function sfRemember(key, res) {
-    if (!(key in sf.cache)) sf.cacheKeys.push(key);
+    sf.cacheKeys.push(key);
     sf.cache[key] = res;
     while (sf.cacheKeys.length > SF_CACHE_MAX) delete sf.cache[sf.cacheKeys.shift()];
   }
@@ -1118,18 +1124,20 @@
                        the positions before and after it, which are separate
                        searches that reach different depths. */
   function sfRead(key, fen, opts) {
-    var sp = S.spar;
     if (sf.cache[key] || sf.pending[key]) return;
     var r = sfReader();
     if (!r) return;
     sf.pending[key] = true;
     var gen = sf.gen;
-    r.start().then(function () { return gen === sf.gen ? r.read(fen, Object.assign({ movetime: +$('#sfTime').value || 1000 }, opts)) : null; })
+    r.start().then(function () { return gen === sf.gen ? r.read(fen, Object.assign({ movetime: +$('#sfTime').value }, opts)) : null; })
       .then(function (res) {
-        if (gen !== sf.gen) return;   // asked for before a clear(): a newer request owns this key now
+        // Asked for before a clear(): a newer request owns this key now. Only clear() resolves a read with
+        // null, and a new game (the only thing that replaces S.spar) clears, so past this line res is a
+        // reading of the game still on.
+        if (gen !== sf.gen) return;
         delete sf.pending[key];
-        if (res) sfRemember(key, res);
-        if (S.spar === sp) renderSf();
+        sfRemember(key, res);
+        renderSf();
       }).catch(function (err) {
         if (gen !== sf.gen) return;
         delete sf.pending[key];
@@ -1218,9 +1226,9 @@
     sp.history.forEach(function (m, i) {   // every move is recorded with the position it was played from
       var v = sfVerdict(m), mine = m.color === sp.myColor;
       if (v && mine) lost.you.push(v.loss);
-      if (v && !mine && !m.fromBook) {
+      if (v && !mine && !m.fromBook) {   // an engine move of the mirror's: it always says what it meant to give up
         lost.mirror.push(v.loss);
-        if (m.loss != null) intended.push(m.loss);
+        intended.push(m.loss);
       }
       rows.push('<tr class="' + (v ? 'sf-' + v.cls : '') + '"><td class="mono tiny">' + (Math.floor(i / 2) + 1) +
         (m.color === 'w' ? '.' : '\u2026') + '</td><td class="mono">' + esc(m.san) + '</td><td class="tiny">' +
@@ -1228,13 +1236,13 @@
         (v ? (v.loss ? '\u2212' + (v.loss / 100).toFixed(2) : '0.00') : '<span class="soft">\u2026</span>') + '</td><td class="tiny">' +
         (v ? v.cls + (v.preferred ? ' \u00b7 Stockfish: <span class="mono">' + esc(v.preferred) + '</span>' : '') : '') + '</td></tr>');
     });
-    function avg(a) { return a.length ? Math.round(a.reduce(function (s, x) { return s + x; }, 0) / a.length) : null; }
+    function avg(a) { return Math.round(a.reduce(function (s, x) { return s + x; }, 0) / a.length); }
     var summary = [];
     if (lost.mirror.length) {
       summary.push('Mirror, engine moves: ' + avg(lost.mirror) + ' cp lost per move over ' + lost.mirror.length + ' read' +
-        (intended.length ? ', where it meant to give up ' + avg(intended) + '. ' +
-          (Math.abs(avg(lost.mirror) - avg(intended)) <= 15 ? 'The house engine reads the position about as Stockfish does.'
-            : 'The gap is the house engine misjudging what its own moves cost.') : '.'));
+        ', where it meant to give up ' + avg(intended) + '. ' +
+        (Math.abs(avg(lost.mirror) - avg(intended)) <= 15 ? 'The house engine reads the position about as Stockfish does.'
+          : 'The gap is the house engine misjudging what its own moves cost.'));
     }
     if (lost.you.length) summary.push('You: ' + avg(lost.you) + ' cp lost per move over ' + lost.you.length + ' read.');
     log.innerHTML = rows.length
@@ -1272,7 +1280,7 @@
     var all = Object.keys(S.deck).map(function (k) { return S.deck[k]; });
     var due = Training.dueCards(all);
     var motifs = {};
-    all.forEach(function (c) { (c.meta.motifs || []).forEach(function (m) { motifs[m] = (motifs[m] || 0) + 1; }); });
+    all.forEach(function (c) { c.meta.motifs.forEach(function (m) { motifs[m] = (motifs[m] || 0) + 1; }); });
     var h = '<div class="row" style="margin-bottom:.8rem">' +
       '<button class="primary" data-start="due">Start today\'s recall (' + due.length + ')</button>' +
       '<button data-start="all">Everything (' + all.length + ')</button>' +
@@ -1303,7 +1311,7 @@
     else if (mode === 'due') queue = Training.dueCards(all).slice(0, 25);
     else if (mode === 'motif') {
       var m = $('#drillMotif').value;
-      queue = all.filter(function (c) { return (c.meta.motifs || []).indexOf(m) > -1; });
+      queue = all.filter(function (c) { return c.meta.motifs.indexOf(m) > -1; });
     } else queue = all.slice(0, 40);
     if (!queue.length) { flash('Nothing in that queue right now.', 'warn'); return; }
     S.drill = { queue: queue, index: 0, revealed: false, attempts: 0 };
@@ -1329,7 +1337,7 @@
       '<p class="tiny soft">Your game, move ' + c.meta.moveNo + ', ' + new Date(c.meta.date).toLocaleDateString() +
       (c.meta.opening ? ' · ' + esc(c.meta.opening) : '') + '. You played <span class="mono" style="color:var(--red)">' + esc(c.meta.played) + '</span> here and it cost ' +
       (c.meta.cpLoss / 100).toFixed(1) + ' pawns.' + (c.meta.timePressure ? ' You were short of time.' : '') + '</p>' +
-      '<p>' + (c.meta.motifs || []).map(function (m) { return '<span class="tag">' + esc(m) + '</span>'; }).join('') + '</p>';
+      '<p>' + c.meta.motifs.map(function (m) { return '<span class="tag">' + esc(m) + '</span>'; }).join('') + '</p>';
     $('#drillFeedback').innerHTML = '';
     $('#drillGrades').classList.add('hidden');
     $('#drillReveal').classList.remove('hidden');
@@ -1338,7 +1346,7 @@
   function onDrillMove(move, game) {
     var d = S.drill, c = d.queue[d.index];
     var san = game.san(move).replace(/[+#]/g, '');
-    var want = String(c.meta.solution || '').replace(/[+#!?]/g, '');
+    var want = String(c.meta.solution).replace(/[+#!?]/g, '');
     d.attempts++;
     if (san === want) {
       game.makeMove(move);
@@ -1387,9 +1395,9 @@
       b.addEventListener('click', function () {
         var d = S.drill;
         if (!d || b.disabled) return;
-        var c = d.queue[d.index];
-        Training.review(S.deck[c.id] || c, +b.dataset.grade);
-        persistCards();
+        var c = d.queue[d.index], card = S.deck[c.id] || c;   // the card itself if its game has gone meanwhile
+        Training.review(card, +b.dataset.grade);
+        persistCards([card]);
         d.practised = true;
         d.index++;
         showCard();
@@ -1436,7 +1444,7 @@
     game.makeMove(move);
     drillBoard.setGame(game, { from: move.fromSq, to: move.toSq });
     var over = game.gameOver();
-    if (over) { $('#drillFeedback').innerHTML = '<div class="coach-note ok">' + over + '.</div>'; return; }
+    if (over) { $('#drillFeedback').innerHTML = '<div class="coach-note ok">' + overMessage(over) + '</div>'; return; }
     $('#drillFeedback').innerHTML = '<span class="spin"></span> Engine replying.';
     var fen = game.fen();
     drillBoard.interactive = false;   // no second move until the engine has answered the first
@@ -1446,7 +1454,7 @@
       game.makeMove(r[0].move);
       drillBoard.setGame(game, { from: r[0].move.fromSq, to: r[0].move.toSq });
       var o = game.gameOver();
-      $('#drillFeedback').innerHTML = o ? '<div class="coach-note ok">' + o + '.</div>' :
+      $('#drillFeedback').innerHTML = o ? '<div class="coach-note ok">' + overMessage(o) + '</div>' :
         '<div class="coach-note">Engine plays <b class="mono">' + esc(r[0].san) + '</b>. Evaluation ' +
         Sparring.cpDisplay(game.turnColor() === 'w' ? -r[0].score : r[0].score) + ' (White\u2019s view).</div>';
     });
@@ -1491,7 +1499,7 @@
     });
     h += '</div></div>';
 
-    var today = plans.filter(function (p) { return p.date === todayKey; })[0] || plans[0];
+    var today = plans.filter(function (p) { return p.date === todayKey; })[0];
     h += '<div id="dayDetail">' + dayDetail(today) + '</div>';
     h += '</div>';
     host.innerHTML = h;
@@ -1534,7 +1542,7 @@
     $$('[data-run]', host).forEach(function (b) {
       b.addEventListener('click', function () {
         var r = b.dataset.run;
-        if (r === 'cards') { selectTab('drills'); startDrill('plan', p.items[+b.dataset.item].payload.cardIds || []); }
+        if (r === 'cards') { selectTab('drills'); startDrill('plan', p.items[+b.dataset.item].payload.cardIds); }
         if (r === 'eg') { selectTab('drills'); renderDrillHome(); startEndgame(b.dataset.eg); }
         if (r === 'spar') { selectTab('sparring'); $('#sparColor').value = b.dataset.color; startSpar(b.dataset.color); }
         if (r === 'review') selectTab('review');
@@ -1577,7 +1585,7 @@
       game: game, plies: myPlies, cursor: 0,
       transcript: S.transcripts[game.id] || {},
       // every mined error, not the window's: a game older than the window is still reviewed against the engine
-      errors: (S.allErrors || []).filter(function (e) { return e.gameId === game.id; })
+      errors: S.allErrors.filter(function (e) { return e.gameId === game.id; })
     };
     $('#revStage').classList.remove('hidden');
     $('#revText').disabled = false;   // the last review's end locked it
@@ -1617,7 +1625,7 @@
       var cls = m.judgment === 'Blunder' ? 'blunder' : m.judgment === 'Mistake' ? 'mistake' : m.judgment === 'Inaccuracy' ? 'inacc' : '';
       h += '<span class="mv ' + cls + '"' + (i === uptoPly ? ' aria-current="true"' : '') + '>' + esc(m.san) + '</span> ';
     });
-    return h || '<span class="soft">Start of game.</span>';
+    return h;
   }
 
   function submitJustification() {
@@ -1663,7 +1671,8 @@
 
   function finishReview() {
     var r = S.review;
-    var summary = Coach.summarizeGame(r.game, r.transcript, S.allErrors || [], S.profile);
+    r.current = null;   // no move is asked about now: Commit, Next and Skip stay on screen but have nothing to act on
+    var summary = Coach.summarizeGame(r.game, r.transcript, S.allErrors, S.profile);
     var h = '<div class="sheet"><h3>Session summary</h3>';
     summary.narrative.forEach(function (n) { h += '<p>' + esc(n) + '</p>'; });
     h += '<h4 style="margin-top:.9rem">Homework</h4><ul>';
@@ -1752,13 +1761,24 @@
   }
 
   /* ---------- settings + io ---------- */
-  function initSettings() {
+  // Every control that shows a setting, set from S.settings: the Settings form, the speed beside Sync, the
+  // text size and the window. At boot, and again when a backup restores the settings: a form left on the old
+  // values would put them back at the next Save, and Sync would ask for a speed its list does not show.
+  function showSettings() {
     var s = S.settings;
     $('#setMinutes').value = s.minutes; $('#setTier').value = s.endgameTier;
     $('#setHour').value = s.hour; $('#setKey').value = s.apiKey || '';
-    $('#setBoardTheme').value = s.boardTheme || 'cyan';
-    $('#setPieceSet').value = s.pieceSet || 'glyph';
+    $('#setBoardTheme').value = s.boardTheme;
+    $('#setPieceSet').value = s.pieceSet;
     $('#setShowCoords').checked = s.showCoords !== false;
+    $('#syncPerf').value = s.perf;   // cleanSettings keeps only the speeds this list has
+    $('#uiScale').value = s.uiScale;
+    applyScale(s.uiScale);
+    $('#winDays').value = String(WINDOW_STEPS.indexOf(s.windowDays));
+    showWindow();
+  }
+
+  function initSettings() {
     $('#saveSettings').addEventListener('click', function () {
       // A value that does not read as one (an hour of "7pm" or 25, minutes of 0) keeps
       // the one saved before, and the notice says which.
@@ -1768,7 +1788,7 @@
       if (minutes == null) { kept.push('the minutes a day (a number above 0)'); $('#setMinutes').value = S.settings.minutes; }
       S.settings = Object.assign({}, S.settings, {
         minutes: minutes == null ? S.settings.minutes : minutes,
-        endgameTier: validTier($('#setTier').value) || S.settings.endgameTier,
+        endgameTier: validTier($('#setTier').value),
         hour: hour == null ? S.settings.hour : hour,
         apiKey: $('#setKey').value,
         boardTheme: $('#setBoardTheme').value, pieceSet: $('#setPieceSet').value,
@@ -1806,7 +1826,7 @@
             if (isObj(d.settings)) {
               var keep = S.settings.apiKey;   // never in a backup; keep the one already here
               S.settings = Object.assign({}, S.settings, pickSettings(d.settings), { apiKey: keep });
-              Store.set('settings', S.settings); applyBoardSettings();
+              Store.set('settings', S.settings); applyBoardSettings(); showSettings();
             }
             if (d.lichessRating != null) Store.set('lichessRating', numOrNull(d.lichessRating));
             rebuild();
@@ -1815,7 +1835,7 @@
         } else {
           var user = Data.parseHandle($('#handle').value) || '';
           var games = Data.importPGN(txt, user);
-          var skippedNote = importSkipNote(games.skipped || []);
+          var skippedNote = importSkipNote(games.skipped);
           if (!games.length) { flash('No games found in that PGN.' + skippedNote, 'bad'); return; }
           // the same file imported twice must not count every game twice
           var have = {};
@@ -1865,7 +1885,7 @@
   }
 
   function download(name, text, mime) {
-    var blob = new Blob([text], { type: mime || 'text/plain' });
+    var blob = new Blob([text], { type: mime });
     var a = document.createElement('a');
     a.href = URL.createObjectURL(blob); a.download = name;
     document.body.appendChild(a); a.click();
@@ -1892,7 +1912,6 @@
   // Which games Sync asks for: all of them, or one Lichess format. Kept beside the button.
   function initSyncPerf() {
     var sel = $('#syncPerf');
-    sel.value = S.settings.perf;   // cleanSettings keeps only the speeds this list has
     sel.addEventListener('change', function () {
       S.settings.perf = sel.value;
       Store.set('settings', S.settings);
@@ -1901,23 +1920,22 @@
 
   function initWindow() {
     var range = $('#winDays');
-    var at = WINDOW_STEPS.indexOf(S.settings.windowDays || 0);
     range.max = String(WINDOW_STEPS.length - 1);
-    range.value = String(at < 0 ? WINDOW_STEPS.length - 1 : at);
-    function show() {
-      var d = WINDOW_STEPS[+range.value];
-      $('#winLabel').textContent = windowLabel(d);
-      range.setAttribute('aria-valuetext', windowLabel(d));
-      return d;
-    }
-    show();
-    range.addEventListener('input', show);            // the label follows the thumb
+    range.addEventListener('input', showWindow);      // the label follows the thumb
     range.addEventListener('change', function () {    // the analysis follows the release
-      S.settings.windowDays = show();
+      S.settings.windowDays = showWindow();
       Store.set('settings', S.settings);
       if (S.games.length || S.adopted) rebuild(undefined, { windowOnly: true });
       else renderWindowNote();
     });
+  }
+
+  // The window's label for where the slider's thumb is; returns its days.
+  function showWindow() {
+    var range = $('#winDays'), d = WINDOW_STEPS[+range.value];
+    $('#winLabel').textContent = windowLabel(d);
+    range.setAttribute('aria-valuetext', windowLabel(d));
+    return d;
   }
 
   // Games only reach back as far as the last sync asked for.
@@ -1927,14 +1945,11 @@
     var short = have != null && have !== 0 && (want === 0 || want > have);
     el.textContent = short
       ? 'Loaded games only go back ' + have + ' days. Press Sync to fetch the rest of this window.'
-      : S.games.length ? (S.profile ? S.profile.calibration.windowGames : 0) + ' of ' + S.games.length + ' loaded games are in this window.' : '';
+      : S.games.length ? S.profile.calibration.windowGames + ' of ' + S.games.length + ' loaded games are in this window.' : '';
   }
 
   function initChrome() {
     var sel = $('#uiScale');
-    var saved = S.settings.uiScale || '1';
-    sel.value = saved;
-    applyScale(saved);
     sel.addEventListener('change', function () {
       S.settings.uiScale = sel.value;
       Store.set('settings', S.settings);
@@ -1961,12 +1976,12 @@
   // A theme taken from a chess site draws its pieces solid, as that site does.
   function siteTheme(theme) { return /^(lichess|chesscom)-/.test(theme || ''); }
   function boardOpts(extra) {
-    return Object.assign({ pieceSet: S.settings.pieceSet || 'glyph', showCoords: S.settings.showCoords !== false,
-                           solidPieces: siteTheme(S.settings.boardTheme) }, extra || {});
+    return Object.assign({ pieceSet: S.settings.pieceSet, showCoords: S.settings.showCoords !== false,
+                           solidPieces: siteTheme(S.settings.boardTheme) }, extra);
   }
   function applyBoardSettings() {
     document.documentElement.setAttribute('data-board-theme', S.settings.boardTheme || 'cyan');
-    var opts = { pieceSet: S.settings.pieceSet || 'glyph', showCoords: S.settings.showCoords !== false,
+    var opts = { pieceSet: S.settings.pieceSet, showCoords: S.settings.showCoords !== false,
                  solidPieces: siteTheme(S.settings.boardTheme) };
     [sparBoard, drillBoard, revBoard].forEach(function (b) { if (b) b.setDisplayOptions(opts); });
   }
@@ -1980,6 +1995,7 @@
     initSparring();
     initDrillControls();
     initSettings();
+    showSettings();
     $('#handle').value = S.handle;
     $('#sync').addEventListener('click', sync);
     $('#handle').addEventListener('keydown', function (e) { if (e.key === 'Enter') sync(); });
@@ -1987,11 +2003,11 @@
     $('#revStart').addEventListener('click', startReview);
     $('#revSubmit').addEventListener('click', submitJustification);
     $('#revNext').addEventListener('click', function () {
-      if (!S.review) return;
+      if (!S.review || !S.review.current) return;
       if (!S.review.transcript[S.review.current.ply]) { flash('Write your justification first. That is the exercise.', 'warn'); return; }
       S.review.cursor++; renderReviewStep();
     });
-    $('#revSkip').addEventListener('click', function () { if (S.review) { S.review.cursor++; renderReviewStep(); } });
+    $('#revSkip').addEventListener('click', function () { if (S.review && S.review.current) { S.review.cursor++; renderReviewStep(); } });
     $('#sparCoach').addEventListener('change', function () { refreshAdvice(); });
     document.addEventListener('click', function (e) {
       if (e.target && e.target.id === 'scoutAdopt' && S.scout) {

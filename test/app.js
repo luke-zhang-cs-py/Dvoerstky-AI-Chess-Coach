@@ -109,6 +109,16 @@ const sans = g => g.moves.map(m => m.san).join(' ');
     catch (err) { return 'threw ' + err.message; }
   });
   check('mining: a serverBest that is not a string does not throw, and the line is the answer', odd.every(b => b === 'Qxf7#'), odd.join(' | '));
+  // A move whose san is not a string (a damaged game object) cannot be classified: the error is still mined, with no patterns.
+  moves[6].serverBest = 'h5f7'; moves[6].san = 7;
+  let damaged;
+  try { damaged = Analysis.mineErrors([{ id: 'm', myColor: 'w', moves: moves, analysed: true, date: Date.now() }]); }
+  catch (err) { damaged = 'threw ' + err.message; }
+  check('mining: a move whose san is not a string is still an error, with no patterns rather than a throw',
+    Array.isArray(damaged) && damaged.length === 1 && damaged[0].played === 7 && damaged[0].best === 'Qxf7#' &&
+    Array.isArray(damaged[0].motifs) && damaged[0].motifs.length === 0,
+    Array.isArray(damaged) ? JSON.stringify(damaged.map(e => [e.played, e.best, e.motifs])) : damaged);
+  moves[6].san = 'Qxe5+';
 }
 
 // ---------------------------------------------------------------- book and tree: games set up from a position
@@ -358,6 +368,16 @@ const sans = g => g.moves.map(m => m.san).join(' ');
     Data.Store.set('games', [5]);
     check('store: wipe() on a storage that cannot be listed reports failure and leaves saves working',
       failed1 === false && !blockedAfterFail && mem['dvor:games'] === '[5]', failed1 + ' ' + blockedAfterFail + ' ' + mem['dvor:games']);
+  }
+  // A storage whose deletes do nothing (the keys are still there afterwards): wipe() reports failure and does not block saves.
+  {
+    const real = globalThis.localStorage;
+    globalThis.localStorage = { get length() { return real.length; }, key: real.key, getItem: real.getItem, setItem: real.setItem, removeItem() {} };
+    const kept = Data.Store.wipe(), blockedAfterKept = Data.Store.wiped === true, left = Data.Store.keys().length;
+    globalThis.localStorage = real;
+    Data.Store.set('games', [6]);
+    check('store: wipe() on a storage whose deletes do nothing reports failure and leaves saves working',
+      kept === false && !blockedAfterKept && left > 0 && mem['dvor:games'] === '[6]', kept + ' ' + blockedAfterKept + ' ' + left + ' ' + mem['dvor:games']);
   }
   // A storage that refuses even to delete (a locked-down browser) is not an error.
   globalThis.localStorage = { removeItem() { throw new Error('denied'); } };
