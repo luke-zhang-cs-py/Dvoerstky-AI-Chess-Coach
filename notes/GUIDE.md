@@ -350,8 +350,8 @@ functions as run, and the figure before this round, 99.96% of lines, was really 
 code lines, 21 functions), and on a scratch copy given a function no test calls, which it
 reported as never called, with its nested function, its lines, statements and branches.
 
-On 11 October 2026: all 4,731 lines and all 687 functions; 4,187 of 4,195 statements
-(99.8%), 3,457 of 3,469 branches (99.7%), 2,925 of 2,934 V8 blocks. Outside `ui.js` all
+On 11 October 2026: all 4,732 lines and all 687 functions; 4,189 of 4,197 statements
+(99.8%), 3,459 of 3,471 branches (99.7%), 2,921 of 2,930 V8 blocks. Outside `ui.js` all
 that is left is the equal-names arm of the titled players' sort (no two have the same
 name). In `ui.js`, none of what is left is reachable from the page as it is: guards for an
 element the page always has (a tab's panel, the titled sheet's body, its status line and

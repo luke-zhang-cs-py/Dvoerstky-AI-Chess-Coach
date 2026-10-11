@@ -89,6 +89,7 @@
   // keep each key the app knows, as the value the app itself would have stored.
   var PERFS = ['all', 'ultraBullet', 'bullet', 'blitz', 'rapid', 'classical', 'correspondence'];
   var WINDOW_STEPS = [7, 14, 30, 60, 90, 180, 365, 730, 1095, 0];   // days, for sync, strength and scout; 0 = all time
+  var UI_SCALES = ['1', '1.12', '1.25', '1.4'];   // the text sizes the list beside Sync offers
   var SETTINGS_DEFAULTS = { minutes: 60, endgameTier: 2, hour: 19, apiKey: '', perf: 'all',
     boardTheme: 'cyan', pieceSet: 'glyph', showCoords: true, uiScale: '1', windowDays: 0 };
   // A session hour is a whole hour of the day; a budget is a positive number of minutes.
@@ -110,7 +111,8 @@
     if ('boardTheme' in v) out.boardTheme = /^[a-z]+(-[a-z]+)?$/.test(v.boardTheme) ? v.boardTheme : 'cyan';
     if ('pieceSet' in v) out.pieceSet = v.pieceSet === 'letters' ? 'letters' : 'glyph';
     if ('showCoords' in v) out.showCoords = v.showCoords !== false;
-    if ('uiScale' in v) out.uiScale = numOrNull(v.uiScale) ? String(+v.uiScale) : '1';
+    // only a size the list has: any number would scale every rem on the page by it (a hand-edited 50 is unusable)
+    if ('uiScale' in v) out.uiScale = UI_SCALES.indexOf(String(+v.uiScale)) > -1 ? String(+v.uiScale) : '1';
     if ('windowDays' in v) out.windowDays = WINDOW_STEPS.indexOf(+v.windowDays) > -1 ? +v.windowDays : 0;
     return out;
   }
@@ -1026,8 +1028,7 @@
     return true;
   }
 
-  // How a game that is over reads, from what Chess.gameOver() says. The endgame studies use it too:
-  // they showed the bare word ("material.").
+  // How a game that is over reads, from what Chess.gameOver() says: in sparring and in the endgame studies.
   function overMessage(over) {
     return over === 'checkmate' ? 'Checkmate.' : over === 'stalemate' ? 'Stalemate.' : over === 'fifty' ? 'Drawn by the fifty-move rule.'
       : over === 'repetition' ? 'Drawn by threefold repetition.' : 'Drawn: neither side can mate.';
@@ -1640,6 +1641,9 @@
     var score = Coach.scoreJustification(text, ctx);
     var entry = { text: text, san: c.mv.san, score: score, cpLoss: ctx.cpLoss, best: ctx.best, at: Date.now() };
     entry.notes = Coach.respond(entry, ctx);
+    // Into the game's justifications as stored now, not the ones the review started with: a backup restored
+    // meanwhile replaced those, and writing the old set back would undo the restore for this game.
+    r.transcript = S.transcripts[r.game.id] || {};
     r.transcript[c.ply] = entry;
     S.transcripts[r.game.id] = r.transcript;
     save('transcripts', S.transcripts);
@@ -1981,8 +1985,7 @@
   }
   function applyBoardSettings() {
     document.documentElement.setAttribute('data-board-theme', S.settings.boardTheme || 'cyan');
-    var opts = { pieceSet: S.settings.pieceSet, showCoords: S.settings.showCoords !== false,
-                 solidPieces: siteTheme(S.settings.boardTheme) };
+    var opts = boardOpts();
     [sparBoard, drillBoard, revBoard].forEach(function (b) { if (b) b.setDisplayOptions(opts); });
   }
 

@@ -1041,10 +1041,10 @@ with sync_playwright() as p:
     c2.close()
 
     # Sync: "all" anchors to the speed most games were played at; a chosen speed to its own rating.
-    def lichess_row(gid, perf, days_ago):
-        return json.dumps({"id": gid, "rated": True, "speed": perf, "perf": perf, "createdAt": NOW - DAY * days_ago, "status": "resign",
-                           "winner": "white", "moves": "e4 e5 Nf3", "players": {"white": {"user": {"name": "luke"}, "rating": 1700},
-                                                                                "black": {"user": {"name": "opp"}, "rating": 1700}}})
+    def lichess_row(gid, speed, days_ago, **extra):   # extra: keys of the row to set or replace
+        return json.dumps(dict({"id": gid, "rated": True, "speed": speed, "perf": speed,"createdAt": NOW - DAY * days_ago, "status": "resign",
+                                "winner": "white", "moves": "e4 e5 Nf3", "players": {"white": {"user": {"name": "luke"}, "rating": 1700},
+                                                                                     "black": {"user": {"name": "opp"}, "rating": 1700}}}, **extra))
     def mixed_games(route):
         rows = [lichess_row("mb1", "blitz", 1), lichess_row("mb2", "blitz", 2), lichess_row("mr1", "rapid", 3)]
         nop = json.loads(rows[2]); del nop["perf"]; rows.append(json.dumps(dict(nop, id="mn1")))   # one with no speed named
@@ -1350,6 +1350,26 @@ with sync_playwright() as p:
     c2.close()
 
     # ---- October 2026 coverage round, third part: the branches no check took, each with what it does
+    def restore_backup(page, name, backup):   # a backup file restored through Settings, waited for by its notice
+        page.set_input_files("#importFile", write_tmp(name, json.dumps(backup)))
+        page.wait_for_function("document.querySelector('#flash').innerText.trim() === 'Backup restored.'", timeout=10000)
+    def pick_review(page, opp):   # the review's list of games, set to the game against opp
+        page.evaluate("""opp => { const s = document.querySelector('#revGame');
+          s.value = [...s.options].filter(o => o.text.indexOf(' vs ' + opp + ' ') > -1)[0].value; }""", opp)
+    # In-page wait(cond, stuck): cond polled every POLL_MS until it holds; after STUCK_MS it fails with stuck().
+    POLL_MS, STUCK_MS = 15, 20000
+    WAIT_JS = ("const wait = (cond, stuck) => new Promise((res, rej) => { const t0 = Date.now(); (function poll() {"
+               " if (cond()) res(); else if (Date.now() - t0 > %d) rej(new Error(stuck())); else setTimeout(poll, %d); })(); });" % (STUCK_MS, POLL_MS))
+    # The house engine stops at a deadline, so a slow or busy machine gets a shallower answer (from the start, depth 2
+    # says 0 and depth 3 says +48). A check that compares the engine's move or number lifts the deadline first.
+    NO_DEADLINE = """() => { const rank = Engine.prototype.rankAsync;
+      Engine.prototype.rankAsync = function (g, depth, ms, onDepth) { return rank.call(this, g, depth, Infinity, onDepth); }; }"""
+    def stand_in_sf(on_command):
+        # A Stockfish stand-in worker: it answers uci and isready and keeps the position (fen; white: White to move);
+        # on_command handles every other command c.
+        return ("var fen = ''; onmessage = function (e) { var c = String(e.data), white = fen.split(' ')[1] === 'w';"
+                " if (c === 'uci') postMessage('uciok'); else if (c === 'isready') postMessage('readyok');"
+                " else if (c.indexOf('position fen ') === 0) fen = c.slice(13); else " + on_command + " };")
     # A finished review keeps its buttons on screen. Commit after "Game complete" scored an empty text for the
     # last move and wrote it over that move's justification (and over the session summary).
     c2, p2 = fresh({"games": [blunder_game("rc1", 1)]})
@@ -1364,14 +1384,27 @@ with sync_playwright() as p:
           complete.lower() == "game complete." and last_note.startswith("Candidates for move 3") and "session summary" in p2.inner_text("#revFeedback").lower()
           and len(errors) == 0, "%r | %r" % (last_note[:30], p2.inner_text("#revFeedback")[:40]))
     c2.close()
+    # A backup restored mid-review: the next justification joins the restored ones. It was written into the set the
+    # review started with, which put back what the restore had replaced and dropped what it had brought.
+    c2, p2 = fresh({"games": [blunder_game("rr1", 1)]})
+    p2.click("button.tab[data-tab=review]"); p2.click("#revStart")
+    p2.fill("#revText", "Before the restore: Nf3 and d4, the line Nf3 Nc6 d4."); p2.click("#revSubmit"); p2.click("#revNext")
+    p2.click("button.tab[data-tab=settings]")
+    restore_backup(p2, "mid-review.json", {"transcripts": {"rr1": {"4": {"text": "From the backup.", "san": "Nf3"}}}})
+    p2.click("button.tab[data-tab=review]")
+    p2.fill("#revText", "After the restore: Ba6 to provoke b5, the line Ba6 bxa6."); p2.click("#revSubmit")
+    after_restore = stored(p2, "transcripts", {}).get("rr1", {})
+    check("review: a justification written after a backup is restored mid-review keeps the restored ones and brings back none it replaced",
+          sorted(after_restore) == ["2", "4"] and after_restore["4"]["text"] == "From the backup."
+          and after_restore["2"]["text"].startswith("After the restore"), {k: v.get("text") for k, v in after_restore.items()})
+    c2.close()
     # A restored backup's settings are shown where they are set. The form kept the old values, so Save settings
     # put them back over the restored ones; Sync used the restored speed while its list showed the old one.
     c2, p2 = fresh({"games": [blunder_game("rs1", 1)]})
     p2.click("button.tab[data-tab=settings]")
-    p2.set_input_files("#importFile", write_tmp("settings-backup.json", json.dumps({"settings": {
+    restore_backup(p2, "settings-backup.json", {"settings": {
         "minutes": 45, "hour": 7, "endgameTier": 3, "boardTheme": "green", "pieceSet": "letters", "showCoords": False,
-        "perf": "blitz", "uiScale": "1.25", "windowDays": 30}})))
-    p2.wait_for_function("document.querySelector('#flash').innerText.trim() === 'Backup restored.'", timeout=10000)
+        "perf": "blitz", "uiScale": "1.25", "windowDays": 30}})
     shown = p2.evaluate("""() => ({ minutes: document.querySelector('#setMinutes').value, hour: document.querySelector('#setHour').value,
       tier: document.querySelector('#setTier').value, theme: document.querySelector('#setBoardTheme').value,
       pieces: document.querySelector('#setPieceSet').value, coords: document.querySelector('#setShowCoords').checked,
@@ -1388,17 +1421,19 @@ with sync_playwright() as p:
     c2.close()
 
     # Stored data the app did not write as it is: a score that is no result's, no date, a start position that does
-    # not load, moves that are not a list, a clock with a fraction; settings with a bad value, an unknown theme
-    # and text size, letters for pieces, and no window yet (saved before the window existed, on blitz).
+    # not load, moves that are not a list, a clock with a fraction; settings with a bad value, an unknown theme,
+    # a text size the list does not have (it was kept, and scaled the whole page 50 times), letters for pieces,
+    # and no window yet (saved before the window existed, on blitz).
     damaged = blunder_game("dmg1", 1); damaged.update({"score": 7, "fen": "not a position"}); del damaged["date"]; del damaged["endedAt"]
     no_moves = blunder_game("dmg2", 2); no_moves["m"] = "not a list"; del no_moves["endedAt"]
     clocked = blunder_game("dmg3", 3); clocked.update({"clockInitial": 300, "clockIncrement": 0})
     for row, clk in zip(clocked["m"], (290, 288, 20.4, 286, 15)): row[4] = clk
     c2, p2 = fresh({"games": [damaged, no_moves, clocked], "settings": {"minutes": "lots", "hour": 19, "endgameTier": 2, "perf": "blitz",
-                    "boardTheme": "Not A Theme!", "pieceSet": "letters", "uiScale": "huge"},
+                    "boardTheme": "Not A Theme!", "pieceSet": "letters", "uiScale": 50},
                     "myRatings": {"user": "bob", "rows": {"blitz": [1900, 500, 0, None, None, None]}}})
     loaded = p2.evaluate("""() => ({ minutes: document.querySelector('#setMinutes').value, theme: document.documentElement.getAttribute('data-board-theme'),
       pieces: document.querySelector('#setPieceSet').value, scale: document.querySelector('#uiScale').value,
+      scaleOn: getComputedStyle(document.documentElement).getPropertyValue('--ui-scale').trim(),
       perf: document.querySelector('#syncPerf').value, settings: JSON.parse(localStorage.getItem('dvor:settings')) })""")
     clock_card = " ".join(p2.inner_text("#strengthBody").split())
     you_row = " ".join(p2.inner_text("#titledBody .cmp-row.you").split())
@@ -1408,8 +1443,9 @@ with sync_playwright() as p:
     with p2.expect_download() as dl:
         p2.click("#exportAll")
     saved = {g["id"]: g for g in json.load(open(dl.value.path(), encoding="utf-8"))["games"]}
-    check("stored settings: a bad budget, an unknown theme and text size fall back; letters for pieces are kept",
-          loaded["minutes"] == "60" and loaded["theme"] == "cyan" and loaded["pieces"] == "letters" and loaded["scale"] == "1", loaded)
+    check("stored settings: a bad budget, an unknown theme and a text size the list does not have fall back; letters for pieces are kept",
+          loaded["minutes"] == "60" and loaded["theme"] == "cyan" and loaded["pieces"] == "letters" and loaded["scale"] == "1"
+          and loaded["scaleOn"] == "1", loaded)
     check("stored settings from before the window move to all time, and a speed other than rapid stays",
           loaded["settings"].get("windowDays") == 0 and loaded["settings"].get("perf") == "blitz" and loaded["perf"] == "blitz", loaded["settings"])
     d1, d2, d3 = saved.get("dmg1", {}), saved.get("dmg2", {}), saved.get("dmg3", {})
@@ -1460,9 +1496,9 @@ with sync_playwright() as p:
     def lichess_rows(route):
         asked.append(route.request.url)
         if "luke2" not in route.request.url: return route.fulfill(status=200, body="", content_type="application/x-ndjson")
-        rows = [json.dumps({"id": "nsp%d" % i, "rated": True, "speed": "rapid", "createdAt": NOW - DAY * (i + 1), "status": "resign", "winner": "white",
-                "moves": "e4 e5 Nf3", "clock": {"initial": 600, "increment": 0}, "clocks": [60000, 59950, 59025], "analysis": [{"eval": 30}, {"eval": 30}, {"eval": 35}],
-                "players": {"white": {"user": {"name": "luke2"}, "rating": 1800, "analysis": {"acpl": 20}}, "black": {"user": {"name": "opp"}, "rating": 1800}}})
+        rows = [lichess_row("nsp%d" % i, "rapid", i + 1, perf=None, clock={"initial": 600, "increment": 0}, clocks=[60000, 59950, 59025],
+                            analysis=[{"eval": 30}, {"eval": 30}, {"eval": 35}],
+                            players={"white": {"user": {"name": "luke2"}, "rating": 1800, "analysis": {"acpl": 20}}, "black": {"user": {"name": "opp"}, "rating": 1800}})
                 for i in range(2)]
         route.fulfill(status=200, body="\n".join(rows) + "\n", content_type="application/x-ndjson")
     c2, p2 = fresh({"settings": {"windowDays": 30, "minutes": 60, "hour": 19, "endgameTier": 2}},
@@ -1491,21 +1527,19 @@ with sync_playwright() as p:
       }; }"""
     def spar_play(page, line, my="w"):
         # Plays line (SAN from the start) to its end: your moves clicked on the board, the mirror's from its script.
-        return page.evaluate("""async ([line, my]) => {
-          const count = () => document.querySelectorAll('#sparMoves .mv').length;
-          const wait = (f) => new Promise((res, rej) => { const t0 = Date.now(); (function poll() {
-            if (f()) res(); else if (Date.now() - t0 > 20000) rej(new Error('stuck after ' + count() + ' moves')); else setTimeout(poll, 15); })(); });
+        return page.evaluate("async ([line, my]) => {" + WAIT_JS + """
+          const count = () => document.querySelectorAll('#sparMoves .mv').length, stuck = () => 'stuck after ' + count() + ' moves';
           const g = new Chess();
           for (let i = 0; i < line.length; i++) {
             const m = g.moveFromSan(line[i]);
             if (count() <= i && (i % 2 === 0) === (my === 'w')) {
-              await wait(() => count() === i);
+              await wait(() => count() === i, stuck);
               document.querySelector('#sparBoard [data-sq=' + m.fromSq + ']').click();
               document.querySelector('#sparBoard [data-sq=' + m.toSq + ']').click();
             }
             g.makeMove(m);
           }
-          await wait(() => count() === line.length);
+          await wait(() => count() === line.length, stuck);
           return document.querySelector('#sparStatus').innerText;
         }""", [line, my])
     def spar_game(page, line, my="w", script=None):
@@ -1532,8 +1566,10 @@ with sync_playwright() as p:
     # Take back at once as Black, before the mirror's first move: its first move and the one the takeback asks for
     # are both scheduled, and the second finds it is your turn. The mirror moves once, never for you.
     p2.select_option("#sparColor", "b")
-    p2.evaluate("() => { window.__script = ['e4', 'd4']; document.querySelector('#sparStart').click(); document.querySelector('#sparTakeback').click(); }")
-    p2.wait_for_timeout(700)
+    # Both are timers, 250 ms from the start and 120 ms from the takeback: a 300 ms one set after them fires after both.
+    p2.evaluate("""async () => { window.__script = ['e4', 'd4'];
+      document.querySelector('#sparStart').click(); document.querySelector('#sparTakeback').click();
+      await new Promise(done => setTimeout(done, 300)); }""")
     once = p2.evaluate("[[...document.querySelectorAll('#sparMoves .mv')].map(m => m.innerText), window.__script.length, document.querySelectorAll('#sparBoard .sq.movable').length]")
     check("sparring: a takeback before the mirror's first move as Black leaves one mirror move, and your turn",
           once[0] == ["e4"] and once[1] == 1 and once[2] > 0, once)
@@ -1585,17 +1621,8 @@ with sync_playwright() as p:
 
     # Stockfish, a stand-in worker with no principal variation and a score four pawns for Black: its best move is the
     # line; the house engine is the more hopeful for White; the mirror's move that is Stockfish's own costs nothing.
-    FAKE_SF2 = r"""var fen = '';
-    onmessage = function (e) {
-      var c = String(e.data), sm = / searchmoves (\S+)/.exec(c), white = fen.split(' ')[1] === 'w';
-      if (c === 'uci') postMessage('uciok');
-      else if (c === 'isready') postMessage('readyok');
-      else if (c.indexOf('position fen ') === 0) fen = c.slice(13);
-      else if (c.indexOf('go') === 0) {
-        postMessage('info depth 12 multipv 1 score cp ' + (white ? -400 : 400));
-        postMessage('bestmove ' + (sm ? sm[1] : white ? 'e2e4' : 'e7e5'));
-      }
-    };"""
+    FAKE_SF2 = stand_in_sf(r"""if (c.indexOf('go') === 0) { var sm = / searchmoves (\S+)/.exec(c);
+      postMessage('info depth 12 multipv 1 score cp ' + (white ? -400 : 400)); postMessage('bestmove ' + (sm ? sm[1] : white ? 'e2e4' : 'e7e5')); }""")
     c2, p2 = fresh({"games": [blunder_game("fs%d" % i, 1 + i) for i in range(2)]})
     p2.evaluate("src => { window.STOCKFISH_SOURCE = src; }", FAKE_SF2); p2.evaluate(SCRIPTED)
     p2.click("button.tab[data-tab=sparring]"); p2.evaluate("s => { window.__script = s; }", ["e5"])
@@ -1612,39 +1639,42 @@ with sync_playwright() as p:
           sf_log[:200])
     c2.close()
     # A Stockfish that scores the start as the house engine does: the two agree. (The page's own house engine, asked
-    # first, gives the number; the stand-in answers with it.)
+    # first, gives the number; the stand-in answers with it. With no deadline both readings are from the full depth.)
     c2, p2 = fresh({"games": [blunder_game("fa%d" % i, 1 + i) for i in range(2)]})
+    p2.evaluate(NO_DEADLINE)
     house = p2.evaluate("async () => (await Sparring.dualAdvice(new Engine(), new Chess(), { depth: 3, budget: 800 })).evalCp")
-    p2.evaluate("src => { window.STOCKFISH_SOURCE = src; }", "onmessage = function (e) { var c = String(e.data);"
-                " if (c === 'uci') postMessage('uciok'); else if (c === 'isready') postMessage('readyok');"
-                " else if (c.indexOf('go') === 0) { postMessage('info depth 12 multipv 1 score cp %d pv e2e4'); postMessage('bestmove e2e4'); } };" % house)
+    p2.evaluate("src => { window.STOCKFISH_SOURCE = src; }",
+                stand_in_sf("if (c.indexOf('go') === 0) { postMessage('info depth 12 multipv 1 score cp %d pv e2e4'); postMessage('bestmove e2e4'); }" % house))
     p2.click("button.tab[data-tab=sparring]"); p2.select_option("#sparColor", "w"); p2.click("#sparStart")
     p2.wait_for_function("/House engine/.test(document.querySelector('#sfNow').innerText)", timeout=20000)
     agree = " ".join(p2.inner_text("#sfNow").split())
     check("stockfish: a reading within 30 cp of the house engine's is called agreement", "agrees with Stockfish." in agree, agree)
     c2.close()
     # A read dropped when Stockfish is switched off, which then fails, is not Stockfish failing: on again, it reads.
-    FAKE_SF3 = r"""var fen = '', timer = null;
-    onmessage = function (e) {
-      var c = String(e.data), white = fen.split(' ')[1] === 'w';
-      if (c === 'uci') postMessage('uciok');
-      else if (c === 'isready') postMessage('readyok');
-      else if (c.indexOf('position fen ') === 0) fen = c.slice(13);
-      else if (c === 'stop') { clearTimeout(timer); throw new Error('the stopped read failed'); }
-      else if (c.indexOf('go') === 0) timer = setTimeout(function () {
-        postMessage('info depth 9 multipv 1 score cp 25 pv ' + (white ? 'e2e4' : 'e7e5'));
-        postMessage('bestmove ' + (white ? 'e2e4' : 'e7e5'));
-      }, 700);
-    };"""
+    # The stand-in leaves its first search unanswered and throws when told to stop it. Each step waits for what the
+    # next needs (the search sent, the failure delivered to the page and to this script), not for a length of time.
+    FAKE_SF3 = "var searches = 0; " + stand_in_sf("""if (c === 'stop') throw new Error('the stopped read failed');
+      else if (c.indexOf('go') === 0 && ++searches > 1) {
+        postMessage('info depth 9 multipv 1 score cp 25 pv ' + (white ? 'e2e4' : 'e7e5')); postMessage('bestmove ' + (white ? 'e2e4' : 'e7e5')); }""")
+    # What the page sends its worker, and its errors, each counted once the worker's own listeners have run.
+    WATCH_WORKER = """() => { const Real = window.Worker; window.__sent = []; window.__workerErrors = 0;
+      window.Worker = function (url) { const w = new Real(url), send = w.postMessage.bind(w);
+        w.postMessage = c => { window.__sent.push(String(c)); send(c); };
+        w.addEventListener('error', () => setTimeout(() => { window.__workerErrors++; }));
+        return w; }; }"""
     c2, p2 = fresh({"games": [blunder_game("fo%d" % i, 1 + i) for i in range(2)]}); errs_before = len(errors)
-    p2.evaluate("src => { window.STOCKFISH_SOURCE = src; }", FAKE_SF3)
+    p2.evaluate("src => { window.STOCKFISH_SOURCE = src; }", FAKE_SF3); p2.evaluate(WATCH_WORKER)
     p2.click("button.tab[data-tab=sparring]"); p2.uncheck("#sparCoach")
-    p2.select_option("#sparColor", "w"); p2.click("#sparStart"); p2.wait_for_timeout(300)
-    p2.uncheck("#sfOn"); p2.wait_for_timeout(300); p2.check("#sfOn")
-    p2.wait_for_function("/Stockfish plays|did not start/.test(document.querySelector('#sfNow').innerText)", timeout=20000)
+    p2.select_option("#sparColor", "w"); p2.click("#sparStart")
+    p2.wait_for_function("window.__sent.some(c => c.indexOf('go') === 0)", timeout=STUCK_MS)
+    with p2.expect_event("pageerror", timeout=STUCK_MS):
+        p2.uncheck("#sfOn")
+    p2.wait_for_function("window.__workerErrors > 0", timeout=STUCK_MS)
+    p2.check("#sfOn")
+    p2.wait_for_function("/Stockfish plays|did not start/.test(document.querySelector('#sfNow').innerText)", timeout=STUCK_MS)
     worker_errors = errors[errs_before:]; del errors[errs_before:]   # the stand-in's own throw, reported as the page's: expected
     check("stockfish: a read that fails after Stockfish was switched off does not disable it; switched on, it reads",
-          "Stockfish plays e4" in p2.inner_text("#sfNow") and all("the stopped read failed" in e for e in worker_errors),
+          "Stockfish plays e4" in p2.inner_text("#sfNow") and worker_errors and all("the stopped read failed" in e for e in worker_errors),
           "%s | %s" % (p2.inner_text("#sfNow")[:80], worker_errors))
     c2.close()
 
@@ -1688,14 +1718,12 @@ with sync_playwright() as p:
           revealed == "The move was zz9. zz9 Nc6" and pieces_same and open_grades == ["0", "1"], "%r | %s | %s" % (revealed, pieces_same, open_grades))
     check("strength: an opening line reached only in unfinished games has no result", "1. c4 2 games no result" in tree, tree[tree.find("1. c4"):][:60])
     p2.click("#drillQuit"); p2.click("button.tab[data-tab=review]")
-    p2.evaluate("""() => { const s = document.querySelector('#revGame');
-      s.value = [...s.options].filter(o => /judged/.test(o.text))[0].value; }""")
+    pick_review(p2, "judged")
     p2.click("#revStart"); p2.click("#revSkip"); p2.click("#revSkip"); p2.click("#revSkip")
     fourth = " ".join(p2.evaluate("document.querySelector('#revPrompt').textContent").split())
     marks = p2.evaluate("[...document.querySelectorAll('#revMoves .mv')].map(m => m.innerText + ':' + m.className.replace('mv', '').trim())")
     p2.click("#revSkip"); p2.click("#revSkip"); p2.click("#revRestart")
-    p2.evaluate("""() => { const s = document.querySelector('#revGame');
-      s.value = [...s.options].filter(o => /nobest/.test(o.text))[0].value; }""")
+    pick_review(p2, "nobest")
     p2.click("#revStart"); p2.click("#revSkip")
     p2.fill("#revText", "I played Ba6 to provoke b5, the line Ba6 bxa6 and I am lost."); p2.click("#revSubmit")
     no_best_note = " ".join(p2.inner_text("#revFeedback").split())
@@ -1710,8 +1738,7 @@ with sync_playwright() as p:
     p2.click("button.tab[data-tab=strength]"); p2.click('[data-jump="gone2:3"]'); p2.click("#drillReveal")
     bare_reveal = p2.inner_text("#drillFeedback").strip()
     p2.click("button.tab[data-tab=settings]")
-    p2.set_input_files("#importFile", write_tmp("other-games.json", json.dumps({"games": [blunder_game("other2", 2)]})))
-    p2.wait_for_function("document.querySelector('#flash').innerText.trim() === 'Backup restored.'", timeout=10000)
+    restore_backup(p2, "other-games.json", {"games": [blunder_game("other2", 2)]})
     p2.click("button.tab[data-tab=drills]"); p2.click('[data-grade="0"]')
     kept_card = stored(p2, "cards", {}).get("gone2:3", {})
     check("drills: a card graded after its game was replaced keeps the grade",
@@ -1722,10 +1749,9 @@ with sync_playwright() as p:
     # Scout: a listed rating, analysed games, an opening under water as Black; then loaded as yours, the window
     # moved to 30 days and back to all time keeps their games.
     def scout_black(route):
-        rows = [json.dumps({"id": "sb%d" % i, "rated": True, "speed": "blitz", "perf": "blitz", "createdAt": NOW - DAY * (i + 1), "status": "resign",
-                "winner": "white", "moves": "e4 c5 Nf3 d6 d4", "clock": {"initial": 300, "increment": 0},
-                "opening": {"eco": "B50", "name": "Sicilian Defense"}, "analysis": [{"eval": 30}, {"eval": 40}, {"eval": 40}, {"eval": 45}, {"eval": 50}],
-                "players": {"white": {"user": {"name": "opp"}, "rating": 1800}, "black": {"user": {"name": "scoutb"}, "rating": 1700, "analysis": {"acpl": 40}}}})
+        rows = [lichess_row("sb%d" % i, "blitz", i + 1, moves="e4 c5 Nf3 d6 d4", clock={"initial": 300, "increment": 0},
+                            opening={"eco": "B50", "name": "Sicilian Defense"}, analysis=[{"eval": 30}, {"eval": 40}, {"eval": 40}, {"eval": 45}, {"eval": 50}],
+                            players={"white": {"user": {"name": "opp"}, "rating": 1800}, "black": {"user": {"name": "scoutb"}, "rating": 1700, "analysis": {"acpl": 40}}})
                 for i in range(4)]
         route.fulfill(status=200, body="\n".join(rows) + "\n", content_type="application/x-ndjson")
     c2, p2 = fresh({}, routes={"**/lichess.org/api/games/user/scoutb**": scout_black,
@@ -1759,12 +1785,14 @@ with sync_playwright() as p:
     p2.click("#saveSettings")
     p2.click("button.tab[data-tab=sparring]")
     theme_after = p2.evaluate("[document.documentElement.getAttribute('data-board-theme'), document.querySelector('#sparBoard [data-sq=e1] .piece').textContent]")
-    p2.set_input_files("#importFile", write_tmp("one-nameless.pgn", "1. e4 e5 2. Nf3 *\n")); p2.wait_for_timeout(800)
+    p2.set_input_files("#importFile", write_tmp("one-nameless.pgn", "1. e4 e5 2. Nf3 *\n"))
+    p2.wait_for_function("/names no player/.test(document.querySelector('#flash').innerText)", timeout=10000)
     one_nameless = " ".join(p2.inner_text("#flash").split())
     p2.set_input_files("#importFile", write_tmp("mixed.pgn",
         '[Variant "Chess960"]\n[White "a"]\n[Black "b"]\n[Result "*"]\n\n1. e4 *\n\n' * 2 +
         '[White "a"]\n[Black "b"]\n[Result "*"]\n\n1. e4 e5 2. Ke3 *\n\n' * 2 +
-        '[White "a"]\n[Black "b"]\n[Result "1-0"]\n\n1. d4 d5 2. c4 1-0\n')); p2.wait_for_timeout(800)
+        '[White "a"]\n[Black "b"]\n[Result "1-0"]\n\n1. d4 d5 2. c4 1-0\n'))
+    p2.wait_for_function("/Left out/.test(document.querySelector('#flash').innerText)", timeout=10000)
     mixed = " ".join(p2.inner_text("#flash").split())
     p2.evaluate("() => { Storage.prototype.__remove = Storage.prototype.removeItem; Storage.prototype.removeItem = function () {}; }")
     p2.click("button.tab[data-tab=settings]"); p2.click("#wipe"); p2.wait_for_timeout(300)
@@ -1789,20 +1817,19 @@ with sync_playwright() as p:
     # Endgame studies: promoting to a queen in the Saavedra walks into the stalemate; the engine taking the last
     # knight is a draw by material; studied as Black, the evaluation is still White's.
     def eg_play(page, moves):
-        return page.evaluate("""async (moves) => {
+        return page.evaluate("async (moves) => {" + WAIT_JS + """
           const fb = () => document.querySelector('#drillFeedback').innerText;
-          const wait = (f) => new Promise((res, rej) => { const t0 = Date.now(); (function poll() {
-            if (f()) res(); else if (Date.now() - t0 > 20000) rej(new Error('no reply: ' + fb())); else setTimeout(poll, 15); })(); });
           const out = [];
           for (const [a, b, promo] of moves) {
             document.querySelector('#drillBoard [data-sq=' + a + ']').click(); document.querySelector('#drillBoard [data-sq=' + b + ']').click();
             if (promo) document.querySelector('#drillBoard [data-promo=' + promo + ']').click();
-            await wait(() => !/Engine replying/.test(fb()));
+            await wait(() => !/Engine replying/.test(fb()), () => 'no reply: ' + fb());
             out.push(fb().trim());
           }
           return out;
         }""", moves)
     c2, p2 = fresh({"games": [blunder_game("eg1", 1)]})
+    p2.evaluate(NO_DEADLINE)   # the replies checked below are the engine's depth-4 choices (about 0.3 s each in Node; 1.4 s allowed)
     p2.click("button.tab[data-tab=drills]")
     p2.select_option("#egPick", "saavedra"); p2.click("[data-start=endgame]")
     saavedra = eg_play(p2, [["c6", "c7"], ["b6", "b5"], ["b5", "b4"], ["b4", "b3"], ["b3", "c2"], ["c7", "c8", "q"], ["c8", "c4"]])

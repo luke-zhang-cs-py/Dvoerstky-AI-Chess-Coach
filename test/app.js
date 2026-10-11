@@ -118,7 +118,6 @@ const sans = g => g.moves.map(m => m.san).join(' ');
     Array.isArray(damaged) && damaged.length === 1 && damaged[0].played === 7 && damaged[0].best === 'Qxf7#' &&
     Array.isArray(damaged[0].motifs) && damaged[0].motifs.length === 0,
     Array.isArray(damaged) ? JSON.stringify(damaged.map(e => [e.played, e.best, e.motifs])) : damaged);
-  moves[6].san = 'Qxe5+';
 }
 
 // ---------------------------------------------------------------- book and tree: games set up from a position
