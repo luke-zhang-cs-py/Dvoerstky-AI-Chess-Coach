@@ -1850,6 +1850,8 @@ with sync_playwright() as p:
     c2.close()
 
     # ---- October 2026 coverage round, fourth part: the last guards, each made to do its job
+    # A Stockfish stand-in that answers every search at once, with no move.
+    SF_AT_ONCE = stand_in_sf("if (c.indexOf('go') === 0) postMessage('bestmove (none)');")
     # A page edited after this code, or older than it: a tab added before its panel, no Stockfish readout, no
     # window note. Each is skipped where it is missing (the script below runs before the page's own boot), and
     # the rest works: the tabs, the window slider, a sparring game with Stockfish reading it.
@@ -1865,7 +1867,7 @@ with sync_playwright() as p:
     p2.click("button.tab[data-tab=strength]")
     p2.evaluate("""() => { const r = document.querySelector('#winDays'); r.value = '2'; r.dispatchEvent(new Event('input')); r.dispatchEvent(new Event('change')); }""")
     window_caption = " ".join(p2.inner_text("#rulerCaption").split())
-    p2.evaluate("src => { window.STOCKFISH_SOURCE = src; }", stand_in_sf("if (c.indexOf('go') === 0) postMessage('bestmove (none)');"))
+    p2.evaluate("src => { window.STOCKFISH_SOURCE = src; }", SF_AT_ONCE)
     p2.evaluate(SCRIPTED); p2.evaluate(WATCH_WORKER)
     p2.click("button.tab[data-tab=sparring]"); p2.uncheck("#sparCoach")
     played = spar_game(p2, ["e4", "e5"])
@@ -1906,13 +1908,30 @@ with sync_playwright() as p:
     check("drills: a second click on a grade its first just hid grades nothing: not the next card unseen, nor a finished queue",
           after_first == [[0, 1], "2 of 2", True] and after_last == [[1, 1], False], [after_first, after_last])
     c2.close()
+    # Enter in the handle box twice: the button is disabled once a sync runs, the box is not. The second started a
+    # sync of its own, which kept " Syncing" as the label to put back, and put it back last. Lichess answers only
+    # once both presses are in, so the first sync is still running at the second.
+    held = []
+    c2, p2 = fresh({}, routes={"**/lichess.org/api/games/**": lambda r: held.append(r)})
+    p2.fill("#handle", "luke"); p2.press("#handle", "Enter"); p2.press("#handle", "Enter")
+    p2.wait_for_timeout(300)   # for a second request to arrive, had one been sent
+    asked = len(held)
+    for r in held: r.fulfill(status=200, body="", content_type="application/x-ndjson")
+    p2.wait_for_function("!document.querySelector('#sync').disabled", timeout=10000)
+    p2.wait_for_timeout(300)   # and for a second sync to end
+    check("sync: Enter in the handle box while a sync runs starts no second one, and the button gets its label back",
+          asked == 1 and p2.inner_text("#sync") == "Sync games", [asked, p2.inner_text("#sync")])
+    c2.close()
 
-    # The Stockfish readings kept are capped at 400, the oldest going first. A stand-in that answers at once (with no
-    # move of its own, so each move played needs a reading of its own too) reads a game the scripted mirror plays
-    # out to 210 moves, none ending it: 421 readings. A move keeps its verdict while both its readings (the position
-    # before it, and that position searched for the move played) are among the last 400: moves 12 to 210.
+    # The Stockfish readings kept are capped at 400 (SF_CACHE_MAX in js/ui.js), the oldest going first. A stand-in that
+    # answers at once (with no move of its own, so each move played needs a reading of its own too) reads a game the
+    # scripted mirror plays out to 210 moves, none ending it: 421 readings, the start and two for each move. A move
+    # keeps its verdict while both its readings (the position before it, and that position searched for the move
+    # played) are among the last 400: the first 11 moves lose theirs.
+    SF_CACHE_MAX, LONG_GAME = 400, 210
+    unread = (2 * LONG_GAME + 1 - SF_CACHE_MAX + 1) // 2   # the 21 dropped: the start's, then two per move
     c2, p2 = fresh({"games": [blunder_game("fc%d" % i, 1 + i) for i in range(2)]})
-    p2.evaluate("src => { window.STOCKFISH_SOURCE = src; }", stand_in_sf("if (c.indexOf('go') === 0) postMessage('bestmove (none)');"))
+    p2.evaluate("src => { window.STOCKFISH_SOURCE = src; }", SF_AT_ONCE)
     p2.evaluate(SCRIPTED)
     long_line = p2.evaluate("""n => { let a = 7;   // a seeded walk over legal moves, never one that ends the game (nor a promotion, to click)
       const rnd = () => { a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
@@ -1925,16 +1944,17 @@ with sync_playwright() as p:
         }
         if (line.length === n) return line;
       }
-      return null; }""", 210)
+      return null; }""", LONG_GAME)
     p2.click("button.tab[data-tab=sparring]"); p2.uncheck("#sparCoach")
     spar_game(p2, long_line)
-    verdicts = p2.evaluate("async () => {" + WAIT_JS + """
+    verdicts = p2.evaluate("async n => {" + WAIT_JS + """
       const rows = () => [...document.querySelectorAll('#sfLog tbody tr')].reverse();   // the log lists the newest first
-      await wait(() => rows().length === 210 && /sf-/.test(rows()[209].className) && !/reading this position/.test(document.querySelector('#sfNow').innerText),
+      await wait(() => rows().length === n && /sf-/.test(rows()[n - 1].className) && !/reading this position/.test(document.querySelector('#sfNow').innerText),
                  () => 'readings still on their way: ' + rows().filter(r => /sf-/.test(r.className)).length);
-      return rows().map(r => /sf-/.test(r.className)); }""")
-    check("stockfish: past 400 readings the oldest go first: the first 11 of 210 moves lose their verdicts, the last 199 keep theirs",
-          verdicts == [False] * 11 + [True] * 199, "%d without, %d with; first with at move %s" % (verdicts.count(False), verdicts.count(True),
+      return rows().map(r => /sf-/.test(r.className)); }""", LONG_GAME)
+    check("stockfish: past %d readings the oldest go first: the first %d of %d moves lose their verdicts, the last %d keep theirs"
+          % (SF_CACHE_MAX, unread, LONG_GAME, LONG_GAME - unread),
+          verdicts == [False] * unread + [True] * (LONG_GAME - unread), "%d without, %d with; first with at move %s" % (verdicts.count(False), verdicts.count(True),
           verdicts.index(True) + 1 if True in verdicts else None))
     c2.close()
 

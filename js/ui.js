@@ -280,11 +280,15 @@
   /* ---------- sync ---------- */
   var GAME_CAP = 1000;   // games kept at once: sync's largest request, and the import's limit
   function sync() {
+    // One at a time. The button is disabled while one runs, but Enter in the handle box still gets here: a second
+    // sync kept " Syncing" as the label to put back, and the first, ending, enabled the button mid-sync.
+    var btn = $('#sync');
+    if (btn.disabled) return;
     var raw = $('#handle').value;
     var user = Data.parseHandle(raw);
     if (!user) { flash('That does not look like a Lichess username or profile link.', 'bad'); return; }
     S.handle = user; Store.set('handle', user);
-    var btn = $('#sync'); btn.disabled = true;
+    btn.disabled = true;
     var orig = btn.textContent; btn.innerHTML = '<span class="spin"></span> Syncing';
 
     var days = S.settings.windowDays || 0, perf = S.settings.perf;

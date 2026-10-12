@@ -350,8 +350,8 @@ functions as run, and the figure before this round, 99.96% of lines, was really 
 code lines, 21 functions), and on a scratch copy given a function no test calls, which it
 reported as never called, with its nested function, its lines, statements and branches.
 
-On 12 October 2026: all 4,727 lines, all 688 functions, all 4,188 statements, all 3,461
-branches and every V8 block (2,936 or 2,937 of them: V8 lists only the blocks it compiled, which can differ by one between runs). What was still left a day earlier was reached this way. The titled
+On 12 October 2026: all 4,729 lines, all 688 functions, all 4,190 statements, all 3,463
+branches and every V8 block (2,942 in the last run: V8 lists only the blocks it compiled, so the total can differ between runs). What was still left a day earlier was reached this way. The titled
 players' sort keeps two accounts of one player (the same name and title) in the order they
 are listed. Guards for a page other than this one (edited, or older than the code) are
 tested on such a page, changed before the app boots: a tab added before its panel, no
@@ -359,10 +359,12 @@ Stockfish readout, no window note, and a header that is not the masthead, which 
 boot altogether until `initChrome` took the care `measureMasthead` already did. Grading
 now needs the card's grades to be showing: a second Enter on a grade button, landing before
 the page redraws, still reaches the button the first one hid, and graded the next card
-unseen. The Stockfish cache passes 400 readings in a 210-move game, read by a stand-in
+unseen. The same review found Enter in the handle box starting a second sync while one ran
+(the button is disabled then, the box is not), which left the button reading "Syncing" for
+good; Enter does nothing now while a sync runs. The Stockfish cache passes 400 readings in a 210-move game, read by a stand-in
 worker that answers at once and played by the scripted mirror. Guards nothing could reach
-were removed: the titled sheet's body, status line and redrawn checkbox (drawn by the call
-just before), Refresh pressed while a refresh runs (the button pressed is replaced at once
+were removed: the titled sheet's body, status line and redrawn checkbox (drawn whenever
+there is a profile, and one never goes once there), Refresh pressed while a refresh runs (the button pressed is replaced at once
 by a disabled one), the day's Mark button (always drawn), a disabled grade button (it gets
 no click) and an endgame move with no study on (its board is only on screen during one).
 Fallbacks that could never be taken (`||` defaults for settings that `cleanSettings` has

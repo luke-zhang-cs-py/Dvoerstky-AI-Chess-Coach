@@ -66,16 +66,16 @@ notes/       the full guide
 
 ## Tests
 
-**667 checks.** In Node: 96 regression, 83 app (PGN import, Lichess sync, mining,
+**669 checks.** In Node: 96 regression, 83 app (PGN import, Lichess sync, mining,
 calendar, storage, the Stockfish reader), 62 rules, 43 titled-player, 32 analysis,
 30 sparring, 29 coach, 23 engine and 22 integration checks,
 and perft on 21 positions (35 counts, plus 5 SAN and PGN checks), 15 of them edge cases (en
 passant out of a pin, castling into check, underpromotion) with counts taken from Stockfish 19,
-one from python-chess. In Chromium: 201 browser checks and 6 on the single-file build. Every
+one from python-chess. In Chromium: 203 browser checks and 6 on the single-file build. Every
 suite exits non-zero on a failure, which is what CI reads. Every bug fixed has a check that
 failed on the code before its fix. The browser checks run the real Stockfish. Together
-they run all 4,727 code lines in `js/`, all 688 of its functions, all 4,188 of its
-statements and all 3,461 of its branches (`test/coverage_report.py`, 12 October 2026;
+they run all 4,729 code lines in `js/`, all 688 of its functions, all 4,190 of its
+statements and all 3,463 of its branches (`test/coverage_report.py`, 12 October 2026;
 the guide says how the last of them were reached).
 
 **From the outside** (`test/engine_gauntlet.py`): the engine driven over UCI the way a
