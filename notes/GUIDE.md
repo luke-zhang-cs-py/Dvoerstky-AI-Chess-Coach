@@ -351,7 +351,7 @@ code lines, 21 functions), and on a scratch copy given a function no test calls,
 reported as never called, with its nested function, its lines, statements and branches.
 
 On 12 October 2026: all 4,727 lines, all 688 functions, all 4,188 statements, all 3,461
-branches and all 2,936 V8 blocks. What was still left a day earlier was reached this way. The titled
+branches and every V8 block (2,936 or 2,937 of them: V8 lists only the blocks it compiled, which can differ by one between runs). What was still left a day earlier was reached this way. The titled
 players' sort keeps two accounts of one player (the same name and title) in the order they
 are listed. Guards for a page other than this one (edited, or older than the code) are
 tested on such a page, changed before the app boots: a tab added before its panel, no
