@@ -744,9 +744,11 @@
     return h.join('');
   }
 
+  // Called only once renderStrength has drawn the sheet: by it, by the sheet's own controls, and by
+  // rememberMyRatings, which a sync with games calls just before rebuild draws it (and a profile, once
+  // there, is never taken away).
   function renderTitled() {
     var host = $('#titledBody');
-    if (!host) return;
     var v = titledView();
     host.innerHTML = titledControls(v) + titledPicker(v) + titledChart(v) + titledTable(v);
     bindTitled(host, v);
@@ -759,12 +761,11 @@
         var next = $$('[data-pick]', host).filter(function (x) { return x.checked; }).map(function (x) { return x.dataset.pick; });
         Store.set('titledPicks', next);
         renderTitled();
-        var again = $('[data-pick="' + cb.dataset.pick + '"]', host);
-        if (again) again.focus();
+        $('[data-pick="' + cb.dataset.pick + '"]', host).focus();   // the picker draws every player, so it is there again
       });
     });
+    // Never while a refresh runs: renderTitled replaces this button at once with a disabled one.
     $('#cmpRefresh', host).addEventListener('click', function () {
-      if (titledFetch) return;
       var users = v.picks.length ? v.picks : Titled.DEFAULT_PICKS;
       titledFetch = { count: users.length };
       renderTitled();
@@ -775,9 +776,8 @@
         renderTitled();
       }, function (e) {
         titledFetch = null;
-        renderTitled();
-        var status = $('#cmpStatus');
-        if (status) status.textContent = 'Could not reach Lichess (' + e.message + '). Showing the ' +
+        renderTitled();   // which draws the status line this says it in
+        $('#cmpStatus').textContent = 'Could not reach Lichess (' + e.message + '). Showing the ' +
           (titledLive() ? 'last fetched' : Titled.SNAPSHOT.date) + ' ratings.';
       });
     });
@@ -1394,8 +1394,11 @@
     });
     $$('[data-grade]').forEach(function (b) {
       b.addEventListener('click', function () {
+        // Only the card whose grades are showing. A second Enter on a grade button, landing before the
+        // page has redrawn, still reaches it once the grade has hidden it: it must not grade the next
+        // card unseen, nor a queue already finished. (A disabled button gets no click at all.)
         var d = S.drill;
-        if (!d || b.disabled) return;
+        if (!d || !d.revealed) return;
         var c = d.queue[d.index], card = S.deck[c.id] || c;   // the card itself if its game has gone meanwhile
         Training.review(card, +b.dataset.grade);
         persistCards([card]);
@@ -1438,9 +1441,8 @@
     $('#drillReveal').classList.add('hidden');
   }
 
-  function onEndgameMove(move, game) {
+  function onEndgameMove(move, game) {   // a move on the study's board, which is only on screen while the study is on
     var d = S.drill;
-    if (!d) return;
     d.practised = true;
     game.makeMove(move);
     drillBoard.setGame(game, { from: move.fromSq, to: move.toSq });
@@ -1549,8 +1551,7 @@
         if (r === 'review') selectTab('review');
       });
     });
-    var md = $('#markDone', host);
-    if (md) md.addEventListener('click', function () {
+    $('#markDone', host).addEventListener('click', function () {   // dayDetail always draws it
       if (S.completed[p.date]) delete S.completed[p.date]; else S.completed[p.date] = Date.now();
       save('completed', S.completed);
       renderCalendar();
@@ -1962,6 +1963,7 @@
     });
 
     var mast = document.querySelector('.masthead');
+    if (!mast) return;   // a page without one (an edited or older index.html) has nothing to fold or measure
     var folded = false;
     function onScroll() {
       var y = window.scrollY || 0;

@@ -562,8 +562,8 @@ with sync_playwright() as p:
     page_cov = {}
     def snap_page(page):
         if id(page) in page_cov: snapshots.extend(page_cov[id(page)].send("Profiler.takePreciseCoverage")["result"])
-    def fresh(seed, hash_="", routes=None):
-        """A new context (its own storage), seeded once before the page's scripts run."""
+    def fresh(seed, hash_="", routes=None, init=None):
+        """A new context (its own storage), seeded once before the page's scripts run; init: more script to run first."""
         c = b.new_context(viewport={"width": 1280, "height": 900}, accept_downloads=True)
         c.route("**/lichess.org/**", lambda r: r.fulfill(status=200, body="", content_type="application/x-ndjson"))
         for pat, fn in (routes or {}).items(): c.route(pat, fn)
@@ -585,6 +585,7 @@ with sync_playwright() as p:
             c.close = close_measured
         js = "".join("localStorage.setItem(%s, %s);" % (json.dumps("dvor:" + k), json.dumps(json.dumps(v))) for k, v in seed.items())
         page.add_init_script('if (!sessionStorage.getItem("seeded")) { localStorage.clear(); %s sessionStorage.setItem("seeded", "1"); }' % js)
+        if init: page.add_init_script(init)
         page.goto("file:///" + os.path.abspath(APP).replace("\\", "/") + hash_)
         page.wait_for_timeout(500)
         return c, page
@@ -1846,6 +1847,95 @@ with sync_playwright() as p:
           bn[0].startswith("Engine plays Kf4.") and bn[1] == "Drawn: neither side can mate.", bn)
     m = re.search(r"Evaluation ([+-]?)(\d+\.\d+|#\d+) \(White’s view\)", philidor[0])
     check("endgame: studied as Black, the evaluation is White's, who has the extra pawn", m is not None and m.group(1) != "-", philidor)
+    c2.close()
+
+    # ---- October 2026 coverage round, fourth part: the last guards, each made to do its job
+    # A page edited after this code, or older than it: a tab added before its panel, no Stockfish readout, no
+    # window note. Each is skipped where it is missing (the script below runs before the page's own boot), and
+    # the rest works: the tabs, the window slider, a sparring game with Stockfish reading it.
+    PARTIAL = """document.addEventListener('DOMContentLoaded', () => {
+      const t = document.createElement('button'); t.className = 'tab'; t.setAttribute('role', 'tab'); t.dataset.tab = 'notes';
+      t.textContent = 'Notes'; document.querySelector('nav.tabs').appendChild(t);
+      document.querySelector('#sfNow').remove(); document.querySelector('#winNote').remove(); });"""
+    errs_before = len(errors)   # taken first: an error in the page's boot is reported before fresh returns
+    c2, p2 = fresh({"games": [blunder_game("pp%d" % i, 1 + i) for i in range(2)]}, init=PARTIAL)
+    labelled = p2.evaluate("[...document.querySelectorAll('.panel')].map(p => p.getAttribute('aria-labelledby'))")
+    p2.click("button.tab[data-tab=notes]")
+    on_notes = p2.evaluate("[document.querySelectorAll('.panel.active').length, location.hash, document.querySelector('.tab[data-tab=notes]').getAttribute('aria-selected')]")
+    p2.click("button.tab[data-tab=strength]")
+    p2.evaluate("""() => { const r = document.querySelector('#winDays'); r.value = '2'; r.dispatchEvent(new Event('input')); r.dispatchEvent(new Event('change')); }""")
+    window_caption = " ".join(p2.inner_text("#rulerCaption").split())
+    p2.evaluate("src => { window.STOCKFISH_SOURCE = src; }", stand_in_sf("if (c.indexOf('go') === 0) postMessage('bestmove (none)');"))
+    p2.evaluate(SCRIPTED); p2.evaluate(WATCH_WORKER)
+    p2.click("button.tab[data-tab=sparring]"); p2.uncheck("#sparCoach")
+    played = spar_game(p2, ["e4", "e5"])
+    p2.wait_for_function("window.__sent.filter(c => c.indexOf('go') === 0).length >= 3", timeout=STUCK_MS)   # every position asked for
+    check("partial page: a tab with no panel yet is left unlabelled, and choosing it shows no panel and throws nothing",
+          labelled == ["tab-" + t for t in ("strength", "sparring", "drills", "calendar", "review", "scout", "settings")]
+          and on_notes == [0, "#notes", "true"] and p2.evaluate("document.querySelector('#panel-sparring').classList.contains('active')"), [labelled, on_notes])
+    check("partial page: with no window note the slider still moves the window; with no Stockfish readout a game is still read and played",
+          window_caption.startswith("Last 30 days") and played == "Played e5" and p2.inner_text("#sfLog") == "" and len(errors) == errs_before,
+          "%s | %s | %s" % (window_caption[:40], played, errors[errs_before:][:2]))
+    c2.close()
+    # A page whose header is not the masthead the stylesheet sticks (an edited or older index.html). Boot stopped
+    # at observing it ("parameter 1 is not of type 'Element'"), so no tab, button or setting was wired up.
+    errs_before = len(errors)
+    c2, p2 = fresh({"games": [blunder_game("mh1", 1)]}, init="document.addEventListener('DOMContentLoaded', () => "
+                   "document.querySelector('.masthead').classList.remove('masthead'));")
+    p2.click("button.tab[data-tab=sparring]")
+    p2.evaluate("() => { window.scrollTo(0, 2000); window.dispatchEvent(new Event('scroll')); window.scrollTo(0, 0); window.dispatchEvent(new Event('scroll')); }")
+    p2.select_option("#uiScale", "1.25")
+    no_mast = p2.evaluate("""() => { const css = getComputedStyle(document.documentElement);
+      return [document.querySelector('#panel-sparring').classList.contains('active'), css.getPropertyValue('--ui-scale').trim(), css.getPropertyValue('--mast-h').trim()]; }""")
+    check("chrome: a page with no masthead boots, its tabs and text size work, and there is nothing to fold or measure",
+          no_mast == [True, "1.25", ""] and len(errors) == errs_before, "%s | %s" % (no_mast, errors[errs_before:][:1]))
+    c2.close()
+
+    # A second activation of a grade button its first has just hidden: a quick double Enter does this when the
+    # second press lands before the page redraws (a redraw moves focus off the hidden button). Both clicks run in
+    # one task here, as two presses inside one frame do. The second graded the next card, unseen; after the last
+    # card it finds the queue finished.
+    c2, p2 = fresh({"games": [blunder_game("gd%d" % i, 1 + i) for i in range(2)]})
+    double_grade = "() => { const b = document.querySelector('#drillGrades [data-grade=\"1\"]'); b.click(); b.click(); }"
+    graded = lambda: sorted(len(c.get("history", [])) for c in stored(p2, "cards", {}).values())
+    p2.click("button.tab[data-tab=drills]"); p2.click("[data-start=all]"); p2.click("#drillReveal")
+    p2.evaluate(double_grade)
+    after_first = [graded(), p2.inner_text("#drillProgress"), p2.evaluate("document.querySelector('#drillGrades').classList.contains('hidden')")]
+    p2.evaluate("document.querySelector('#drillReveal').click()"); p2.evaluate(double_grade)
+    after_last = [graded(), p2.evaluate("document.querySelector('#drillHome').classList.contains('hidden')")]
+    check("drills: a second click on a grade its first just hid grades nothing: not the next card unseen, nor a finished queue",
+          after_first == [[0, 1], "2 of 2", True] and after_last == [[1, 1], False], [after_first, after_last])
+    c2.close()
+
+    # The Stockfish readings kept are capped at 400, the oldest going first. A stand-in that answers at once (with no
+    # move of its own, so each move played needs a reading of its own too) reads a game the scripted mirror plays
+    # out to 210 moves, none ending it: 421 readings. A move keeps its verdict while both its readings (the position
+    # before it, and that position searched for the move played) are among the last 400: moves 12 to 210.
+    c2, p2 = fresh({"games": [blunder_game("fc%d" % i, 1 + i) for i in range(2)]})
+    p2.evaluate("src => { window.STOCKFISH_SOURCE = src; }", stand_in_sf("if (c.indexOf('go') === 0) postMessage('bestmove (none)');"))
+    p2.evaluate(SCRIPTED)
+    long_line = p2.evaluate("""n => { let a = 7;   // a seeded walk over legal moves, never one that ends the game (nor a promotion, to click)
+      const rnd = () => { a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+      for (let tries = 0; tries < 50; tries++) {
+        const g = new Chess(), line = [];
+        while (line.length < n) {
+          const ok = g.generate().filter(m => { if (m.promo) return false; g.makeMove(m); const over = g.gameOver(); g.undoMove(); return !over; });
+          if (!ok.length) break;
+          const m = ok[Math.floor(rnd() * ok.length)]; line.push(g.san(m)); g.makeMove(m);
+        }
+        if (line.length === n) return line;
+      }
+      return null; }""", 210)
+    p2.click("button.tab[data-tab=sparring]"); p2.uncheck("#sparCoach")
+    spar_game(p2, long_line)
+    verdicts = p2.evaluate("async () => {" + WAIT_JS + """
+      const rows = () => [...document.querySelectorAll('#sfLog tbody tr')].reverse();   // the log lists the newest first
+      await wait(() => rows().length === 210 && /sf-/.test(rows()[209].className) && !/reading this position/.test(document.querySelector('#sfNow').innerText),
+                 () => 'readings still on their way: ' + rows().filter(r => /sf-/.test(r.className)).length);
+      return rows().map(r => /sf-/.test(r.className)); }""")
+    check("stockfish: past 400 readings the oldest go first: the first 11 of 210 moves lose their verdicts, the last 199 keep theirs",
+          verdicts == [False] * 11 + [True] * 199, "%d without, %d with; first with at move %s" % (verdicts.count(False), verdicts.count(True),
+          verdicts.index(True) + 1 if True in verdicts else None))
     c2.close()
 
     check("page: no uncaught errors throughout", not errors, errors[:3])

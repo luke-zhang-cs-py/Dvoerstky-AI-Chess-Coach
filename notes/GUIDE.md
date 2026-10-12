@@ -350,16 +350,21 @@ functions as run, and the figure before this round, 99.96% of lines, was really 
 code lines, 21 functions), and on a scratch copy given a function no test calls, which it
 reported as never called, with its nested function, its lines, statements and branches.
 
-On 11 October 2026: all 4,732 lines and all 688 functions; 4,190 of 4,198 statements
-(99.8%), 3,459 of 3,471 branches (99.7%), 2,923 of 2,932 V8 blocks. Outside `ui.js` all
-that is left is the equal-names arm of the titled players' sort (no two have the same
-name). In `ui.js`, none of what is left is reachable from the page as it is: guards for an
-element the page always has (a tab's panel, the titled sheet's body, its status line and
-a checkbox it has just redrawn, the Stockfish panel, the masthead, the window note, the
-day's Mark button), Refresh pressed while it is disabled, grading while the grade buttons
-are hidden or disabled, an endgame move after the study was quit (its board is hidden), and
-the Stockfish cache passing 400 readings, which takes about 200 moves read in one visit.
-They are left as guards, not tested by contrivance. Fallbacks that could never be taken
-(`||` defaults for settings that `cleanSettings` has already filled, for lists the code
-that builds them always fills, and checks that a value its only callers always pass is
-there) were removed instead.
+On 12 October 2026: all 4,727 lines, all 688 functions, all 4,188 statements, all 3,461
+branches and all 2,936 V8 blocks. What was still left a day earlier was reached this way. The titled
+players' sort keeps two accounts of one player (the same name and title) in the order they
+are listed. Guards for a page other than this one (edited, or older than the code) are
+tested on such a page, changed before the app boots: a tab added before its panel, no
+Stockfish readout, no window note, and a header that is not the masthead, which stopped
+boot altogether until `initChrome` took the care `measureMasthead` already did. Grading
+now needs the card's grades to be showing: a second Enter on a grade button, landing before
+the page redraws, still reaches the button the first one hid, and graded the next card
+unseen. The Stockfish cache passes 400 readings in a 210-move game, read by a stand-in
+worker that answers at once and played by the scripted mirror. Guards nothing could reach
+were removed: the titled sheet's body, status line and redrawn checkbox (drawn by the call
+just before), Refresh pressed while a refresh runs (the button pressed is replaced at once
+by a disabled one), the day's Mark button (always drawn), a disabled grade button (it gets
+no click) and an endgame move with no study on (its board is only on screen during one).
+Fallbacks that could never be taken (`||` defaults for settings that `cleanSettings` has
+already filled, for lists the code that builds them always fills, and checks that a value
+its only callers always pass is there) were removed in the same way.

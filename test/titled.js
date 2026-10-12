@@ -171,6 +171,19 @@ const byUser = Object.fromEntries(Titled.players().map((p) => [p.user, p]));
   check('rows: no rows at all, or rows that are not an object, clean to none; a full row survives whole',
     JSON.stringify(Titled.withHistory(null, {})) === '{}' && JSON.stringify(Titled.cleanRows('tampered')) === '{}'
     && JSON.stringify(Titled.cleanRows({ blitz: [2500, 10, 1, 2400, 2600, '2026-01-02'] })) === JSON.stringify({ blitz: [2500, 10, 1, 2400, 2600, '2026-01-02'] }));
+  // Two accounts of one player (Magnus Carlsen plays as DrNykterstein and as DrDrunkenstein): the same
+  // title and the same name, so neither sorts before the other and they stay in the list's order.
+  const second = { user: 'DrDrunkenstein', name: 'Magnus Carlsen' };
+  Titled.SNAPSHOT.players.DrDrunkenstein = { t: 'GM', s: { blitz: [3000, 500, 0, null, null, null] } };
+  const magnusOrder = () => Titled.players().map((p) => p.user).filter((u) => /^Dr/.test(u)).join();
+  Titled.PLAYERS.push(second);
+  const listedAfter = magnusOrder();
+  Titled.PLAYERS.pop(); Titled.PLAYERS.unshift(second);
+  const listedBefore = magnusOrder();
+  Titled.PLAYERS.shift(); delete Titled.SNAPSHOT.players.DrDrunkenstein;
+  check('players: two accounts with the same name and title keep the order they are listed in',
+    listedAfter === 'DrNykterstein,DrDrunkenstein' && listedBefore === 'DrDrunkenstein,DrNykterstein'
+    && Titled.players().length === Titled.PLAYERS.length && Titled.PLAYERS.length === 13, [listedAfter, listedBefore]);
   console.log('\n' + passed + ' passed, ' + failed + ' failed');
   process.exit(failed ? 1 : 0);
 })();
