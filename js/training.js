@@ -5,61 +5,89 @@
 
   /* ---------------- endgame curriculum ----------------
      Starter set of theoretical positions. Descriptions are written here, not
-     lifted from any book; extend freely via the "Add position" control. */
+     lifted from any book; extend it by adding an entry here (and its pin in
+     test/rules.js). Each study is played out on the board. fen: the position;
+     play: the side you take ('w' or 'b'; when it is not the side to move, the
+     engine moves first); result: what your side is to get, 'win' or 'draw'
+     (judgeStudy below reads the end of the game against it). Every position and
+     its result were checked against the Lichess tablebase or Stockfish on
+     12 October 2026 (notes/GUIDE.md). */
   var ENDGAMES = [
     { id: 'lucena', name: 'Lucena — building the bridge', tier: 1, family: 'rook',
-      fen: '2K5/2P1k3/8/8/8/8/r7/3R4 w - - 0 1',
+      fen: '2K5/2P1k3/8/8/8/8/r7/3R4 w - - 0 1', play: 'w', result: 'win',
       goal: 'White to play and win.',
       idea: 'The pawn cannot queen while the enemy rook checks from behind. Post your rook on the fourth rank first, walk the king out, then interpose the rook to block the final check.' },
     { id: 'philidor', name: 'Philidor — third-rank defence', tier: 1, family: 'rook',
-      fen: '4k3/R7/1r6/4PK2/8/8/8/8 b - - 0 1',
+      fen: '4k3/R7/1r6/4PK2/8/8/8/8 b - - 0 1', play: 'b', result: 'draw',
       goal: 'Black to play and draw.',
       idea: 'Hold the rook on the sixth rank so the white king cannot advance. The instant the pawn steps to the sixth, drop the rook to the first rank and check from behind forever.' },
     { id: 'vancura', name: 'Vancura — drawing against the a-pawn', tier: 2, family: 'rook',
-      fen: 'R7/7k/P4r2/8/4K3/8/8/8 b - - 0 1',
+      fen: 'R7/7k/P4r2/8/4K3/8/8/8 b - - 0 1', play: 'b', result: 'draw',
       goal: 'Black to play and draw.',
       idea: 'Attack the rook pawn from the side along the sixth rank rather than blockading in front. The white rook stays tied to the pawn and the black king shelters near the h-file.' },
     { id: 'behind-passer', name: 'Rooks belong behind passed pawns', tier: 1, family: 'rook',
-      fen: '1r3k2/8/8/1P6/8/8/8/1R4K1 w - - 0 1',
-      goal: 'White to play. With best play it is a draw; the lesson is which rook stays active as the pawn runs, and which is tied down in front of it.',
+      fen: '1r3k2/8/8/1P6/8/8/8/1R4K1 w - - 0 1', play: 'w', result: 'draw',
+      goal: 'White to play and draw. With best play it is a draw; the lesson is which rook stays active as the pawn runs, and which is tied down in front of it.',
       idea: 'The rook behind the pawn grows more active with every advance; the rook in front grows more passive. Trade this understanding for tempo, not material.' },
     { id: 'saavedra', name: 'Saavedra — underpromotion', tier: 2, family: 'rook vs pawn',
-      fen: '8/8/1KP5/3r4/8/8/8/k7 w - - 0 1',
+      fen: '8/8/1KP5/3r4/8/8/8/k7 w - - 0 1', play: 'w', result: 'win',
       goal: 'White to play and win.',
       idea: 'Queening allows a stalemate trick. Promote to a rook instead and the threat of mate on the a-file decides.' },
-    { id: 'opposition', name: 'Opposition and key squares', tier: 1, family: 'pawn',
-      fen: '8/8/8/4k3/8/4K3/4P3/8 w - - 0 1',
-      goal: 'Evaluate with White to move, then with Black to move.',
-      idea: 'The result flips on whose turn it is. Learn the three key squares in front of the pawn and count distant opposition before you touch a piece.' },
+    { id: 'opposition', name: 'Opposition and key squares — White to move', tier: 1, family: 'pawn',
+      fen: '8/8/8/4k3/8/4K3/4P3/8 w - - 0 1', play: 'b', result: 'draw',
+      goal: 'White to move, and it is a draw. You have Black: keep the opposition and hold it.',
+      idea: 'The result flips on whose turn it is: with Black to move the same position is lost. Learn the three key squares in front of the pawn and count distant opposition before you touch a piece.' },
+    { id: 'opposition-b', name: 'Opposition and key squares — Black to move', tier: 1, family: 'pawn',
+      fen: '8/8/8/4k3/8/4K3/4P3/8 b - - 0 1', play: 'w', result: 'win',
+      goal: 'Black to move, and White wins. You have White: take the opposition, reach a key square and win.',
+      idea: 'The result flips on whose turn it is: with White to move the same position is a draw. Learn the three key squares in front of the pawn and count distant opposition before you touch a piece.' },
     { id: 'breakthrough', name: 'The three-pawn breakthrough', tier: 1, family: 'pawn',
-      fen: '6k1/ppp5/8/PPP5/8/8/8/6K1 w - - 0 1',
+      fen: '6k1/ppp5/8/PPP5/8/8/8/6K1 w - - 0 1', play: 'w', result: 'win',
       goal: 'White to play and win.',
       idea: 'A pawn sacrifice in the centre of the trio creates an unstoppable passer. Calculate the race to the end rather than assessing by feel.' },
     { id: 'reti', name: 'Réti — the king that walks two ways at once', tier: 2, family: 'pawn',
-      fen: '7K/8/k1P5/7p/8/8/8/8 w - - 0 1',
+      fen: '7K/8/k1P5/7p/8/8/8/8 w - - 0 1', play: 'w', result: 'draw',
       goal: 'White to play and draw.',
       idea: 'Diagonal king moves chase the enemy pawn and support your own simultaneously. Geometry on a chessboard is not Euclidean.' },
     { id: 'bn-mate', name: 'Bishop and knight mate', tier: 3, family: 'technique',
-      fen: '8/8/8/4k3/8/8/8/3BKN2 w - - 0 1',
-      goal: 'Mate within fifty moves.',
+      fen: '8/8/8/4k3/8/8/8/3BKN2 w - - 0 1', play: 'w', result: 'win',
+      goal: 'White to play and mate within fifty moves.',
       idea: 'Drive the king to a corner matching your bishop. The knight traces a W to cut escape squares while the bishop holds the long diagonal.' },
     { id: 'two-bishops', name: 'Two bishops mate', tier: 2, family: 'technique',
-      fen: '8/8/8/4k3/8/8/8/2B1KB2 w - - 0 1',
-      goal: 'Mate efficiently.',
+      fen: '8/8/8/4k3/8/8/8/2B1KB2 w - - 0 1', play: 'w', result: 'win',
+      goal: 'White to play and mate efficiently.',
       idea: 'Bishops on adjacent diagonals build a wall; the king does the pushing. Any corner will do.' },
-    { id: 'wrong-bishop', name: 'Rook pawn and the wrong bishop', tier: 2, family: 'minor piece', fen: null,
-      goal: 'Recognise the drawn structure before you enter it.',
-      idea: 'If the bishop does not control the promotion square, the defending king reaching the corner draws no matter the material count. This is an evaluation skill, not a calculation one.' },
-    { id: 'opp-bishops', name: 'Opposite-coloured bishops: two pawns is often not enough', tier: 2, family: 'minor piece', fen: null,
-      goal: 'Learn which pawn structures still win.',
-      idea: 'Connected passers separated by enough files win; anything the defending bishop can blockade on its own colour does not. Decide before trading into it.' },
-    { id: 'q-vs-pawn', name: 'Queen against a pawn on the seventh', tier: 2, family: 'queen', fen: null,
-      goal: 'Know which files win and which draw.',
-      idea: 'Centre and knight pawns lose. Rook and bishop pawns draw because of stalemate resources when the queen tries to gain the tempo to bring the king closer.' },
-    { id: 'short-side', name: 'Short-side defence in rook endings', tier: 3, family: 'rook', fen: null,
-      goal: 'Defend rook and pawn down when Philidor is unavailable.',
+    { id: 'wrong-bishop', name: 'Rook pawn and the wrong bishop', tier: 2, family: 'minor piece',
+      fen: '8/4k3/8/7P/2B3K1/8/8/8 b - - 0 1', play: 'b', result: 'draw',
+      goal: 'Black to play and draw.',
+      idea: 'The bishop does not control h8, the pawn\u2019s promotion square, so a king that reaches the corner can never be driven out: it is a draw. Recognise that before you calculate, then get there: only one first move reaches the corner in time.' },
+    { id: 'opp-bishops', name: 'Opposite-coloured bishops: two pawns is often not enough', tier: 2, family: 'minor piece',
+      fen: '2k5/6b1/6B1/4P3/5P2/8/8/6K1 b - - 0 1', play: 'b', result: 'draw',
+      goal: 'Black to play and draw, two pawns down.',
+      idea: 'Put the king in front of the pawns, on the light squares your bishop cannot reach, and let the bishop hold the dark ones. Connected pawns stopped that way do not win; pawns far apart, or pushed to the sixth with their king beside them, usually do. Decide before trading into it.' },
+    { id: 'q-vs-pawn', name: 'Queen against a pawn on the seventh', tier: 2, family: 'queen',
+      fen: 'K7/8/8/8/8/8/1pk5/7Q w - - 0 1', play: 'w', result: 'win',
+      goal: 'White to play and win against the knight pawn.',
+      idea: 'Centre and knight pawns lose: check until the king has to stand in front of its pawn, and spend each tempo that buys bringing your own king one square closer. Rook and bishop pawns draw when the defending king stands beside the pawn and the queen\u2019s king is far away: the king goes to the corner, where taking the pawn is stalemate.' },
+    { id: 'short-side', name: 'Short-side defence in rook endings', tier: 3, family: 'rook',
+      fen: '4k3/R7/4K3/4P3/8/8/8/1r6 b - - 0 1', play: 'b', result: 'draw',
+      goal: 'Black to play and draw: rook and pawn down, with Philidor\u2019s defence no longer available.',
       idea: 'Put the king on the short side of the pawn and check from the long side. The checking distance of three files is what makes it hold.' }
   ];
+
+  /* The verdict on a study once the game on its board is over. over: what
+     Chess.gameOver() says; toMove: the side to move at the end, which after a
+     checkmate is the side mated. A win is only a mate you give; a draw is any draw
+     (stalemate, no mating material, threefold repetition, the fifty-move rule). */
+  function judgeStudy(eg, over, toMove) {
+    var mate = over === 'checkmate', won = mate && toMove !== eg.play;
+    if (eg.result === 'win') {
+      return won ? { solved: true, text: 'Solved: you won, as the study asks.' }
+        : { solved: false, text: mate ? 'Failed: you were mated, and the study asks for a win.' : 'Failed: a draw, and the study asks for a win.' };
+    }
+    if (mate && !won) return { solved: false, text: 'Failed: you lost, and the study asks for a draw.' };
+    return { solved: true, text: won ? 'Solved: you won, which is more than the draw the study asks for.' : 'Solved: a draw, as the study asks.' };
+  }
 
   /* ---------------- spaced repetition (SM-2 variant) ---------------- */
 
@@ -100,13 +128,16 @@
   /* ---------------- deck building ---------------- */
 
   /* Turn mined errors into puzzle cards. Only positions with a known refutation
-     become puzzles; everything else becomes a "review" item instead. */
+     become puzzles; everything else becomes a "review" item instead. A stored best
+     move that is no legal move in the position (a damaged line in the game's data)
+     makes no card: nothing played could ever solve it. */
   function buildDeck(errors, existing) {
     existing = existing || {};
     var deck = [];
     errors.forEach(function (e) {
       if (!e.best) return;
       if (e.best === e.played) return;
+      if (!new root.Chess(e.fen).moveFromSan(e.best)) return;
       var card = existing[e.key] || newCard(e.key);
       card.meta = {
         fen: e.fen, solution: e.best, solutionUci: e.bestUci, played: e.played,
@@ -218,8 +249,8 @@
         item.count = item.payload.cardIds.length;
         item.payload.requireLine = true;
       } else if (b === 'endgame') {
-        var tierPool = ENDGAMES.filter(function (e) { return e.tier <= (opts.endgameTier || 2) && e.fen; });
-        if (!tierPool.length) tierPool = ENDGAMES.filter(function (e) { return e.fen; });
+        var tierPool = ENDGAMES.filter(function (e) { return e.tier <= (opts.endgameTier || 2); });
+        if (!tierPool.length) tierPool = ENDGAMES;
         var pick = tierPool[Math.floor(rnd() * tierPool.length)];
         item.payload.endgameId = pick.id;
         item.label = 'Endgame — ' + pick.name;
@@ -323,7 +354,7 @@
 
   root.Training = {
     ENDGAMES: ENDGAMES, BLOCK_META: BLOCK_META, RHYTHM: RHYTHM,
-    newCard: newCard, review: review, retention: retention,
+    judgeStudy: judgeStudy, newCard: newCard, review: review, retention: retention,
     buildDeck: buildDeck, dueCards: dueCards,
     planDay: planDay, planRange: planRange, dateKey: dateKey, toICS: toICS
   };

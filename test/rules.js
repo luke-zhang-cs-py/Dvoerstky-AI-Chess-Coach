@@ -154,11 +154,72 @@ const play = (g, list) => list.forEach(s => { if (!g.move(s)) throw new Error('i
 // ---------------------------------------------------------------- the endgame studies are real positions
 {
   require('../js/training.js');
-  const illegal = globalThis.Training.ENDGAMES.filter(e => e.fen).filter(e => {
-    const g = new Chess(e.fen), them = g.turn === Chess.WHITE ? Chess.BLACK : Chess.WHITE;
-    return g.kings[them] < 0 || g.attacked(g.turn, g.kings[them]);   // the side not to move may not be in check
+  const T = globalThis.Training;
+  // Each study pinned: its position, the side to move, the side you play, the result your side is to get and
+  // the goal as written. Each position and result was checked on 12 October 2026 against the Lichess tablebase
+  // (7 pieces or fewer) or Stockfish (the breakthrough, 8 pieces): notes/GUIDE.md has the verdicts. Change a
+  // study only with a new verdict, and change its line here with it.
+  const PINS = [
+    ['lucena', '2K5/2P1k3/8/8/8/8/r7/3R4 w - - 0 1', 'w', 'w', 'win', 'White to play and win.'],
+    ['philidor', '4k3/R7/1r6/4PK2/8/8/8/8 b - - 0 1', 'b', 'b', 'draw', 'Black to play and draw.'],
+    ['vancura', 'R7/7k/P4r2/8/4K3/8/8/8 b - - 0 1', 'b', 'b', 'draw', 'Black to play and draw.'],
+    ['behind-passer', '1r3k2/8/8/1P6/8/8/8/1R4K1 w - - 0 1', 'w', 'w', 'draw', 'White to play and draw. With best play it is a draw; the lesson is which rook stays active as the pawn runs, and which is tied down in front of it.'],
+    ['saavedra', '8/8/1KP5/3r4/8/8/8/k7 w - - 0 1', 'w', 'w', 'win', 'White to play and win.'],
+    ['opposition', '8/8/8/4k3/8/4K3/4P3/8 w - - 0 1', 'w', 'b', 'draw', 'White to move, and it is a draw. You have Black: keep the opposition and hold it.'],
+    ['opposition-b', '8/8/8/4k3/8/4K3/4P3/8 b - - 0 1', 'b', 'w', 'win', 'Black to move, and White wins. You have White: take the opposition, reach a key square and win.'],
+    ['breakthrough', '6k1/ppp5/8/PPP5/8/8/8/6K1 w - - 0 1', 'w', 'w', 'win', 'White to play and win.'],
+    ['reti', '7K/8/k1P5/7p/8/8/8/8 w - - 0 1', 'w', 'w', 'draw', 'White to play and draw.'],
+    ['bn-mate', '8/8/8/4k3/8/8/8/3BKN2 w - - 0 1', 'w', 'w', 'win', 'White to play and mate within fifty moves.'],
+    ['two-bishops', '8/8/8/4k3/8/8/8/2B1KB2 w - - 0 1', 'w', 'w', 'win', 'White to play and mate efficiently.'],
+    ['wrong-bishop', '8/4k3/8/7P/2B3K1/8/8/8 b - - 0 1', 'b', 'b', 'draw', 'Black to play and draw.'],
+    ['opp-bishops', '2k5/6b1/6B1/4P3/5P2/8/8/6K1 b - - 0 1', 'b', 'b', 'draw', 'Black to play and draw, two pawns down.'],
+    ['q-vs-pawn', 'K7/8/8/8/8/8/1pk5/7Q w - - 0 1', 'w', 'w', 'win', 'White to play and win against the knight pawn.'],
+    ['short-side', '4k3/R7/4K3/4P3/8/8/8/1r6 b - - 0 1', 'b', 'b', 'draw', 'Black to play and draw: rook and pawn down, with Philidor’s defence no longer available.']
+  ];
+  const now = T.ENDGAMES.map(e => [e.id, e.fen, e.fen && e.fen.split(' ')[1], e.play, e.result, e.goal]);
+  const off = PINS.filter((p, i) => JSON.stringify(p) !== JSON.stringify(now[i])).map(p => p[0]);
+  check('studies: every study is the pinned position, side to move, side played, result and goal (all 15)',
+    now.length === PINS.length && off.length === 0, off.join() || now.length);
+  // Legal: a king each, no pawn on the first or last rank, the side not to move not in check, and the FEN read
+  // back as written.
+  const illegal = T.ENDGAMES.filter(e => {
+    if (!e.fen) return true;
+    const g = new Chess(e.fen), them = g.turn === Chess.WHITE ? Chess.BLACK : Chess.WHITE, rows = e.fen.split(' ')[0].split('/');
+    const kings = (e.fen.split(' ')[0].match(/K/g) || []).length === 1 && (e.fen.split(' ')[0].match(/k/g) || []).length === 1;
+    return !kings || /p/i.test(rows[0] + rows[7]) || g.attacked(g.turn, g.kings[them]) || g.fen() !== e.fen;
   }).map(e => e.id);
   check('studies: every endgame position could arise in a game', illegal.length === 0, illegal.join());
+  check('studies: no study is over before it starts, and each names who you play and what you are to get',
+    T.ENDGAMES.every(e => new Chess(e.fen).gameOver() === null && /^[wb]$/.test(e.play) && /^(win|draw)$/.test(e.result)));
+
+  // The draws a study ends on are seen there. Philidor: the white king shuttles, the rook checks from behind;
+  // Vancura: the black rook checks from the side and the king steps back. The third time is the draw.
+  const philidor = new Chess(T.ENDGAMES.find(e => e.id === 'philidor').fen);
+  play(philidor, ['Rh6', 'Ra8+', 'Kd7', 'Ra7+', 'Ke8', 'Ra8+', 'Kd7', 'Ra7+', 'Ke8']);
+  const vancura = new Chess(T.ENDGAMES.find(e => e.id === 'vancura').fen);
+  play(vancura, ['Re6+', 'Kd5', 'Rf6', 'Ke4', 'Re6+', 'Kd5', 'Rf6', 'Ke4']);
+  // Fifty moves: the same study with 99 plies already played since a capture or pawn move, then one more.
+  const fifty = new Chess(T.ENDGAMES.find(e => e.id === 'two-bishops').fen.replace(' 0 1', ' 99 60'));
+  play(fifty, ['Kd2']);
+  check('studies: a repetition in Philidor and in Vancura is a draw, and so is the fifty-move rule',
+    philidor.gameOver() === 'repetition' && vancura.gameOver() === 'repetition' && fifty.gameOver() === 'fifty',
+    [philidor.gameOver(), vancura.gameOver(), fifty.gameOver()].join());
+
+  // The verdict at the end, against the goal. White plays in both. On checkmate the side to move is the side mated.
+  const win = { play: 'w', result: 'win' }, draw = { play: 'w', result: 'draw' };
+  const v = (eg, over, toMove) => { const r = T.judgeStudy(eg, over, toMove); return (r.solved ? 'solved' : 'failed') + ': ' + r.text; };
+  const verdicts = [
+    v(win, 'checkmate', 'b'), v(win, 'checkmate', 'w'), v(win, 'stalemate', 'b'), v(win, 'repetition', 'w'), v(win, 'fifty', 'b'), v(win, 'material', 'w'),
+    v(draw, 'stalemate', 'w'), v(draw, 'repetition', 'b'), v(draw, 'fifty', 'w'), v(draw, 'material', 'b'), v(draw, 'checkmate', 'w'), v(draw, 'checkmate', 'b')
+  ];
+  check('studies: a win is solved only by your mate; a draw by any draw, and failed only by a loss',
+    verdicts.join('|') === [
+      'solved: Solved: you won, as the study asks.', 'failed: Failed: you were mated, and the study asks for a win.',
+      'failed: Failed: a draw, and the study asks for a win.', 'failed: Failed: a draw, and the study asks for a win.',
+      'failed: Failed: a draw, and the study asks for a win.', 'failed: Failed: a draw, and the study asks for a win.',
+      'solved: Solved: a draw, as the study asks.', 'solved: Solved: a draw, as the study asks.', 'solved: Solved: a draw, as the study asks.',
+      'solved: Solved: a draw, as the study asks.', 'failed: Failed: you lost, and the study asks for a draw.',
+      'solved: Solved: you won, which is more than the draw the study asks for.'].join('|'), verdicts.join(' | '));
 }
 
 // ---------------------------------------------------------------- the engine knows the draws

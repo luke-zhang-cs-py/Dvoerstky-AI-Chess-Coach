@@ -10,8 +10,8 @@ A native Stockfish (not the one inside the page) is the referee:
                    good move.
   3. drills     -- for each mistake mined from the sample games: does
                    Stockfish agree it cost what the app says, and is there one
-                   clear answer, or several moves the drill would reject
-                   although they are just as good?
+                   clear answer, or several moves as good (which the drill
+                   now takes when the house engine agrees)?
   4. reader     -- the Stockfish 10 reader in the page (1 s a position):
                    do its verdicts (good / inaccuracy / mistake / blunder)
                    match Stockfish 19's?
@@ -93,28 +93,19 @@ sf = Stockfish(SF)
 report = {}
 
 # ---------------------------------------------------------------- 1. endgame studies
-CLAIMS = {  # id: (side to move's expected result, what it means)
-    "lucena": ("win", "White wins"), "saavedra": ("win", "White wins"), "breakthrough": ("win", "White wins"),
-    "bn-mate": ("win", "White mates"), "two-bishops": ("win", "White mates"),
-    "philidor": ("draw", "Black holds"), "vancura": ("draw", "Black holds"), "reti": ("draw", "White holds"),
-    "behind-passer": ("draw", "a draw with best play (a lesson in rook placement)"),
-}
+# Each study's claim is read from the study itself: the side you play ("play") is to get its "result", a win or
+# a draw. Stockfish scores for the side to move, which in the two opposition studies is your opponent.
 studies = node("""require(ROOT + '/js/core.js'); require(ROOT + '/js/training.js');
-process.stdout.write(JSON.stringify(Training.ENDGAMES.filter(e => e.fen).map(e => ({ id: e.id, fen: e.fen, goal: e.goal }))));""")
+process.stdout.write(JSON.stringify(Training.ENDGAMES.map(e => ({ id: e.id, fen: e.fen, play: e.play, result: e.result }))));""")
 rows = []
 for s in studies:
-    if s["id"] == "opposition":
-        w = sf.analyse(s["fen"], depth=30)[0][1]
-        b = sf.analyse(s["fen"].replace(" w ", " b "), depth=30)[0][1]
-        ok = abs(w) < 80 and b <= -300          # White to move draws; Black to move loses
-        rows.append((s["id"], "draw with White to move, loss for Black to move", "W %+d / B %+d" % (w, b), ok))
-        continue
-    want, words = CLAIMS[s["id"]]
+    words = ("White" if s["play"] == "w" else "Black") + (" wins" if s["result"] == "win" else " holds the draw")
     cp = sf.analyse(s["fen"], depth=30 if not QUICK else 22)[0][1]
+    mine = cp if s["fen"].split()[1] == s["play"] else -cp   # for the side you play
     if s["id"] == "bn-mate":
-        ok = cp >= 100   # a forced win in theory (KBN v K), deeper than depth 30 sees without tablebases
+        ok = mine >= 100   # a forced win in theory (KBN v K), deeper than depth 30 sees without tablebases
     else:
-        ok = cp >= 300 if want == "win" else abs(cp) < 80 if want == "draw" else cp >= 100
+        ok = mine >= 300 if s["result"] == "win" else abs(cp) < 80
     rows.append((s["id"], words, "%+d" % cp, ok))
 print("\n1. Endgame studies (Stockfish 19, depth 30; score for the side to move)")
 for r in rows: print("   %-14s %-44s %10s  %s" % (r[0], r[1], r[2], "ok" if r[3] else "WRONG"))
@@ -162,7 +153,7 @@ for e in data["errors"]:
     truth = by_chances(drop) if drop is not None else "?"
     same = truth == e["severity"] or (truth in ("mistake", "blunder") and e["severity"] in ("mistake", "blunder"))
     agree += 1 if same else 0
-    # a second move as good as the best, in winning chances: a drill wanting one move would mark it wrong
+    # a second move as good as the best, in winning chances: the drill takes it if the house engine agrees
     alt = len(top) > 1 and chances(top[0][1]) - chances(top[1][1]) <= 0.03 and truth != "fine"
     ambiguous += 1 if alt else 0
     rows.append((e["played"], e["severity"], truth, alt))
@@ -170,7 +161,7 @@ print("\n3. Mistakes mined from the sample games: the app's grade / Stockfish 19
 for r in rows[:12]: print("   played %-7s app %-10s Stockfish %-10s%s" % (r[0], r[1], r[2], "  (a second move is as good)" if r[3] else ""))
 print("   %d of %d graded the same (or both mistake-or-worse); %d real mistakes have a second answer as good as the best,"
       % (agree, len(rows), ambiguous))
-print("   which a drill that accepts only one move would mark wrong.")
+print("   which the drill accepts when the house engine scores them within 30 cp of the stored move.")
 report["drills"] = {"mistakes": len(rows), "agree": agree, "ambiguous": ambiguous}
 
 # ---------------------------------------------------------------- 5. the house engine's advice

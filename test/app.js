@@ -203,7 +203,7 @@ const sans = g => g.moves.map(m => m.san).join(' ');
   const day = Training.planRange(monday - 3 * 86400000, 7, { motifs: [] }, [], { endgameTier: 0.5 })
     .map((p) => p.items.find((i) => i.type === 'endgame')).find(Boolean);
   const study = day && Training.ENDGAMES.find((e) => e.id === day.payload.endgameId);
-  check('plan: an endgame tier below every study falls back to any study with a position', !!study && !!study.fen, day && day.payload.endgameId);
+  check('plan: an endgame tier below every study falls back to any study', !!study && !!study.fen, day && day.payload.endgameId);
 
   // The .ics file with no options: 19:00. A block with no label has an empty summary, and a
   // line folded just before an emoji keeps the emoji's two halves together.
@@ -223,6 +223,12 @@ const sans = g => g.moves.map(m => m.san).join(' ');
   const deck = Training.buildDeck(errs);
   check('deck: only a mistake with a better known move becomes a card', deck.length === 1 && deck[0].id === 'g:3' && deck[0].meta.solution === 'Nf3',
     deck.map((c) => c.id).join());
+  // A stored best move that is no move in the position (a damaged line): no card, since no move could solve it.
+  const damaged = Training.buildDeck([{ key: 'g:9', fen: '4k3/8/8/8/8/8/4P3/4K3 w - - 0 1', best: 'zz9', played: 'Kd1' },
+    { key: 'g:11', fen: '4k3/8/8/8/8/8/4P3/4K3 w - - 0 1', best: 'Nf3', played: 'Kd1' },
+    { key: 'g:13', fen: '4k3/8/8/8/8/8/4P3/4K3 w - - 0 1', best: 'e4', played: 'Kd1' }]);
+  check('deck: a stored best move that is no legal move in its position makes no card', damaged.map((c) => c.id).join() === 'g:13',
+    damaged.map((c) => c.id).join());
   const plain = Training.planDay(new Date(2026, 9, 14, 12).getTime(), null, deck);
   check('plan: no profile and no options still gives the day\'s blocks', plain.weekday === 'Wednesday' && plain.items.length === 3, plain.items.map((i) => i.type).join());
   // Five minutes fits no block: the day keeps its first one anyway.

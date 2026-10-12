@@ -144,12 +144,12 @@ with sync_playwright() as p:
     # Make the mirror take a full second, so the restart below is sure to land while it thinks.
     pg.evaluate("""() => { const real = Sparring.Mirror.prototype.chooseMove;
       Sparring.Mirror.prototype.chooseMove = function () {
-        const answer = real.apply(this, arguments);
+        window.__asked = true; const answer = real.apply(this, arguments);
         return new Promise(r => setTimeout(() => r(answer), 1000));
       }; }""")
     pg.select_option("#sparColor", "w"); pg.click("#sparStart"); pg.wait_for_timeout(200)
     pg.click('#sparBoard [data-sq="a2"]'); pg.click('#sparBoard [data-sq="a3"]')
-    pg.wait_for_timeout(400)   # the mirror is now thinking about 1.a3
+    pg.wait_for_function("window.__asked === true", timeout=15000)   # the mirror is now thinking about 1.a3 (asked, not guessed at 400 ms)
     pg.click("#sparStart")
     start = "a1 a2 a7 a8 b1 b2 b7 b8 c1 c2 c7 c8 d1 d2 d7 d8 e1 e2 e7 e8 f1 f2 f7 f8 g1 g2 g7 g8 h1 h2 h7 h8"
     wrong = None
@@ -177,6 +177,7 @@ with sync_playwright() as p:
 
     # ---- drills: an endgame study does not hijack the next puzzle
     pg.click("button.tab[data-tab=drills]"); pg.wait_for_timeout(300)
+    pg.evaluate("document.querySelector('#sfOn').checked = false")   # the house engine answers the study (Stockfish is checked below)
     pg.select_option("#egPick", "two-bishops"); pg.click("[data-start=endgame]"); pg.wait_for_timeout(300)
     pg.click('#drillBoard [data-sq="e1"]'); pg.click('#drillBoard [data-sq="e2"]')
     pg.wait_for_function("/Engine plays/.test(document.querySelector('#drillFeedback').innerText)", timeout=15000)
@@ -187,10 +188,12 @@ with sync_playwright() as p:
     pg.click("#drillQuit"); pg.wait_for_timeout(300)
     played_counts = pg.evaluate("Object.keys(JSON.parse(localStorage.getItem('dvor:completed') || '{}')).length")
     pg.click("[data-start=all]"); pg.wait_for_timeout(400)
-    pg.click('#drillBoard [data-sq="a2"]'); pg.click('#drillBoard [data-sq="a3"]'); pg.wait_for_timeout(1500)
+    pg.click('#drillBoard [data-sq="a2"]'); pg.click('#drillBoard [data-sq="a3"]')
+    pg.wait_for_function("!/Checking/.test(document.querySelector('#drillFeedback').innerText)", timeout=20000)
     fb = pg.inner_text("#drillFeedback")
     check("drills: a puzzle move is graded, not answered by the engine", fb.startswith("Not a3"), fb[:60])
     pg.click("#drillQuit"); pg.wait_for_timeout(200)
+    pg.evaluate("document.querySelector('#sfOn').checked = true")
     check("drills: playing an endgame counts as practice; quitting a queue unplayed does not",
           played_counts == 1 and unplayed_counts == 0, "%d / %d" % (played_counts, unplayed_counts))
 
@@ -710,6 +713,7 @@ with sync_playwright() as p:
 
     # Keyboard: the board is one tab stop, arrows cover all 64 squares, focus survives a move.
     c2, p2 = fresh({"games": [blunder_game("a1", 1)]})
+    p2.evaluate("document.querySelector('#sfOn').checked = false")   # the house engine answers the study
     p2.click("button.tab[data-tab=drills]"); p2.select_option("#egPick", "lucena"); p2.click("[data-start=endgame]")
     stops = p2.evaluate("[...document.querySelectorAll('#drillBoard [data-sq]')].map(s => s.tabIndex)")
     check("keyboard: every square is focusable, and exactly one is in the tab order",
@@ -1169,7 +1173,8 @@ with sync_playwright() as p:
     p2.click("#drillQuit")
     p2.click("[data-start=motif]")
     empty_queue = p2.inner_text("#flash")
-    concept = p2.evaluate("[...document.querySelectorAll('#egPick option')].filter(o => o.disabled).map(o => o.value)")
+    concept = p2.evaluate("[...document.querySelectorAll('#egPick option')].filter(o => o.disabled || /reading only/.test(o.text)).map(o => o.value)")
+    p2.evaluate("document.querySelector('#sfOn').checked = false")   # the house engine answers: its reply is watched
     p2.select_option("#egPick", "lucena"); p2.click("[data-start=endgame]")
     # Watch the engine's answer arrive: the wrapper settles just before the app's own handler, which runs a tick later.
     p2.evaluate("""() => { window.__replied = false; const real = Engine.prototype.rankAsync;
@@ -1182,8 +1187,8 @@ with sync_playwright() as p:
     p2.evaluate("() => new Promise(r => setTimeout(r, 0))")           # and the app's handler for it has run
     state_after = p2.evaluate(DRILL_STATE)
     home = not p2.evaluate("document.querySelector('#drillHome').classList.contains('hidden')")
-    check("drills: the Strength tab's Drill works as the visit's first drill; an empty pattern queue says so; concepts cannot be set up",
-          first_drill and "Nothing in that queue right now." in empty_queue and "wrong-bishop" in concept, "%s | %s" % (empty_queue[:40], concept))
+    check("drills: the Strength tab's Drill works as the visit's first drill; an empty pattern queue says so; every study can be set up",
+          first_drill and "Nothing in that queue right now." in empty_queue and concept == [], "%s | %s" % (empty_queue[:40], concept))
     check("drills: quitting an endgame while the engine replies leaves the drills page, and the late reply lands nowhere",
           home and "Engine replying" in state_at_quit and state_after == state_at_quit, state_after[-120:])
     c2.close()
@@ -1703,24 +1708,22 @@ with sync_playwright() as p:
     prompt = " ".join(p2.evaluate("document.querySelector('#drillPrompt').textContent").split())
     tries = []
     for sq_from, sq_to in (("a7", "a6"), ("h7", "h6"), ("b8", "c6")):
-        p2.click('#drillBoard [data-sq="%s"]' % sq_from); p2.click('#drillBoard [data-sq="%s"]' % sq_to); p2.wait_for_timeout(100)
+        p2.click('#drillBoard [data-sq="%s"]' % sq_from); p2.click('#drillBoard [data-sq="%s"]' % sq_to)
+        p2.wait_for_function("!/Checking/.test(document.querySelector('#drillFeedback').innerText)", timeout=STUCK_MS)   # the engine's look
         tries.append(p2.inner_text("#drillFeedback").strip())
     suggested = p2.evaluate("[...document.querySelectorAll('#drillGrades button.primary')].map(b => b.dataset.grade)")
     p2.click("#drillQuit"); p2.click("button.tab[data-tab=strength]"); p2.click('[data-jump="zz1:3"]')
-    board_before = p2.evaluate("document.querySelector('#drillBoard').innerHTML")
-    p2.click("#drillReveal")
-    revealed = p2.inner_text("#drillFeedback").strip()
-    pieces_same = p2.evaluate("b => { const t = document.createElement('div'); t.innerHTML = b; const at = r => [...r.querySelectorAll('.sq')].map(s => s.dataset.sq + (s.querySelector('.piece') || {}).textContent).join(); return at(t) === at(document.querySelector('#drillBoard')); }", board_before)
-    open_grades = p2.evaluate("[...document.querySelectorAll('#drillGrades button')].filter(b => !b.disabled).map(b => b.dataset.grade)")
+    no_card = [p2.inner_text("#flash"), p2.evaluate("(document.querySelector('.panel.active') || {}).id")]
     check("drills: Black to move, no opening, short of time: the card says so", prompt.startswith("Black to move. Find what you missed.")
           and "Your game, move 2," in prompt and " · " not in prompt and "You were short of time." in prompt and worst_black == ["2…"], "%s | %s" % (prompt[:160], worst_black))
     check("drills: two wrong tries get the stronger hint, the right one at the second try suggests Hard, with no line to show",
           tries[0] == "Not a6. Try again — or show the move, and grade the card Missed it or Hard." and tries[1] == "Not h6. Look at what your opponent is allowed to do after it."
           and tries[2] == "Correct: Nc6." and suggested == ["2"], "%s | %s" % (tries, suggested))
-    check("drills: a stored solution that is no move is shown as written, with the board left as it was",
-          revealed == "The move was zz9. zz9 Nc6" and pieces_same and open_grades == ["0", "1"], "%r | %s | %s" % (revealed, pieces_same, open_grades))
+    # It was a card no move could solve: only "Show the move" ended it, and that showed "zz9".
+    check("drills: a stored solution that is no move makes no card: its Drill button says it cannot be a puzzle",
+          "cannot be a puzzle" in no_card[0] and no_card[1] == "panel-strength", no_card)
     check("strength: an opening line reached only in unfinished games has no result", "1. c4 2 games no result" in tree, tree[tree.find("1. c4"):][:60])
-    p2.click("#drillQuit"); p2.click("button.tab[data-tab=review]")
+    p2.click("button.tab[data-tab=review]")
     pick_review(p2, "judged")
     p2.click("#revStart"); p2.click("#revSkip"); p2.click("#revSkip"); p2.click("#revSkip")
     fourth = " ".join(p2.evaluate("document.querySelector('#revPrompt').textContent").split())
@@ -1833,6 +1836,7 @@ with sync_playwright() as p:
         }""", moves)
     c2, p2 = fresh({"games": [blunder_game("eg1", 1)]})
     p2.evaluate(NO_DEADLINE)   # the replies checked below are the engine's depth-4 choices (about 0.3 s each in Node; 1.4 s allowed)
+    p2.evaluate("document.querySelector('#sfOn').checked = false")   # the house engine answers, not Stockfish
     p2.click("button.tab[data-tab=drills]")
     p2.select_option("#egPick", "saavedra"); p2.click("[data-start=endgame]")
     saavedra = eg_play(p2, [["c6", "c7"], ["b6", "b5"], ["b5", "b4"], ["b4", "b3"], ["b3", "c2"], ["c7", "c8", "q"], ["c8", "c4"]])
@@ -1840,11 +1844,11 @@ with sync_playwright() as p:
     bn = eg_play(p2, [["f1", "g3"], ["d1", "c2"]])
     p2.click("#drillQuit"); p2.select_option("#egPick", "philidor"); p2.click("[data-start=endgame]")
     philidor = eg_play(p2, [["b6", "c6"]])
-    check("endgame: the Saavedra's queen promotion is met by Rc4+, and taking the rook is stalemate",
+    check("endgame: the Saavedra's queen promotion is met by Rc4+, and taking the rook is stalemate: a win study failed",
           [s.split(".")[0] for s in saavedra[:6]] == ["Engine plays Rd6+", "Engine plays Rd5+", "Engine plays Rd4+", "Engine plays Rd3+", "Engine plays Rd4", "Engine plays Rc4+"]
-          and saavedra[6] == "Stalemate.", saavedra)
-    check("endgame: the engine taking the last knight ends the study as a draw, said in words",
-          bn[0].startswith("Engine plays Kf4.") and bn[1] == "Drawn: neither side can mate.", bn)
+          and saavedra[6] == "Stalemate. Failed: a draw, and the study asks for a win. Press Restart to play it again.", saavedra)
+    check("endgame: the engine taking the last knight ends the study as a draw, said in words, and failed against its goal",
+          bn[0].startswith("Engine plays Kf4.") and bn[1] == "Drawn: neither side can mate. Failed: a draw, and the study asks for a win. Press Restart to play it again.", bn)
     m = re.search(r"Evaluation ([+-]?)(\d+\.\d+|#\d+) \(White’s view\)", philidor[0])
     check("endgame: studied as Black, the evaluation is White's, who has the extra pawn", m is not None and m.group(1) != "-", philidor)
     c2.close()
@@ -1956,6 +1960,223 @@ with sync_playwright() as p:
           % (SF_CACHE_MAX, unread, LONG_GAME, LONG_GAME - unread),
           verdicts == [False] * unread + [True] * (LONG_GAME - unread), "%d without, %d with; first with at move %s" % (verdicts.count(False), verdicts.count(True),
           verdicts.index(True) + 1 if True in verdicts else None))
+    c2.close()
+
+    # ---- 12 October 2026: the puzzles. Every study set up and played from the side it gives you, judged at the
+    # end against its goal, restartable, answered by Stockfish when it is on, and never left stuck; drill cards
+    # that take any move as good as the stored one. Each check waits on what the page does, not on the clock.
+    STUDY_JS = WAIT_JS + """
+      const fb = () => document.querySelector('#drillFeedback').innerText.trim();
+      const setUp = id => { document.querySelector('#egPick').value = id; document.querySelector('[data-start=endgame]').click(); };
+      const play = (a, b, promo) => { document.querySelector('#drillBoard [data-sq=' + a + ']').click();
+        document.querySelector('#drillBoard [data-sq=' + b + ']').click();
+        if (promo) document.querySelector('#drillBoard [data-promo=' + promo + ']').click(); };
+      const placement = () => [...document.querySelectorAll('#drillBoard .sq')].map(s => s.dataset.sq + ((s.querySelector('.piece') || {}).textContent || '')).sort().join();
+      const placementOf = fen => { const g = new Chess(fen); return [...document.querySelectorAll('#drillBoard .sq')].map(s => {
+        const p = g.get(s.dataset.sq); return s.dataset.sq + (p ? Board.GLYPH[p.color + p.type] : ''); }).sort().join(); };
+      const movers = () => [...document.querySelectorAll('#drillBoard .sq.movable .piece')].map(p => p.classList.contains('w') ? 'w' : 'b');
+      const replied = () => !/Engine replying/.test(fb());
+      const tick = () => new Promise(r => setTimeout(r, 0));   // the app's own handlers for a settled promise run first
+    """
+    STUDIES = [("lucena", "2K5/2P1k3/8/8/8/8/r7/3R4 w - - 0 1", "w"), ("philidor", "4k3/R7/1r6/4PK2/8/8/8/8 b - - 0 1", "b"),
+               ("vancura", "R7/7k/P4r2/8/4K3/8/8/8 b - - 0 1", "b"), ("behind-passer", "1r3k2/8/8/1P6/8/8/8/1R4K1 w - - 0 1", "w"),
+               ("saavedra", "8/8/1KP5/3r4/8/8/8/k7 w - - 0 1", "w"), ("opposition", "8/8/8/4k3/8/4K3/4P3/8 w - - 0 1", "b"),
+               ("opposition-b", "8/8/8/4k3/8/4K3/4P3/8 b - - 0 1", "w"), ("breakthrough", "6k1/ppp5/8/PPP5/8/8/8/6K1 w - - 0 1", "w"),
+               ("reti", "7K/8/k1P5/7p/8/8/8/8 w - - 0 1", "w"), ("bn-mate", "8/8/8/4k3/8/8/8/3BKN2 w - - 0 1", "w"),
+               ("two-bishops", "8/8/8/4k3/8/8/8/2B1KB2 w - - 0 1", "w"), ("wrong-bishop", "8/4k3/8/7P/2B3K1/8/8/8 b - - 0 1", "b"),
+               ("opp-bishops", "2k5/6b1/6B1/4P3/5P2/8/8/6K1 b - - 0 1", "b"), ("q-vs-pawn", "K7/8/8/8/8/8/1pk5/7Q w - - 0 1", "w"),
+               ("short-side", "4k3/R7/4K3/4P3/8/8/8/1r6 b - - 0 1", "b")]
+    SF_OFF = "document.querySelector('#sfOn').checked = false"   # the house engine answers the study
+    # Every study: listed and enabled, on the board as its position, turned round for Black, only your pieces movable;
+    # where you are not the side to move (both opposition studies), the engine moves first.
+    c2, p2 = fresh({"games": [blunder_game("st1", 1)]})
+    p2.evaluate(SF_OFF); p2.click("button.tab[data-tab=drills]")
+    listed = p2.evaluate("[...document.querySelectorAll('#egPick option')].map(o => o.value + (o.disabled || /reading only/.test(o.text) ? ' (off)' : ''))")
+    set_up = p2.evaluate("async studies => {" + STUDY_JS + """
+      const out = {};
+      for (const [id, fen, side] of studies) {
+        try {
+          setUp(id);
+          const first = placement() === placementOf(fen), prompt = document.querySelector('#drillPrompt').innerText;
+          await wait(() => replied() && movers().length > 0, () => 'not playable: ' + fb());
+          out[id] = [first, document.querySelector('#drillBoard [data-sq]').dataset.sq === (side === 'b' ? 'h1' : 'a8'),
+                     movers().every(c => c === side), fb().split(' ').slice(0, 2).join(' '), /You play (White|Black)\\. The house engine answers your moves/.test(prompt)
+                     && !/full strength/.test(prompt)];
+        } catch (e) { out[id] = e.message; }
+        document.querySelector('#drillQuit').click();
+      }
+      return out; }""", STUDIES)
+    bad = {k: v for k, v in set_up.items() if v != [True, True, True, "Engine plays" if k.startswith("opposition") else "", True]}
+    check("studies: all 15 are listed and none is reading only; each is set up from its own position, turned for Black, your pieces only",
+          listed == [s[0] for s in STUDIES] and len(set_up) == 15 and not bad, bad or listed)
+    check("studies: with you on the side not to move (the two opposition studies) the engine moves first; the prompt names the house engine truthfully",
+          set_up.get("opposition", [0] * 4)[3] == "Engine plays" and set_up.get("opposition-b", [0] * 4)[3] == "Engine plays", [set_up.get("opposition"), set_up.get("opposition-b")])
+    c2.close()
+
+    # Stockfish answers a study when it is on: a stand-in that shuttles White's king in the Vancura. Black's king shuttles
+    # too, and the third repetition, reached on Stockfish's move, ends the study as the draw it asks for.
+    VANCURA_SF = stand_in_sf("if (c.indexOf('go') === 0) postMessage('bestmove ' + (fen.indexOf('/4K3/8/8/8 ') > -1 ? 'e4e5' : 'e5e4'));")
+    c2, p2 = fresh({"games": [blunder_game("st2", 1)]})
+    p2.evaluate("src => { window.STOCKFISH_SOURCE = src; }", VANCURA_SF); p2.click("button.tab[data-tab=drills]")
+    vancura = p2.evaluate("async () => {" + STUDY_JS + """
+      try {
+        setUp('vancura');
+        const prompt = document.querySelector('#drillPrompt').innerText, said = [];
+        for (const [a, b] of [['h7', 'g7'], ['g7', 'h7'], ['h7', 'g7'], ['g7', 'h7']]) {
+          play(a, b); await wait(replied, () => 'no reply: ' + fb()); said.push(fb());
+        }
+        return { prompt: /Stockfish answers your moves/.test(prompt), said, movable: document.querySelectorAll('#drillBoard .sq.movable').length,
+                 restart: !document.querySelector('#drillRestart').classList.contains('hidden') };
+      } catch (e) { return e.message; } }""")
+    check("studies: with Stockfish on, it answers the study, and the prompt says so",
+          isinstance(vancura, dict) and vancura["prompt"] and vancura["said"][0].startswith("Stockfish plays Ke5. Evaluation 0.00"), vancura)
+    check("studies: a threefold repetition in a draw study is judged solved; the board takes no more moves, and Restart is on offer",
+          isinstance(vancura, dict) and vancura["said"][3] == "Drawn by threefold repetition. Solved: a draw, as the study asks. Press Restart to play it again."
+          and vancura["movable"] == 0 and vancura["restart"], vancura)
+    c2.close()
+    # The Saavedra won as it should be: Stockfish (a stand-in playing the main line) checks, you underpromote to a rook
+    # and mate on c1. A win study is solved by your mate.
+    SAAVEDRA_SF = ("var n = 0, line = ['d5d6', 'd6d5', 'd5d4', 'd4d3', 'd3d4', 'd4a4', 'a4a8']; " +
+                   stand_in_sf("if (c.indexOf('go') === 0) postMessage('bestmove ' + line[n++]);"))
+    c2, p2 = fresh({"games": [blunder_game("st3", 1)]})
+    p2.evaluate("src => { window.STOCKFISH_SOURCE = src; }", SAAVEDRA_SF); p2.click("button.tab[data-tab=drills]")
+    saav = p2.evaluate("async () => {" + STUDY_JS + """
+      try {
+        setUp('saavedra'); const said = [];
+        for (const [a, b, promo] of [['c6', 'c7'], ['b6', 'b5'], ['b5', 'b4'], ['b4', 'b3'], ['b3', 'c2'], ['c7', 'c8', 'r'], ['c2', 'b3'], ['c8', 'c1']]) {
+          play(a, b, promo); await wait(replied, () => 'no reply: ' + fb()); said.push(fb().split('. Evaluation')[0]);
+        }
+        return said;
+      } catch (e) { return e.message; } }""")
+    check("studies: the Saavedra won with c8=R and Rc1# against Stockfish is judged solved",
+          isinstance(saav, list) and saav[5] == "Stockfish plays Ra4" and saav[7] == "Checkmate. Solved: you won, as the study asks. Press Restart to play it again.", saav)
+    c2.close()
+
+    # Restart: back to the study's position at once, the engine's reply to the old game (held back here) lands nowhere,
+    # and the day still counts as practice.
+    HOLD = """() => { window.__held = []; const real = Engine.prototype.rankAsync;
+      Engine.prototype.rankAsync = function () { const self = this, args = arguments;
+        return new Promise(r => window.__held.push(() => { const p = real.apply(self, args); r(p); return p; })); }; }"""
+    c2, p2 = fresh({"games": [blunder_game("st4", 1)]})
+    p2.evaluate(SF_OFF); p2.evaluate(HOLD); p2.click("button.tab[data-tab=drills]")
+    restart = p2.evaluate("async () => {" + STUDY_JS + """
+      setUp('lucena'); const start = placement(), button = document.querySelector('#drillRestart');
+      if (!button || button.classList.contains('hidden')) return 'no Restart control';
+      play('d1', 'd4'); const pending = [fb(), window.__held.length];
+      button.click();
+      const after = [placement() === start, fb(), movers().length > 0];
+      await window.__held.shift()(); await tick();
+      return { pending, after, landed: [placement() === start, fb()] }; }""")
+    p2.click("#drillQuit")
+    done_days = len(stored(p2, "completed", {}))
+    check("studies: Restart puts the study back at its position, the old game's late reply lands nowhere, and the day counts as practised",
+          restart == {"pending": ["Engine replying.", 1], "after": [True, "", True], "landed": [True, ""]} and done_days == 1, [restart, done_days])
+    c2.close()
+
+    # An engine that fails, or answers with a move that is not legal: the study says so and the board is yours, for
+    # the engine's side too; once its move is made, your side again. The old code left the board stuck.
+    c2, p2 = fresh({"games": [blunder_game("st5", 1)]})
+    p2.evaluate(SF_OFF); p2.click("button.tab[data-tab=drills]")
+    failing = p2.evaluate("async () => {" + STUDY_JS + """
+      try {
+        Engine.prototype.rankAsync = () => Promise.reject(new Error('engine-check'));
+        setUp('lucena'); play('d1', 'd4'); await wait(replied, () => 'stuck: ' + fb());
+        const first = [fb(), [...new Set(movers())].join()];
+        play('a2', 'a1'); const back = [fb(), [...new Set(movers())].join()];
+        Engine.prototype.rankAsync = () => Promise.resolve([{ uci: 'a1a1', score: 0 }]);
+        play('d4', 'd5'); await wait(replied, () => 'stuck: ' + fb());
+        return [first, back, fb()];
+      } catch (e) { return e.message; } }""")
+    check("studies: an engine that fails or offers an illegal move is reported, and the board stays usable for both sides in turn",
+          failing == [["The engine could not answer (engine-check). Make its move yourself, or press Restart.", "b"], ["Your move.", "w"],
+                      "The engine could not answer (Engine offered a1a1, not a legal move here). Make its move yourself, or press Restart."], failing)
+    c2.close()
+
+    # Stockfish that cannot answer a study: an illegal move from it, a worker that will not start, switched off in the
+    # middle of its search, missing from the page. Each time the house engine answers instead, and says why.
+    SF_STOP_ONLY = stand_in_sf("if (c === 'stop') postMessage('bestmove e7e6');")   # searches until told to stop
+    fallbacks = {}
+    for name, source in (("illegal", FAKE_SF), ("no start", 'throw new Error("sf-study-check")'), ("switched off", SF_STOP_ONLY), ("missing", None)):
+        c2, p2 = fresh({"games": [blunder_game("st6", 1)]})
+        if source is None: p2.evaluate("delete window.STOCKFISH_SOURCE")
+        else: p2.evaluate("src => { window.STOCKFISH_SOURCE = src; }", source)
+        p2.evaluate(WATCH_WORKER); p2.click("button.tab[data-tab=drills]")
+        fallbacks[name] = p2.evaluate("async off => {" + STUDY_JS + """
+          try {
+            setUp('lucena'); play('d1', 'd4');
+            if (off) {
+              await wait(() => window.__sent.some(c => c.indexOf('go') === 0), () => 'Stockfish never asked');
+              const box = document.querySelector('#sfOn'); box.checked = false; box.dispatchEvent(new Event('change'));
+            }
+            await wait(replied, () => 'stuck: ' + fb());
+            const said = () => fb().replace(/^Engine plays \\S+ Evaluation \\S+ \\(White’s view\\)\\./, 'Engine plays.'), first = said();
+            play('d4', 'd5'); await wait(replied, () => 'stuck: ' + fb());   // and the next reply: Stockfish failed stays failed
+            return [first, said()];
+          } catch (e) { return e.message; } }""", name == "switched off")
+        c2.close()
+    errors[:] = [e for e in errors if "sf-study-check" not in e]   # the worker's error that check provoked on purpose
+    check("studies: when Stockfish cannot answer (an illegal move, no start, switched off mid-search, not in the page) the house engine does, and says why",
+          fallbacks == {"illegal": ["Engine plays. Stockfish gave no legal move, so the house engine answered.", "Engine plays. Stockfish gave no legal move, so the house engine answered."],
+                        "no start": ["Engine plays. Stockfish could not answer (Stockfish did not start: Uncaught Error: sf-study-check), so the house engine did.", "Engine plays."],
+                        "switched off": ["Engine plays. Stockfish gave no legal move, so the house engine answered.", "Engine plays."],
+                        "missing": ["Engine plays.", "Engine plays."]}, fallbacks)
+
+    # A backup restored in the middle of a study leaves the study as it was, and playable.
+    c2, p2 = fresh({"games": [blunder_game("st7", 1)]})
+    p2.evaluate(SF_OFF); p2.click("button.tab[data-tab=drills]")
+    mid = p2.evaluate("async () => {" + STUDY_JS + " setUp('lucena'); play('d1', 'd4'); await wait(replied, () => 'stuck: ' + fb()); return placement(); }")
+    p2.click("button.tab[data-tab=settings]")
+    restore_backup(p2, "mid-study.json", {"games": [blunder_game("st8", 2)]})
+    p2.click("button.tab[data-tab=drills]")
+    resumed = p2.evaluate("async before => {" + STUDY_JS + """
+      const same = placement() === before, open = movers().length > 0 && !document.querySelector('#drillStage').classList.contains('hidden');
+      play('d4', 'd5'); await wait(replied, () => 'stuck: ' + fb());
+      return [same, open, fb().split(' ').slice(0, 2).join(' ')]; }""", mid)
+    check("studies: a backup restored mid-study leaves the study on the board, where it plays on", resumed == [True, True, "Engine plays"], resumed)
+    c2.close()
+
+    # Drill cards: a second mate in one is right, and so is a move the engine scores as well as the stored one (Ne3xd5
+    # for the stored Nc3xd5: the house engine has them 1 cp apart). The old code took only the stored move's text.
+    def from_fen_game(gid, fen, rows, days_ago=1):
+        g = blunder_game(gid, days_ago); g.update({"fen": fen, "m": rows}); return g
+    two_mates = from_fen_game("tm1", "6k1/5ppp/8/1p6/8/8/5PPP/R3R1K1 b - - 0 1",
+                              [["b4", 10000, "", "", "", "", 1], ["h3", 0, "Blunder", "a1a8", "", "", ""]])
+    fork = from_fen_game("fk1", "6k1/5ppp/8/8/3q4/2N1N3/5PPP/6K1 b - - 0 1",
+                         [["Qd5", 900, "", "", "", "", ""], ["h3", -300, "Blunder", "c3d5", "", "Ncxd5 h6", ""]], 2)
+    c2, p2 = fresh({"games": [two_mates, fork]})
+    p2.evaluate(NO_DEADLINE)   # the two knight captures are compared at the engine's full depth 3
+    grades = lambda: p2.evaluate("[...document.querySelectorAll('#drillGrades button.primary')].map(b => b.dataset.grade).join()")
+    p2.click("button.tab[data-tab=strength]"); p2.click('[data-jump="tm1:2"]')
+    p2.click('#drillBoard [data-sq="e1"]'); p2.click('#drillBoard [data-sq="e8"]')
+    mate_two = [p2.inner_text("#drillFeedback").strip(), grades()]
+    p2.click("#drillQuit"); p2.click("button.tab[data-tab=strength]"); p2.click('[data-jump="fk1:2"]')
+    p2.click('#drillBoard [data-sq="e3"]'); p2.click('#drillBoard [data-sq="d5"]')
+    p2.wait_for_function("!/Checking/.test(document.querySelector('#drillFeedback').innerText)", timeout=STUCK_MS)
+    as_good = [p2.inner_text("#drillFeedback").strip(), grades()]
+    check("drills: a second mate in one is also correct, graded as a find at the first try", mate_two == [
+          "Also correct: Re8# mates as well. The stored move was Ra8#.", "3"], mate_two)
+    check("drills: a move the engine scores within 30 cp of the stored one is also correct, with the stored line shown", as_good == [
+          "Also correct: Nexd5 is as good, by the engine’s look. The stored move was Ncxd5. The line continues Ncxd5 h6.", "3"], as_good)
+    # While the engine looks, the board takes no move; a reveal or quitting meanwhile drops the look; an engine that
+    # fails says so and gives the board back.
+    p2.click("#drillQuit"); p2.evaluate(HOLD)
+    looks = p2.evaluate("async () => {" + STUDY_JS + """
+      const jump = () => { document.querySelector('button.tab[data-tab=strength]').click(); document.querySelector('[data-jump="fk1:2"]').click(); };
+      const out = [];
+      jump(); play('h2', 'h3');
+      out.push([fb(), document.querySelectorAll('#drillBoard .sq.movable').length]);
+      play('g2', 'g3'); out.push([fb(), window.__held.length]);   // a second move while the first is judged: nothing
+      if (!window.__held.length) return out;
+      await window.__held.shift()(); await tick(); out.push(fb());
+      play('h2', 'h3'); document.querySelector('#drillReveal').click(); await window.__held.shift()(); await tick(); out.push(fb());
+      document.querySelector('#drillQuit').click(); jump(); play('h2', 'h3'); document.querySelector('#drillQuit').click();
+      await window.__held.shift()(); await tick(); out.push(!document.querySelector('#drillHome').classList.contains('hidden'));
+      Engine.prototype.rankAsync = () => Promise.reject(new Error('look-check'));
+      jump(); play('h2', 'h3'); await tick(); out.push([fb(), document.querySelectorAll('#drillBoard .sq.movable').length > 0]);
+      return out; }""")
+    check("drills: while the engine looks at a move the board takes no other; a reveal or quitting meanwhile drops the look; a failed look gives the board back",
+          looks == [["Checking h3.", 0], ["Checking h3.", 1], "Not h3. Try again — or show the move, and grade the card Missed it or Hard.",
+                    "The move was Ncxd5. Ncxd5 h6", True, ["h3 could not be checked (look-check). Try a move again, or show the move.", True]], looks)
     c2.close()
 
     check("page: no uncaught errors throughout", not errors, errors[:3])

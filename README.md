@@ -66,16 +66,16 @@ notes/       the full guide
 
 ## Tests
 
-**669 checks.** In Node: 96 regression, 83 app (PGN import, Lichess sync, mining,
-calendar, storage, the Stockfish reader), 62 rules, 43 titled-player, 32 analysis,
+**685 checks.** In Node: 96 regression, 84 app (PGN import, Lichess sync, mining,
+calendar, storage, the Stockfish reader), 66 rules (the endgame studies pinned among them), 43 titled-player, 32 analysis,
 30 sparring, 29 coach, 23 engine and 22 integration checks,
 and perft on 21 positions (35 counts, plus 5 SAN and PGN checks), 15 of them edge cases (en
 passant out of a pin, castling into check, underpromotion) with counts taken from Stockfish 19,
-one from python-chess. In Chromium: 203 browser checks and 6 on the single-file build. Every
+one from python-chess. In Chromium: 214 browser checks and 6 on the single-file build. Every
 suite exits non-zero on a failure, which is what CI reads. Every bug fixed has a check that
 failed on the code before its fix. The browser checks run the real Stockfish. Together
-they run all 4,729 code lines in `js/`, all 688 of its functions, all 4,190 of its
-statements and all 3,463 of its branches (`test/coverage_report.py`, 12 October 2026;
+they run all 4,834 code lines in `js/`, all 712 of its functions, all 4,272 of its
+statements and all 3,505 of its branches (`test/coverage_report.py`, 12 October 2026;
 the guide says how the last of them were reached).
 
 **From the outside** (`test/engine_gauntlet.py`): the engine driven over UCI the way a
@@ -112,8 +112,10 @@ and its load: these were taken with other work running.
 Stockfish 19 through the same suites and scorer: WAC 276 at 1 s, Bratko-Kopec 20, BT2630
 24, STS 86.2%, so the answer keys and the scoring hold up.
 
+Every endgame study's verdict was checked on 12 October 2026 against the Lichess tablebase
+(the breakthrough, with eight pieces, against Stockfish); the guide lists them.
 `test/stockfish_check.py` re-checks the app's claims against Stockfish 19: every
-endgame study's verdict, the imported evaluations, the mined mistakes and the house
+endgame study's verdict (read from the study's own side and result), the imported evaluations, the mined mistakes and the house
 engine's own choices (93% within 50 cp of best, on the previous engine), and exits 1 if
 an endgame claim is wrong. `tools/uci.js` runs the engine in
 any UCI GUI. Setup: [`.github/CONTRIBUTING.md`](.github/CONTRIBUTING.md).

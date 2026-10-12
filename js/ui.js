@@ -1296,7 +1296,7 @@
       '<button data-start="motif">Drill that pattern</button>' +
       '<span style="flex:1"></span>' +
       '<select id="egPick">' + Training.ENDGAMES.map(function (e) {
-        return '<option value="' + e.id + '"' + (e.fen ? '' : ' disabled') + '>' + esc(e.name) + (e.fen ? '' : ' (reading only)') + '</option>';
+        return '<option value="' + e.id + '">' + esc(e.name) + '</option>';
       }).join('') + '</select><button data-start="endgame">Set up endgame</button>' +
       '</div>';
     if (!all.length) h += '<div class="empty">No puzzles yet. They are generated from positions where you lost 80 centipawns or more, so you need games with Lichess computer analysis.</div>';
@@ -1330,7 +1330,8 @@
   function showCard() {
     var d = S.drill, c = d.queue[d.index];
     if (!c) { finishDrill(); return; }
-    d.revealed = false; d.attempts = 0;
+    d.revealed = false; d.attempts = 0; d.check = null;
+    $('#drillRestart').classList.add('hidden');   // a study's control: a card is not restarted
     var g = new Chess(c.meta.fen);
     drillBoard.allowedColor = g.turnColor();
     drillBoard.flipped = g.turnColor() === 'b';
@@ -1348,23 +1349,65 @@
     $('#drillReveal').classList.remove('hidden');
   }
 
+  /* A move on a card. The stored move is right, however it was written (Lichess's SAN,
+     a different disambiguation, castling with zeros): moves are compared, not text.
+     So is any other mate when the stored move mates, and any move the house engine
+     scores as well as the stored one in this position (within 30 cp; when the stored
+     move leads to a mate, as short a mate). The engine's look is short (depth 3, at
+     most 0.8 s), and the board takes no move until it is in. */
+  var DRILL_MARGIN = 30;
+  function sameMove(a, b) { return a.fromSq === b.fromSq && a.toSq === b.toSq && a.promo === b.promo; }
+  function mates(game, m) { game.makeMove(m); var over = game.gameOver(); game.undoMove(); return over === 'checkmate'; }
+
   function onDrillMove(move, game) {
     var d = S.drill, c = d.queue[d.index];
     var san = game.san(move).replace(/[+#]/g, '');
-    var want = String(c.meta.solution).replace(/[+#!?]/g, '');
+    var want = game.moveFromSan(c.meta.solution);   // every card's stored move is a move here (buildDeck sees to it)
     d.attempts++;
-    if (san === want) {
-      game.makeMove(move);
-      drillBoard.interactive = false;
-      drillBoard.setGame(game, { from: move.fromSq, to: move.toSq });
-      $('#drillFeedback').innerHTML = '<div class="coach-note ok">Correct: <b class="mono">' + esc(c.meta.solution) + '</b>. ' +
-        (c.meta.line ? 'The line continues <span class="mono">' + esc(c.meta.line) + '</span>.' : '') + '</div>';
-      revealGrades(d.attempts === 1 ? 3 : 2, false);
-    } else {
-      drillBoard.setGame(game);
-      $('#drillFeedback').innerHTML = '<div class="coach-note">Not ' + esc(san) + '. ' +
-        (d.attempts >= 2 ? 'Look at what your opponent is allowed to do after it.' : 'Try again — or show the move, and grade the card Missed it or Hard.') + '</div>';
+    if (sameMove(move, want)) { drillSolved(d, c, move, game, 'Correct: <b class="mono">' + esc(c.meta.solution) + '</b>. '); return; }
+    if (mates(game, want) && mates(game, move)) {
+      drillSolved(d, c, move, game, 'Also correct: <b class="mono">' + esc(game.san(move)) + '</b> mates as well. The stored move was <b class="mono">' +
+        esc(c.meta.solution) + '</b>. ');
+      return;
     }
+    var check = d.check = {};   // this look; a reveal, the next card or quitting replaces or drops it
+    drillBoard.interactive = false;   // no second move until this one is judged
+    drillBoard.setGame(game);
+    $('#drillFeedback').innerHTML = '<span class="spin"></span> Checking ' + esc(san) + '.';
+    S.engine.rankAsync(game, 3, 800).then(function (ranked) {
+      return function () {
+        var score = function (m) { return ranked.filter(function (r) { return sameMove(r.move, m); })[0].score; };
+        var mine = score(move), best = score(want);
+        if (Engine.mateIn(best) !== null ? mine >= best : mine >= best - DRILL_MARGIN) {
+          drillSolved(d, c, move, game, 'Also correct: <b class="mono">' + esc(game.san(move)) + '</b> is as good, by the engine’s look. ' +
+            'The stored move was <b class="mono">' + esc(c.meta.solution) + '</b>. ');
+          return;
+        }
+        drillBoard.interactive = true;
+        drillBoard.setGame(game);
+        $('#drillFeedback').innerHTML = '<div class="coach-note">Not ' + esc(san) + '. ' +
+          (d.attempts >= 2 ? 'Look at what your opponent is allowed to do after it.' : 'Try again — or show the move, and grade the card Missed it or Hard.') + '</div>';
+      };
+    }, function (err) {   // the engine failed: say so, and give the board back
+      return function () {
+        drillBoard.interactive = true;
+        drillBoard.setGame(game);
+        $('#drillFeedback').innerHTML = '<div class="coach-note">' + esc(san) + ' could not be checked (' + esc(err.message) +
+          '). Try a move again, or show the move.</div>';
+      };
+    }).then(function (land) {   // only on the card still showing, not revealed meanwhile
+      if (S.drill === d && d.check === check) { d.check = null; land(); }
+    });
+  }
+
+  // The card is solved by move: it goes on the board, with the stored line, and the grades open as before.
+  function drillSolved(d, c, move, game, said) {
+    game.makeMove(move);
+    drillBoard.interactive = false;
+    drillBoard.setGame(game, { from: move.fromSq, to: move.toSq });
+    $('#drillFeedback').innerHTML = '<div class="coach-note ok">' + said +
+      (c.meta.line ? 'The line continues <span class="mono">' + esc(c.meta.line) + '</span>.' : '') + '</div>';
+    revealGrades(d.attempts === 1 ? 3 : 2, false);
   }
 
   /* The grades on offer, with the one the attempt points to marked. After "Show the
@@ -1388,9 +1431,11 @@
   function initDrillControls() {
     $('#drillReveal').addEventListener('click', function () {
       var c = S.drill.queue[S.drill.index];
+      S.drill.check = null;   // an engine look at a move still on its way is answered by this
       var g = new Chess(c.meta.fen);
-      var mv = g.moveFromSan(c.meta.solution);
-      if (mv) { g.makeMove(mv); drillBoard.setGame(g, { from: mv.fromSq, to: mv.toSq }); }
+      var mv = g.moveFromSan(c.meta.solution);   // a move here: buildDeck makes no card of one that is not
+      g.makeMove(mv);
+      drillBoard.setGame(g, { from: mv.fromSq, to: mv.toSq });
       drillBoard.interactive = false;
       $('#drillFeedback').innerHTML = '<div class="coach-note">The move was <b class="mono">' + esc(c.meta.solution) + '</b>. ' +
         (c.meta.line ? '<span class="mono">' + esc(c.meta.line) + '</span>' : '') + '</div>';
@@ -1412,6 +1457,8 @@
       });
     });
     $('#drillQuit').addEventListener('click', finishDrill);
+    // Shown only while a study is on: the same study again from its first position. The day's practice carries over.
+    $('#drillRestart').addEventListener('click', function () { startEndgame(S.drill.endgame.id, S.drill.practised); });
   }
 
   function finishDrill() {
@@ -1423,48 +1470,115 @@
     if (d && d.practised) markDone();   // quitting before a single card is not a day's work
   }
 
-  function startEndgame(id) {
-    // Only studies with a position can be asked for: the list disables the rest, and the plan never picks them.
+  /* ---------- endgame studies ----------
+     A study is played out from its position against an engine: Stockfish while it is
+     switched on (the Sparring tab's "Read every move", on unless unticked), else the
+     house engine, which also answers whenever Stockfish cannot. You play eg.play; when
+     that is not the side to move, the engine moves first. The game ends on a mate or
+     any draw, and is judged against the study's goal (Training.judgeStudy). */
+  var STUDY_SF = 'Stockfish answers your moves, at the time per position set on the Sparring tab; if it cannot, the house engine does.';
+  var STUDY_HOUSE = 'The house engine answers your moves. It is club strength, searching four plies (half-moves) ahead in at most 1.4 seconds, ' +
+    'so it can miss a defence a strong player would find: tick “Read every move” on the Sparring tab to have Stockfish answer instead.';
+
+  // practised: carried over by Restart, so a study restarted still counts as the day's practice
+  function startEndgame(id, practised) {
     var eg = Training.ENDGAMES.filter(function (e) { return e.id === id; })[0];
-    S.drill = { queue: [], index: 0, endgame: eg };
+    var g = new Chess(eg.fen);
+    var d = S.drill = { queue: [], index: 0, endgame: eg, game: g, practised: !!practised };
     $('#drillHome').classList.add('hidden');
     $('#drillStage').classList.remove('hidden');
     if (!drillBoard) drillBoard = new Board($('#drillBoard'), boardOpts({ onMove: onEndgameMove }));
-    var g = new Chess(eg.fen);
     drillBoard.opts.onMove = onEndgameMove;
-    drillBoard.allowedColor = g.turnColor();
-    drillBoard.flipped = g.turnColor() === 'b';
+    drillBoard.allowedColor = eg.play;   // your side, which is not always the side to move
+    drillBoard.flipped = eg.play === 'b';
     drillBoard.interactive = true;
     drillBoard.setGame(g);
     $('#drillProgress').textContent = 'Endgame study';
     $('#drillPrompt').innerHTML = '<h3>' + esc(eg.name) + '</h3><p>' + esc(eg.goal) + '</p>' +
       '<p class="tiny soft">' + esc(eg.idea) + '</p>' +
-      '<p class="tiny soft">Play it out against the engine. It will answer at full strength here — theory is where approximations are useless.</p>';
+      '<p class="tiny soft">You play ' + (eg.play === 'w' ? 'White' : 'Black') + '. ' + (sfOn() ? STUDY_SF : STUDY_HOUSE) + '</p>';
     $('#drillFeedback').innerHTML = '';
     $('#drillGrades').classList.add('hidden');
     $('#drillReveal').classList.add('hidden');
+    $('#drillRestart').classList.remove('hidden');
+    if (g.turnColor() !== eg.play) studyReply(d);
   }
 
   function onEndgameMove(move, game) {   // a move on the study's board, which is only on screen while the study is on
     var d = S.drill;
     d.practised = true;
     game.makeMove(move);
+    drillBoard.allowedColor = d.endgame.play;   // yours again, after a move made for an engine that could not answer
     drillBoard.setGame(game, { from: move.fromSq, to: move.toSq });
     var over = game.gameOver();
-    if (over) { $('#drillFeedback').innerHTML = '<div class="coach-note ok">' + overMessage(over) + '</div>'; return; }
+    if (over) { endStudy(d, over); return; }
+    if (game.turnColor() !== d.endgame.play) studyReply(d);
+    else $('#drillFeedback').innerHTML = '<div class="coach-note">Your move.</div>';
+  }
+
+  // The engine's move in a study. The board takes no move until it lands; if the study was
+  // quit or restarted meanwhile, it lands nowhere. If no engine could answer, the board is
+  // yours for its side too, so the study is never left stuck.
+  function studyReply(d) {
+    var game = d.game;
+    drillBoard.interactive = false;
+    drillBoard.render();
     $('#drillFeedback').innerHTML = '<span class="spin"></span> Engine replying.';
-    var fen = game.fen();
-    drillBoard.interactive = false;   // no second move until the engine has answered the first
-    S.engine.rankAsync(game, 4, 1400).then(function (r) {
-      if (S.drill !== d || game.fen() !== fen) return;   // quit or restarted meanwhile
-      drillBoard.interactive = true;   // a position with no reply was caught above as over
-      game.makeMove(r[0].move);
-      drillBoard.setGame(game, { from: r[0].move.fromSq, to: r[0].move.toSq });
-      var o = game.gameOver();
-      $('#drillFeedback').innerHTML = o ? '<div class="coach-note ok">' + overMessage(o) + '</div>' :
-        '<div class="coach-note">Engine plays <b class="mono">' + esc(r[0].san) + '</b>. Evaluation ' +
-        Sparring.cpDisplay(game.turnColor() === 'w' ? -r[0].score : r[0].score) + ' (White\u2019s view).</div>';
+    studyAnswer(game).then(function (a) {
+      return function () {
+        var san = game.san(a.move);
+        game.makeMove(a.move);
+        drillBoard.interactive = true;
+        drillBoard.setGame(game, { from: a.move.fromSq, to: a.move.toSq });
+        var o = game.gameOver();
+        if (o) { endStudy(d, o); return; }
+        $('#drillFeedback').innerHTML = '<div class="coach-note">' + a.by + ' plays <b class="mono">' + esc(san) + '</b>. Evaluation ' +
+          Sparring.cpDisplay(a.cp) + ' (White’s view).' + a.note + '</div>';
+      };
+    }, function (err) {
+      return function () {
+        drillBoard.allowedColor = null;
+        drillBoard.interactive = true;
+        drillBoard.setGame(game);
+        $('#drillFeedback').innerHTML = '<div class="coach-note">The engine could not answer (' + esc(err.message) +
+          '). Make its move yourself, or press Restart.</div>';
+      };
+    }).then(function (land) { if (S.drill === d) land(); });
+  }
+
+  /* The reply to the position in game: {move, by, cp (White's view), note}. Stockfish's,
+     when it is on and gives a legal move; otherwise the house engine's. Whichever answers,
+     only a legal move in this position is played. */
+  function studyAnswer(game) {
+    var white = game.turnColor() === 'w';
+    function house(note) {
+      return S.engine.rankAsync(game, 4, 1400).then(function (r) {   // the position has moves: a game over is caught first
+        return { uci: r[0].uci, cp: white ? r[0].score : -r[0].score, by: 'Engine', note: note };
+      });
+    }
+    var r = sfOn() && sfReader();
+    var answer = !r ? house('') : r.start().then(function () { return r.read(game.fen(), { movetime: +$('#sfTime').value }); }).then(function (res) {
+      return res && res.best && game.moveFromSan(res.best) ? { uci: res.best, cp: res.cp, by: 'Stockfish', note: '' }
+        : house(' Stockfish gave no legal move, so the house engine answered.');
+    }, function (err) {
+      sf.failed = err.message;
+      renderSf();
+      return house(' Stockfish could not answer (' + esc(err.message) + '), so the house engine did.');
     });
+    return answer.then(function (a) {
+      a.move = game.moveFromSan(a.uci);
+      if (!a.move) throw new Error(a.by + ' offered ' + a.uci + ', not a legal move here');
+      return a;
+    });
+  }
+
+  // The study's game is over: say how, and whether that meets its goal. No more moves; Restart plays it again.
+  function endStudy(d, over) {
+    var v = Training.judgeStudy(d.endgame, over, d.game.turnColor());
+    drillBoard.interactive = false;
+    drillBoard.render();
+    $('#drillFeedback').innerHTML = '<div class="coach-note' + (v.solved ? ' ok' : '') + '">' + overMessage(over) + ' <b>' + v.text +
+      '</b> Press Restart to play it again.</div>';
   }
 
   function openErrorInDrill(key) {

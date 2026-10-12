@@ -93,9 +93,11 @@ check on the engine this app is built on. Stockfish is GPL-3.0 and vendored unmo
 `js/vendor/README.md`.
 
 **Drills** — puzzles generated only from your own mistakes, scheduled by SM-2 spaced
-repetition, plus a starter endgame curriculum (Lucena, Philidor, Vancura, Saavedra,
-opposition and key squares, the three-pawn breakthrough, Réti, B+N mate, and others) that
-you play out against the engine at full strength.
+repetition, plus a starter endgame curriculum of 15 studies (Lucena, Philidor, Vancura, Saavedra,
+opposition and key squares with either side to move, the three-pawn breakthrough, Réti, B+N mate, and
+others) that you play out against an engine: Stockfish while it is switched on, the house engine
+otherwise. Each ends judged against its goal, and Restart plays it again. A card takes any move as
+good as the stored one: another mate, or one the house engine scores within 30 cp of it.
 
 **Calendar** — a 28-day plan on a weekly rhythm: recall every day, endgame theory Tuesday
 and Saturday, sparring Sunday/Wednesday/Friday, with the calculation and motif blocks
@@ -202,6 +204,92 @@ tells you the rate in points per month, and — if the rate is positive — roug
 crosses 2200. Treat the date as a direction rather than a promise; improvement is not
 linear, and the honest use of the chart is the flat case, where it tells you that hours
 played are not the constraint.
+
+---
+
+## The puzzles, 12 October 2026
+
+Every puzzle in the Drills tab was played through, and some did not work.
+
+**What did not work.**
+- Four endgame studies had no position (wrong bishop, opposite-coloured bishops, queen against a
+  pawn on the seventh, short-side defence). The list showed them disabled, "(reading only)".
+- *Opposition and key squares* asked you to evaluate the position with White to move and then with
+  Black to move, but only White to move could be played, and then you played the side that cannot lose.
+- A study that ended only printed how it ended (mate, stalemate, repetition and so on). It never
+  said whether the goal was met, there was no way to play it again, and after a draw by
+  repetition the board still took moves.
+- The prompt said the engine "will answer at full strength". It was the house engine at four plies
+  and 1.4 s, even with Stockfish switched on. An engine that failed left the board waiting for good.
+- A drill card took only the one stored move, compared as text. A second mate in one was "Not", and
+  so was a different move just as good.
+- A card whose stored best move was not a legal move in its position (a damaged line) could never be
+  solved: only "Show the move" ended it.
+
+**What changed.**
+- All 15 studies have a position (the opposition is now two, one for each side to move). Each
+  says which side you play (`play`) and what that side is to get (`result`, a win or a draw); when
+  you are not the side to move, the engine moves first, and the board turns round when you have Black.
+- A finished study is judged against its goal (`Training.judgeStudy`): a win study is solved only
+  by a mate you give, and fails on any draw or loss; a draw study is solved by any draw (stalemate,
+  no mating material, threefold repetition, the fifty-move rule) and fails only on a loss. The board
+  then takes no more moves. **Restart** plays the study again from its position; a reply to the old
+  game that lands later goes nowhere, and the day still counts as practised.
+- Stockfish answers the study while it is switched on (the Sparring tab's "Read every move", on
+  unless unticked), at the time per position set there. When it cannot (no legal move, a worker
+  that will not start, switched off mid-search, not in the page), the house engine answers and the
+  reply says why. Only a legal move is ever played; if no engine can answer, the study says so and
+  lets you make the engine's move, so the board is never stuck. The prompt names the engine that
+  answers, and says what the house engine is.
+- `Chess.gameOver()` already saw threefold repetition and the fifty-move rule in a study (the game
+  played on the board keeps its history from the study's position): `test/rules.js` now checks both
+  there, a repetition in Philidor and in Vancura, and the browser check ends a Vancura on one.
+- A drill card takes any move that mates when the stored move mates, and any move the house
+  engine scores within 30 cp of the stored move in that position (as short a mate, when the stored
+  move leads to mate), at depth 3 in at most 0.8 s. It says "Also correct", shows the stored move
+  and its line, and grades as before. The board takes no move while that look runs; a reveal or
+  quitting meanwhile drops it; an engine that fails says so and gives the board back. Moves are
+  compared as moves, so the stored move written another way still counts.
+- A mistake whose stored best move is not legal in its position makes no card
+  (`Training.buildDeck`).
+- Checked and found already working: promotion in a study (the picker, a rook in the Saavedra), the
+  calendar's Set up for a study, and a backup restored in the middle of one (the study stays on the board
+  and plays on). Each check written for a fix failed on the code before it; these last pass on both.
+
+**Every study, verified on 12 October 2026.** Positions of seven pieces or fewer were read from the
+[Lichess tablebase](https://tablebase.lichess.ovh) (exact; DTM is its distance to mate, in plies, with best play); the three-pawn breakthrough has eight,
+so it was read by the Stockfish 10 in `js/vendor/` (60 s in Chromium, depth 40). Stockfish 10 also
+read every other position for 15 s and agreed with the tablebase each time (the draws within 0.32
+pawns of level, the wins as wins). `python-chess` found every position valid. The network was used
+for this and nothing else; `test/rules.js` pins each study's position, side to move, side played,
+result and goal, so an edit cannot quietly change one.
+
+| study | position | to move | you play | goal | verdict | source |
+|---|---|---|---|---|---|---|
+| lucena | `2K5/2P1k3/8/8/8/8/r7/3R4 w - - 0 1` | White | White | win | win, DTM 35 (12 of 16 moves win, Re1+ and Rd7+ among them; Rd6 and Rd8 only draw, Ra1 and Rd2 lose) | tablebase |
+| philidor | `4k3/R7/1r6/4PK2/8/8/8/8 b - - 0 1` | Black | Black | draw | draw (8 of 16 moves hold; Rb5, Rb8, Re6, Rf6+ lose) | tablebase |
+| vancura | `R7/7k/P4r2/8/4K3/8/8/8 b - - 0 1` | Black | Black | draw | draw (Rb6–Rh6 along the sixth, Re6+, Kg7 hold; Rxa6, Rf1, Kg6 lose) | tablebase |
+| behind-passer | `1r3k2/8/8/1P6/8/8/8/1R4K1 w - - 0 1` | White | White | draw | draw (every move holds) | tablebase |
+| saavedra | `8/8/1KP5/3r4/8/8/8/k7 w - - 0 1` | White | White | win | win, by c7 only (DTM 51) | tablebase |
+| opposition | `8/8/8/4k3/8/4K3/4P3/8 w - - 0 1` | White | Black | draw | draw | tablebase |
+| opposition-b | `8/8/8/4k3/8/4K3/4P3/8 b - - 0 1` | Black | White | win | White wins (DTM 40) | tablebase |
+| breakthrough | `6k1/ppp5/8/PPP5/8/8/8/6K1 w - - 0 1` | White | White | win | +153 pawns at depth 40, best b6 | Stockfish 10 |
+| reti | `7K/8/k1P5/7p/8/8/8/8 w - - 0 1` | White | White | draw | draw, by Kg7 only | tablebase |
+| bn-mate | `8/8/8/4k3/8/8/8/3BKN2 w - - 0 1` | White | White | win | win (DTM 59, inside the fifty moves) | tablebase |
+| two-bishops | `8/8/8/4k3/8/8/8/2B1KB2 w - - 0 1` | White | White | win | win (DTM 33) | tablebase |
+| wrong-bishop | `8/4k3/8/7P/2B3K1/8/8/8 b - - 0 1` | Black | Black | draw | draw, by Kf6 only (Kf8, Ke8, Kd6 and the rest lose); with a dark-squared bishop the same kind of position is lost | tablebase |
+| opp-bishops | `2k5/6b1/6B1/4P3/5P2/8/8/6K1 b - - 0 1` | Black | Black | draw | draw, by Kd7 or Bh6 only (8 other moves lose) | tablebase |
+| q-vs-pawn | `K7/8/8/8/8/8/1pk5/7Q w - - 0 1` | White | White | win | win (DTM 35; only the five checks Qe4+, Qg2+, Qc6+, Qh7+, Qh2+ win) | tablebase |
+| short-side | `4k3/R7/4K3/4P3/8/8/8/1r6 b - - 0 1` | Black | Black | draw | draw, by Kf8 (the short side) or Rb6+ only; Kd8 and 13 others lose | tablebase |
+
+The idea texts were checked against the same source. Queen against a pawn on the seventh: from
+White Ka8, Qh1, the knight pawn (b2, king c2) and the centre pawn (d2, king e2) lose, while the
+bishop pawn (c2, king d2) and the rook pawn (a2, king b2) draw. The rook pawn with the king on c2
+instead loses (Qa1): the defending king has to stand beside its pawn, as the text says. The short side
+is mirrored with the rook on h1: then only Kd8 or Rh6+ hold.
+
+`test/stockfish_check.py` now reads each study's claim from its `play` and `result`, so it judges all
+15 against a native Stockfish without a table of its own.
 
 ---
 
@@ -350,8 +438,11 @@ functions as run, and the figure before this round, 99.96% of lines, was really 
 code lines, 21 functions), and on a scratch copy given a function no test calls, which it
 reported as never called, with its nested function, its lines, statements and branches.
 
-On 12 October 2026: all 4,729 lines, all 688 functions, all 4,190 statements, all 3,463
-branches and every V8 block (2,942 in the last run: V8 lists only the blocks it compiled, so the total can differ between runs). What was still left a day earlier was reached this way. The titled
+On 12 October 2026, after the puzzles round: all 4,834 lines, all 712 functions, all 4,272 statements, all 3,505
+branches and every V8 block (2,990 in the last run: V8 lists only the blocks it compiled, so the total can differ between runs).
+One run that day left a sparring guard unreached (a mirror's reply landing after a restart): the check
+waited a fixed 400 ms for the mirror to start thinking, and on a loaded machine restarted before it had.
+It now waits until the mirror has been asked. What was still left a day earlier was reached this way. The titled
 players' sort keeps two accounts of one player (the same name and title) in the order they
 are listed. Guards for a page other than this one (edited, or older than the code) are
 tested on such a page, changed before the app boots: a tab added before its panel, no
