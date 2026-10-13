@@ -407,7 +407,7 @@ const sans = g => g.moves.map(m => m.san).join(' ');
   await r.start();
   const inHand = r.read(Chess.START, { movetime: 50, multipv: 3 }), waiting = r.read(Chess.START, { movetime: 50 });
   check('reader: a read asking for three lines sets MultiPV before it searches',
-    posted.indexOf('setoption name MultiPV value 3') > -1 && posted.indexOf('setoption name MultiPV value 3') < posted.indexOf('go movetime 50'),
+    posted.indexOf('setoption name MultiPV value 3') > -1 && posted.indexOf('setoption name MultiPV value 3') < posted.findIndex(c => /^go /.test(c)),
     posted.join(' | '));
   r.terminate();   // what becomes of the two reads is test/regress.js's check
   check('reader: terminate() stops the search and ends the worker', terminated === 1 && r.worker === null && !r.isReady &&

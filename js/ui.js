@@ -1116,7 +1116,7 @@
         sf.failed = 'This browser cannot start a Web Worker here, so Stockfish is not available.';
         return null;
       }
-      sf.reader = new StockfishReader.Reader(window.STOCKFISH_SOURCE);
+      sf.reader = new StockfishReader.Reader(window.STOCKFISH_SOURCE, window.STOCKFISH_WASM);
     }
     return sf.reader;
   }
@@ -1476,9 +1476,9 @@
      house engine, which also answers whenever Stockfish cannot. You play eg.play; when
      that is not the side to move, the engine moves first. The game ends on a mate or
      any draw, and is judged against the study's goal (Training.judgeStudy). */
-  var STUDY_SF = 'Stockfish answers your moves, at the time per position set on the Sparring tab; if it cannot, the house engine does.';
+  var STUDY_SF = 'Stockfish 19 answers your moves, at the time per position set on the Sparring tab; if it cannot, the house engine does.';
   var STUDY_HOUSE = 'The house engine answers your moves. It is club strength, searching four plies (half-moves) ahead in at most 1.4 seconds, ' +
-    'so it can miss a defence a strong player would find: tick “Read every move” on the Sparring tab to have Stockfish answer instead.';
+    'so it can miss a defence a strong player would find: tick “Read every move with Stockfish 19” on the Sparring tab to have Stockfish answer instead.';
 
   // practised: carried over by Restart, so a study restarted still counts as the day's practice
   function startEndgame(id, practised) {

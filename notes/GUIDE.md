@@ -85,8 +85,9 @@ habits. Live advice shows the top three candidates for **both** colours at once 
 not to move is evaluated through a null move, which is the same question as *what is he
 threatening*.
 
-**Stockfish reader** — beside the board, Stockfish 10 reads every position in a background
-worker and grades each move, yours and the mirror's, by scoring the move played against its
+**Stockfish reader** — beside the board, Stockfish 19 (the lite, single-threaded WebAssembly
+build) reads every position in a background worker, in the time per position set beside it
+(answered within 5 ms of it, never after), and grades each move, yours and the mirror's, by scoring the move played against its
 own best from the same position. It also shows the house engine's evaluation next to its own,
 and sets what the mirror *meant* to give away against what Stockfish *measured* — a running
 check on the engine this app is built on. Stockfish is GPL-3.0 and vendored unmodified; see
@@ -258,7 +259,8 @@ Every puzzle in the Drills tab was played through, and some did not work.
 
 **Every study, verified on 12 October 2026.** Positions of seven pieces or fewer were read from the
 [Lichess tablebase](https://tablebase.lichess.ovh) (exact; DTM is its distance to mate, in plies, with best play); the three-pawn breakthrough has eight,
-so it was read by the Stockfish 10 in `js/vendor/` (60 s in Chromium, depth 40). Stockfish 10 also
+so it was read by the Stockfish 10 then in `js/vendor/` (60 s in Chromium, depth 40; the page has run
+Stockfish 19 since 13 October). Stockfish 10 also
 read every other position for 15 s and agreed with the tablebase each time (the draws within 0.32
 pawns of level, the wins as wins). `python-chess` found every position valid. The network was used
 for this and nothing else; `test/rules.js` pins each study's position, side to move, side played,
@@ -293,6 +295,95 @@ is mirrored with the rook on h1: then only Kd8 or Rh6+ hold.
 
 ---
 
+## Stockfish 19 and the time rule, 13 October 2026
+
+**The swap.** The Stockfish in the page was Stockfish.js 10.0.2, the asm.js build (one file of
+plain JavaScript, 957,535 bytes, wrapped as a string). It is now Stockfish 19: Stockfish.js 19.0.1
+from npm, the "lite, single-threaded" WebAssembly build that its README recommends, which needs no
+cross-origin isolation. Two files of the package ship unmodified inside `js/vendor/stockfish-19-src.js`
+(2,490,755 bytes): the 28,230-byte glue as a string and the 1,845,971-byte `.wasm` as base64.
+`js/vendor/make_stockfish_src.py` makes that file from the npm tarball, checked against the registry's
+SHA-512 and each file against a pinned SHA-256, and makes it the same byte for byte every time;
+`js/vendor/README.md` lists the hashes, the licence and the authors.
+
+A page opened by double-click cannot fetch a `.wasm` or start a worker by URL, so the reader builds
+the worker from a Blob: the base64, a few lines that decode it and answer the glue's one `fetch()`
+of `stockfish-19-lite-single.wasm` from memory, then the glue. The glue run as a worker always sets
+its own `instantiateWasm`, which fetches, so `Module.wasmBinary` cannot be reached without editing it;
+answering its fetch leaves it as published. The same file runs from `file://`, on GitHub Pages and
+inlined in the single-file build (2,769 KB now). It answers `id name Stockfish 19 Lite WASM`;
+`Threads` is fixed at 1, so the reader never sets it; there is no `SyzygyPath`. Stockfish 19's
+output needed little of the reader: `info string` lines (it writes one per search, "Network replica 1:
+Local memory...") are passed over by name, a `wdl` triple is read if it is ever there (the reader
+leaves `UCI_ShowWDL` off), and with no legal move it writes `info depth 0 score mate 0` (or `cp 0`)
+and `bestmove (none)`, read as no move and the score.
+
+Measured on this machine (Chromium, 5 page loads each, the median): the page loads as fast as
+before (DOMContentLoaded 82 ms, load 88 ms; 83 and 89 with Stockfish 10), its JavaScript heap is
+4.1 MB after load against 2.6 MB (the base64 is a string the page keeps), and the engine is ready
+169 ms after it is started against 225 ms. In one second from the start position it reaches depth 19
+where Stockfish 10 reached 12. The engine's own thread (glue, `.wasm` memory, a 16 MB hash) adds about
+73 MB, measured in Node.
+
+**The time rule.** A position given T ms (the Sparring tab's time per position: every reading, and
+every move Stockfish plays in a study) is now answered no later than T ms after its search was sent
+and no earlier than T - 5 ms (`performance.now()` from the `go` to the answer). Before, `go movetime T`
+was sent and the bestmove taken whenever it came: a few ms after T, or at once in a forced position
+(a mate in one is done in 1 ms). Three measurements decided how:
+
+- a `stop` took 1 to 47 ms to bring a bestmove back (the worker reads its messages only between
+  slices of search, and the first slice can run 80 ms), so stopping at T minus a calibrated latency
+  cannot land in a 5 ms window;
+- Stockfish's own clock ended `go movetime M` 0 to 11 ms after M, nearly always within 4;
+- page timers on Windows fire up to 17 ms late, even `setTimeout(1)` by 4 to 8 ms.
+
+So the search is sent as `go movetime M`, with M short of T by 4 ms and by the slowest overrun of the
+last ten searches (at most 25 ms), and the page keeps the deadline: a bestmove before T - 5 is held
+until T - 4; if none has come by T - 4, the read is answered from the deepest line Stockfish has
+reported, Stockfish is told to stop, and that bestmove, when it comes, is dropped. Each wait ends by
+messages the page sends itself (a `MessageChannel`) for its last 30 ms, since a timer alone is too
+coarse. The next position is not sent until the engine's bestmove is in, so a late bestmove can only
+belong to the search in hand, and a read already answered or dropped ignores it. A watchdog
+replaces a worker that sends no bestmove 3 s past the deadline: the read fails saying so (or
+resolves as dropped), and the reads behind it go to a new worker.
+
+Measured by `test/ui_check.py` (the real engine in Chromium, 20 reads at each budget, five positions
+in turn, one a mate in one), every answer was inside [T - 5, T]:
+
+| T | answer: min | median | max | Stockfish's bestmove: min | median | max | answered by |
+|---|---|---|---|---|---|---|---|
+| 50 ms | 45.2 | 46.0 | 46.1 | 5.6 | 37.6 | 45.5 | its bestmove 3, held 16, deadline 1 |
+| 100 ms | 95.2 | 96.0 | 96.1 | 9.3 | 89.9 | 95.2 | 1, 17, 2 |
+| 250 ms | 245.1 | 246.0 | 246.1 | 4.7 | 244.0 | 245.5 | 4, 16, 0 |
+| 500 ms | 495.3 | 496.0 | 496.1 | 7.0 | 494.5 | 495.6 | 5, 14, 1 |
+| 1000 ms | 995.6 | 996.0 | 996.1 | 9.3 | 993.1 | 995.5 | 1, 17, 2 |
+
+Five other runs of the check that day passed as well (four under the coverage report). One earlier
+coverage run had one browser check fail, unnamed because the report kept only the end of the output;
+it now keeps every FAIL line, and the runs since have had none. The bestmove itself
+lands in the window only when Stockfish's clock is that exact; most are held a few ms, which costs
+the search up to ~10 ms of its time. A page busy with other work when a deadline comes (the house
+engine thinking on the main thread) answers late by as long as it is busy; the check runs on an
+idle page.
+
+`test/stockfish19.js` runs the same glue in Node (as a module, in a worker thread). There the rule is
+held for the early side strictly; one late read in 20 per budget is let through and printed, because
+Node's main thread (VS Code's `Code.exe` as Node, on Windows) stalls 6 to 49 ms at a time while the
+engine thread searches: a loop of messages to itself saw the gaps, and garbage collection was at
+most 4 ms of them. Of the runs of 100 reads whose output was read, the worst had 2 late (109.5 ms
+at 100, 251.9 ms at 250); most had none.
+
+`test/stockfish_check.py`'s fourth section now compares the page's reader, Stockfish 19 lite at 1 s a
+position, with the native Stockfish 19: with `--quick`, the same verdict on 9 of 11 moves (81%), and
+every endgame claim holds.
+
+Coverage on 13 October 2026: all 4,938 lines, 727 functions, 4,394 statements, 3,551 branches and
+3,030 V8 blocks. Two guards of `js/ui.js` had been reached only because readings came at once: the
+panel showing a reading whose line is no legal move, and the house engine more hopeful for Black.
+Each now has a check of its own.
+
+---
+
 ## File map
 
 ```
@@ -307,12 +398,12 @@ js/training.js      endgame curriculum, SM-2 scheduling, day planner, .ics expor
 js/coach.js         justification rubric, scoring, game summaries, optional LLM call
 js/sparring.js      the mirror opponent and dual-sided advice
 js/board.js         board rendering and interaction
-js/stockfish-reader.js  Stockfish in a Web Worker: UCI parsing, an ordered read queue
-js/vendor/          Stockfish.js 10.0.2 (GPL-3.0), wrapped as a string so file:// can run it
+js/stockfish-reader.js  Stockfish in a Web Worker: UCI parsing, an ordered read queue, the deadline
+js/vendor/          Stockfish.js 19.0.1, lite single-threaded (GPL-3.0): glue and .wasm in one script, so file:// can run it
 js/ui.js            all seven workspaces
 test/               Node suites: perft.js, rules.js, eng.js (engine), an.js (analysis), integration.js,
                     spar.js (sparring), regress.js, titled.js, coach.js, app.js (PGN import, sync, mining,
-                    calendar); ui_check.py (the UI in a real browser); dist_check.py (the single-file
+                    calendar), stockfish19.js (the vendored engine in Node, the time rule); ui_check.py (the UI in a real browser); dist_check.py (the single-file
                     build on its own); engine_gauntlet.py (the engine over UCI, refereed by
                     python-chess); and coverage_report.py
 test/tactics.js     EPD suites in test/epd/ (Win at Chess, Bratko-Kopec, BT2630, STS), timed to the move found

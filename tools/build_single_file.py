@@ -21,7 +21,7 @@ if page.count(link) != 1:
     raise SystemExit("expected exactly one stylesheet link in index.html")
 page = page.replace(link, "<style>\n" + css + "\n</style>")
 
-scripts = re.findall(r'<script src="(js/[a-z/\-]+\.js)"></script>', page)
+scripts = re.findall(r'<script src="(js/[a-z0-9/\-]+\.js)"></script>', page)
 for rel in scripts:
     js = read(rel)
     if "</script" in js.lower():

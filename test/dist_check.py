@@ -29,7 +29,7 @@ html = open(alone, encoding="utf-8").read()
 check("build: no script or stylesheet is left as a reference", 'src="js/' not in html and 'href="css/' not in html)
 # A build left from older sources (dist/ is not in git, so nothing else notices) is stale.
 ROOT = os.path.join(HERE, "..")
-stale = [rel for rel in __import__("re").findall(r'<script src="(js/[a-z/\-]+\.js)"></script>', open(os.path.join(ROOT, "index.html"), encoding="utf-8").read())
+stale = [rel for rel in __import__("re").findall(r'<script src="(js/[a-z0-9/\-]+\.js)"></script>', open(os.path.join(ROOT, "index.html"), encoding="utf-8").read())
          if "<script>/* %s */\n%s\n</script>" % (rel, open(os.path.join(ROOT, rel), encoding="utf-8").read()) not in html]
 if open(os.path.join(ROOT, "css", "app.css"), encoding="utf-8").read() not in html: stale.append("css/app.css")
 check("build: every inlined file is the one in the working tree now", not stale, stale[:4])

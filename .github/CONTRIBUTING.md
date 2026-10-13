@@ -34,8 +34,9 @@ CI: see the guide.
 
 **It must keep working from `file://`.** That is why there is no build step and no
 modules: every file is a plain script that sets a global. It is also why Stockfish
-ships as a string (`js/vendor/stockfish-src.js`) and runs in a worker made from a
-Blob: a double-clicked page can load neither a worker by URL nor a `.wasm` file.
+ships inside a script (`js/vendor/stockfish-19-src.js`: the Stockfish 19 glue as a string,
+its `.wasm` as base64) and runs in a worker made from a Blob, which is handed the `.wasm`
+bytes: a double-clicked page can load neither a worker by URL nor a `.wasm` file.
 Anything that needs `fetch()` of a local file will work on GitHub Pages and fail
 for the person who downloaded it.
 

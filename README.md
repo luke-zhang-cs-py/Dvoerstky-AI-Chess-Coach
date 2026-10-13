@@ -39,12 +39,13 @@ file that differs from the one in `js/` or `css/`.
 
 ## Two engines, on purpose
 
-| | the house engine (`js/engine.js`) | Stockfish 10 (`js/vendor/`) |
+| | the house engine (`js/engine.js`) | Stockfish 19 (`js/vendor/`, the lite single-threaded WebAssembly build) |
 |---|---|---|
 | job | the sparring opponent, the drills, live advice | the check on all of that |
 | strength | club level, on purpose, so it can be tuned to *your* error rate | far stronger |
 | search | alpha-beta, quiescence, transposition table, null-move pruning | Stockfish's |
-| runs | on the page | in a Web Worker, from a Blob, because `file://` blocks the usual way |
+| runs | on the page | in a Web Worker, from a Blob, its `.wasm` handed over from the page, because `file://` blocks the usual way |
+| time | a deadline per move | the time per position you set, answered no later than it and no more than 5 ms short of it |
 
 The mirror's moves are chosen to lose centipawns at the rate *you* lose them.
 Stockfish then measures what each move really cost, so the panel shows whether the
@@ -66,16 +67,18 @@ notes/       the full guide
 
 ## Tests
 
-**685 checks.** In Node: 96 regression, 84 app (PGN import, Lichess sync, mining,
+**723 checks.** In Node: 96 regression, 84 app (PGN import, Lichess sync, mining,
 calendar, storage, the Stockfish reader), 66 rules (the endgame studies pinned among them), 43 titled-player, 32 analysis,
-30 sparring, 29 coach, 23 engine and 22 integration checks,
+30 sparring, 30 Stockfish 19 (the vendored engine itself, run in Node; the time rule; the reader's
+deadline), 29 coach, 23 engine and 22 integration checks,
 and perft on 21 positions (35 counts, plus 5 SAN and PGN checks), 15 of them edge cases (en
 passant out of a pin, castling into check, underpromotion) with counts taken from Stockfish 19,
-one from python-chess. In Chromium: 214 browser checks and 6 on the single-file build. Every
+one from python-chess. In Chromium: 222 browser checks and 6 on the single-file build. Every
 suite exits non-zero on a failure, which is what CI reads. Every bug fixed has a check that
-failed on the code before its fix. The browser checks run the real Stockfish. Together
-they run all 4,834 code lines in `js/`, all 712 of its functions, all 4,272 of its
-statements and all 3,505 of its branches (`test/coverage_report.py`, 12 October 2026;
+failed on the code before its fix. The browser checks run the real Stockfish 19, and time it: 100 reads at 50 ms to 1 s,
+every one answered within 5 ms short of its time and never after it. Together
+they run all 4,938 code lines in `js/`, all 727 of its functions, all 4,394 of its
+statements and all 3,551 of its branches (`test/coverage_report.py`, 13 October 2026;
 the guide says how the last of them were reached).
 
 **From the outside** (`test/engine_gauntlet.py`): the engine driven over UCI the way a
@@ -123,4 +126,4 @@ and the 3- and 4-piece Syzygy tablebases (each file checked against a pinned SHA
 verdicts hold (13 October 2026). `tools/uci.js` runs the engine in
 any UCI GUI. Setup: [`.github/CONTRIBUTING.md`](.github/CONTRIBUTING.md).
 
-MIT, except `js/vendor/` (Stockfish.js, GPL-3.0).
+MIT, except `js/vendor/` (Stockfish 19 by the Stockfish developers, as Stockfish.js 19.0.1 by Nathan Rugg; GPL-3.0).

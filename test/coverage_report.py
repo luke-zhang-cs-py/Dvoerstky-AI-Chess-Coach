@@ -113,7 +113,9 @@ def collect(tmp):
     runs = []
     env = dict(os.environ, TZ="America/Toronto", PYTHONIOENCODING="utf-8")
     env.setdefault("CI", "true")   # as CI runs them: a check that would SKIP fails instead
-    tail = lambda r: (r.stdout[-1500:] + r.stderr[-1500:]).strip()
+    # the end of its output, after every FAIL line in it: a failure early in a long run is not cut off
+    tail = lambda r: ("".join(l + chr(10) for l in (r.stdout or "").splitlines() if l.startswith("FAIL"))[-3000:] +
+                      r.stdout[-1500:] + r.stderr[-1500:]).strip()
     for s in SUITES:
         d = os.path.join(tmp, os.path.basename(s))
         r = run([NODE, s], dict(env, NODE_V8_COVERAGE=d), 900)

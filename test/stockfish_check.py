@@ -13,9 +13,9 @@ A native Stockfish (not the one inside the page) is the referee:
                    Stockfish agree it cost what the app says, and is there one
                    clear answer, or several moves as good (which the drill
                    now takes when the house engine agrees)?
-  4. reader     -- the Stockfish 10 reader in the page (1 s a position):
-                   do its verdicts (good / inaccuracy / mistake / blunder)
-                   match Stockfish 19's?
+  4. reader     -- the page's reader, Stockfish 19 lite (WebAssembly, one
+                   thread, 1 s a position): do its verdicts (good / inaccuracy /
+                   mistake / blunder) match the native Stockfish 19's?
   5. advice     -- the house engine's first choice at its app budget: how
                    much does Stockfish say it gives away?
 
@@ -213,7 +213,7 @@ process.stdout.write(JSON.stringify(q.map(([f, s]) => { const g = new Chess(f), 
 with sync_playwright() as p:
     b = p.chromium.launch(); pg = b.new_page()
     pg.goto("file:///" + os.path.join(ROOT, "index.html").replace("\\", "/")); pg.wait_for_timeout(800)
-    verdicts = pg.evaluate("""async q => { const r = new StockfishReader.Reader(window.STOCKFISH_SOURCE); await r.start();
+    verdicts = pg.evaluate("""async q => { const r = new StockfishReader.Reader(window.STOCKFISH_SOURCE, window.STOCKFISH_WASM); await r.start();
       const out = [];
       for (const [fen, uci] of q) {
         const best = await r.read(fen, { movetime: 1000 });
@@ -230,7 +230,7 @@ for (m, u), rl in zip([(m, u) for m, u in zip(reader_sample, ucis) if u], verdic
     truth = max(0, clamp(best) - clamp(got))
     total += 1; same += 1 if grade(rl) == grade(truth) else 0
     near += 1 if abs(rl - truth) <= 50 else 0
-print("\n4. The page's Stockfish 10 reader (1 s a position) against Stockfish 19 (depth %d)" % DEPTH)
+print("\n4. The page's reader, Stockfish 19 lite (1 s a position), against the native Stockfish 19 (depth %d)" % DEPTH)
 print("   %d of your moves: same verdict %d (%d%%); cost within 50 cp %d (%d%%)"
       % (total, same, 100 * same / total, near, 100 * near / total))
 report["reader"] = {"moves": total, "same_verdict": same, "within50": near}

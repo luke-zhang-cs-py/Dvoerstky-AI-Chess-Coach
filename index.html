@@ -98,9 +98,9 @@
 
         <div class="sheet" id="sfPanel">
           <h3>Stockfish reader</h3>
-          <p class="tiny soft">Stockfish 10 reads every position in the background and grades each move &mdash; yours and the mirror&rsquo;s &mdash; against what it would have played. The house engine stays the opponent; Stockfish is the check on it.</p>
+          <p class="tiny soft">Stockfish 19 reads every position in the background and grades each move &mdash; yours and the mirror&rsquo;s &mdash; against what it would have played. Each position gets the time set here, answered within 5&nbsp;ms of it and never after. The house engine stays the opponent; Stockfish is the check on it.</p>
           <div class="row">
-            <label><input type="checkbox" id="sfOn" checked> Read every move</label>
+            <label><input type="checkbox" id="sfOn" checked> Read every move with Stockfish 19</label>
             <label>Time per position <select id="sfTime"><option value="500">0.5 s</option><option value="1000" selected>1 s</option><option value="3000">3 s</option></select></label>
           </div>
           <div id="sfNow"></div>
@@ -262,7 +262,7 @@
 <script src="js/coach.js"></script>
 <script src="js/sparring.js"></script>
 <script src="js/board.js"></script>
-<script src="js/vendor/stockfish-src.js"></script>
+<script src="js/vendor/stockfish-19-src.js"></script>
 <script src="js/stockfish-reader.js"></script>
 <script src="js/ui.js"></script>
 </body>

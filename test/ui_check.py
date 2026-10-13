@@ -394,6 +394,44 @@ with sync_playwright() as p:
     check("stockfish: switching it off says so", "Stockfish is off" in pg.inner_text("#sfNow"))
     pg.check("#sfOn")
 
+    # ---- 13 October 2026: Stockfish 19 (lite, single-threaded WebAssembly), and the time rule.
+    # The real engine from js/vendor/, in a worker from file://, its .wasm handed over from the page (nothing is fetched).
+    # Every read given T ms must answer in [T - 5, T] ms after its search was sent: 20 reads at each of five budgets,
+    # every one asserted, min / median / max printed. Before, "go movetime T" was sent and its bestmove taken whenever it
+    # came: a few ms past T, or long before it in a forced position.
+    asked = []
+    pg.on("request", lambda r: asked.append(r.url))
+    TIMING = """async ([budgets, n]) => {
+      const r = new StockfishReader.Reader(window.STOCKFISH_SOURCE, window.STOCKFISH_WASM), heard = [], line = r.onLine;
+      r.onLine = function (l) { heard.push(l); return line.call(this, l); };
+      const t0 = performance.now(); await r.start(); const startMs = performance.now() - t0;
+      const fens = ['rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1', 'r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3',
+        'r1bq1rk1/pp2bppp/2n1pn2/3p4/2PP4/2N1PN2/PP3PPP/R2QKB1R w KQ - 0 8', '8/5pk1/6p1/8/3R4/6P1/5PKP/2r5 w - - 0 40',
+        '6k1/5ppp/8/8/8/8/5PPP/3R2K1 w - - 0 1'];   // the last a mate in one: Stockfish is done in 1 ms, the answer still waits for the window
+      const out = [];
+      for (const T of budgets) for (let k = 0; k < n; k++) {
+        const res = await r.read(fens[k % fens.length], { movetime: T });
+        const t = r.timings[r.timings.length - 1];
+        out.push({ T, ms: res.ms, how: res.how, bestmoveMs: t.bestmoveMs === undefined ? null : t.bestmoveMs, legal: !!new Chess(res.fen).moveFromSan(res.best) });
+      }
+      r.terminate();
+      return { startMs, name: heard.filter(l => /^id name /.test(l)), out };
+    }"""
+    timed = pg.evaluate(TIMING, [[50, 100, 250, 500, 1000], 20])
+    check("stockfish 19: the engine in the page is Stockfish 19, started from file:// with no file fetched for it",
+          timed["name"] == ["id name Stockfish 19 Lite WASM"] and not [u for u in asked if u.endswith(".wasm") or "stockfish" in u.lower()],
+          "%s, ready in %d ms" % (timed["name"], timed["startMs"]))
+    def med(a): a = sorted(a); return a[len(a) // 2] if len(a) % 2 else (a[len(a) // 2 - 1] + a[len(a) // 2]) / 2
+    for T in (50, 100, 250, 500, 1000):
+        rows = [x for x in timed["out"] if x["T"] == T]
+        ms = [x["ms"] for x in rows]; bm = [x["bestmoveMs"] for x in rows if x["bestmoveMs"] is not None]
+        hows = {h: sum(1 for x in rows if x["how"] == h) for h in ("bestmove", "held", "deadline")}
+        outside = [round(m, 1) for m in ms if not (T - 5 <= m <= T)]
+        print("     T %4d ms: answer min %.1f, median %.1f, max %.1f; Stockfish's bestmove min %.1f, median %.1f, max %.1f; %s"
+              % (T, min(ms), med(ms), max(ms), min(bm), med(bm), max(bm), hows))
+        check("stockfish 19: %d reads of %d ms, each answered with a legal move in [%d, %d] ms" % (len(rows), T, T - 5, T),
+              len(rows) == 20 and not outside and all(x["legal"] for x in rows), "outside: %s" % outside if outside else "min %.1f, max %.1f" % (min(ms), max(ms)))
+
     # ---- board themes from the chess sites
     SITE = {"lichess-brown": ("rgb(240, 217, 181)", "rgb(181, 136, 99)"), "lichess-blue": ("rgb(222, 227, 230)", "rgb(140, 162, 173)"),
             "chesscom-green": ("rgb(235, 236, 208)", "rgb(119, 149, 86)"), "chesscom-brown": ("rgb(237, 214, 176)", "rgb(184, 135, 98)"),
@@ -1218,9 +1256,16 @@ with sync_playwright() as p:
     c2, p2 = fresh({"games": [blunder_game("fk%d" % i, 1 + i) for i in range(2)]})
     p2.evaluate("src => { window.STOCKFISH_SOURCE = src; }", FAKE_SF)
     p2.click("button.tab[data-tab=sparring]"); p2.select_option("#sparColor", "w"); p2.click("#sparStart")
+    # Each reading takes its full time per position now (the time rule), so wait for the start's to be shown: its
+    # line, a1a1, is no move, and the panel then shows the evaluation with no line to play.
+    p2.wait_for_function("/depth 12/.test(document.querySelector('#sfNow').innerText)", timeout=30000)
+    start_read = " ".join(p2.inner_text("#sfNow").split())
     p2.click('#sparBoard [data-sq="d2"]'); p2.click('#sparBoard [data-sq="d4"]')
     p2.wait_for_function("/Mirror, engine moves/.test(document.querySelector('#sfLog').innerText)", timeout=30000)
+    p2.wait_for_function("/House engine:/.test(document.querySelector('#sfNow').innerText)", timeout=30000)
     gap = " ".join(p2.inner_text("#sfLog").split())
+    check("stockfish: a reading whose line is no legal move shows its score and plays nothing",
+          "depth 12" in start_read and "Stockfish plays" not in start_read and "No legal moves" not in start_read, start_read)
     check("stockfish: a reading far from what the mirror meant to give up is called the house engine's misjudgement",
           "Mirror, engine moves: 500 cp lost per move over 1 read" in gap and "The gap is the house engine misjudging" in gap
           and "· Stockfish:" not in gap, gap[:200])
@@ -1658,6 +1703,18 @@ with sync_playwright() as p:
     agree = " ".join(p2.inner_text("#sfNow").split())
     check("stockfish: a reading within 30 cp of the house engine's is called agreement", "agrees with Stockfish." in agree, agree)
     c2.close()
+    # And one five pawns better for White than the house engine reads the start: the house engine is the more hopeful
+    # for Black. (Its readings of later positions used to show this; each reading now takes its full time, and the
+    # game moved on before one was shown.)
+    c2, p2 = fresh({"games": [blunder_game("fb%d" % i, 1 + i) for i in range(2)]})
+    p2.evaluate("src => { window.STOCKFISH_SOURCE = src; }",
+                stand_in_sf("if (c.indexOf('go') === 0) { postMessage('info depth 12 multipv 1 score cp 500 pv e2e4'); postMessage('bestmove e2e4'); }"))
+    p2.click("button.tab[data-tab=sparring]"); p2.select_option("#sparColor", "w"); p2.click("#sparStart")
+    p2.wait_for_function("/House engine/.test(document.querySelector('#sfNow').innerText)", timeout=20000)
+    hopeful = " ".join(p2.inner_text("#sfNow").split())
+    check("stockfish: a reading well above the house engine's has the house engine the more hopeful for Black",
+          re.search(r"House engine: \S+ — more hopeful for Black by \d+\.\d\d\.", hopeful) is not None, hopeful)
+    c2.close()
     # A read dropped when Stockfish is switched off, which then fails, is not Stockfish failing: on again, it reads.
     # The stand-in leaves its first search unanswered and throws when told to stop it. Each step waits for what the
     # next needs (the search sent, the failure delivered to the page and to this script), not for a length of time.
@@ -1936,6 +1993,8 @@ with sync_playwright() as p:
     unread = (2 * LONG_GAME + 1 - SF_CACHE_MAX + 1) // 2   # the 21 dropped: the start's, then two per move
     c2, p2 = fresh({"games": [blunder_game("fc%d" % i, 1 + i) for i in range(2)]})
     p2.evaluate("src => { window.STOCKFISH_SOURCE = src; }", SF_AT_ONCE)
+    # A read answers no sooner than 5 ms short of its time (the time rule), so 421 of them get 20 ms each, not 1 s.
+    p2.evaluate("() => { const s = document.querySelector('#sfTime'); s.add(new Option('20 ms', '20')); s.value = '20'; }")
     p2.evaluate(SCRIPTED)
     long_line = p2.evaluate("""n => { let a = 7;   // a seeded walk over legal moves, never one that ends the game (nor a promotion, to click)
       const rnd = () => { a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
@@ -2025,7 +2084,7 @@ with sync_playwright() as p:
         for (const [a, b] of [['h7', 'g7'], ['g7', 'h7'], ['h7', 'g7'], ['g7', 'h7']]) {
           play(a, b); await wait(replied, () => 'no reply: ' + fb()); said.push(fb());
         }
-        return { prompt: /Stockfish answers your moves/.test(prompt), said, movable: document.querySelectorAll('#drillBoard .sq.movable').length,
+        return { prompt: /Stockfish 19 answers your moves/.test(prompt), said, movable: document.querySelectorAll('#drillBoard .sq.movable').length,
                  restart: !document.querySelector('#drillRestart').classList.contains('hidden') };
       } catch (e) { return e.message; } }""")
     check("studies: with Stockfish on, it answers the study, and the prompt says so",
