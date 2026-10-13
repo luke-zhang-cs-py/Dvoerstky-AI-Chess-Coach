@@ -756,12 +756,20 @@ def run_stockfish(args: argparse.Namespace) -> dict:
     return summary
 
 
+def installed_stockfish():
+    """tools/install_stockfish.py's binary, if it has been run, else None."""
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "tools"))
+    from install_stockfish import installed
+    return installed()
+
+
 # ---------------------------------------------------------------- main
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0], formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("check", choices=["legality", "mates", "random", "stockfish", "all", "make-mates"])
     p.add_argument("--node", default=os.environ.get("NODE", "node"))
-    p.add_argument("--stockfish", default=os.environ.get("STOCKFISH"))
+    p.add_argument("--stockfish", default=os.environ.get("STOCKFISH") or installed_stockfish(),
+                   help="default: $STOCKFISH, else the one tools/install_stockfish.py installs")
     p.add_argument("--positions", type=int, default=1000)
     p.add_argument("--games", type=int, default=None, help="random: 100 (and half as many vs greedy); stockfish: 20")
     p.add_argument("--movetime", type=int, default=None, help="house engine ms a move (legality 100, mates 1000, games 50/100)")

@@ -1,6 +1,7 @@
 r"""Everything the app tells a player, checked against Stockfish 19.
 
-    python test/stockfish_check.py path/to/stockfish.exe [--quick]
+    python test/stockfish_check.py [path/to/stockfish.exe] [--quick]
+    (no path: the one tools/install_stockfish.py installs)
 
 A native Stockfish (not the one inside the page) is the referee:
 
@@ -25,7 +26,25 @@ import json, os, statistics, subprocess, sys, tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.normpath(os.path.join(HERE, ".."))
-SF = sys.argv[1]
+def installed_stockfish():
+    """tools/install_stockfish.py's binary, if it has been run, else None."""
+    sys.path.insert(0, os.path.join(ROOT, "tools"))
+    from install_stockfish import installed
+    return installed()
+
+
+def installed_syzygy():
+    """The 3- and 4-piece tablebases tools/install_stockfish.py installs, if it has been run, else None."""
+    sys.path.insert(0, os.path.join(ROOT, "tools"))
+    from install_stockfish import syzygy
+    return syzygy()
+
+
+# A path given on the command line wins; without one, the installed Stockfish 19.
+SF = next((a for a in sys.argv[1:] if not a.startswith("--")), None) or installed_stockfish()
+if not SF:
+    raise SystemExit("No Stockfish 19: run python tools/install_stockfish.py, or pass the path to one.")
+SYZYGY = installed_syzygy()
 QUICK = "--quick" in sys.argv
 NODE = os.environ.get("NODE", "node")
 DEPTH = 14 if QUICK else 18
@@ -36,6 +55,8 @@ class Stockfish:
         self.p = subprocess.Popen([path], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, bufsize=1)
         self.send("uci"); self.wait("uciok")
         self.send("setoption name Threads value 4"); self.send("setoption name Hash value 256")
+        # Without them a fortress is scored by its material: wrong-bishop, a tablebase draw, read as +1 pawn.
+        if SYZYGY: self.send("setoption name SyzygyPath value " + SYZYGY)
         self.send("isready"); self.wait("readyok")
 
     def send(self, s): self.p.stdin.write(s + "\n"); self.p.stdin.flush()

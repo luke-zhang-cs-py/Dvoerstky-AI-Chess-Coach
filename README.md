@@ -117,7 +117,10 @@ Every endgame study's verdict was checked on 12 October 2026 against the Lichess
 `test/stockfish_check.py` re-checks the app's claims against Stockfish 19: every
 endgame study's verdict (read from the study's own side and result), the imported evaluations, the mined mistakes and the house
 engine's own choices (93% within 50 cp of best, on the previous engine), and exits 1 if
-an endgame claim is wrong. `tools/uci.js` runs the engine in
+an endgame claim is wrong. `python tools/install_stockfish.py` puts the official Stockfish 19
+and the 3- and 4-piece Syzygy tablebases (each file checked against a pinned SHA-256) in
+`.tools/`, where both checks find them without a path; with the tablebases all 15 study
+verdicts hold (13 October 2026). `tools/uci.js` runs the engine in
 any UCI GUI. Setup: [`.github/CONTRIBUTING.md`](.github/CONTRIBUTING.md).
 
 MIT, except `js/vendor/` (Stockfish.js, GPL-3.0).
