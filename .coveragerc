@@ -7,11 +7,14 @@ core = ctrace
 # Playwright's sync API runs the code that calls it on greenlets: without this, nothing a script
 # does inside `with sync_playwright()` is seen (tools/record_demo.py read as 42%).
 concurrency = thread, greenlet
+# Every folder that holds the repository's Python, at any depth. Without include_namespace_packages,
+# coverage.py lists a file nothing imported only where each folder below these has an __init__.py,
+# so an untested script in a new folder would be left out of the total instead of counted at 0%
+# (include_namespace_packages, under [report]).
 source =
     tools
-    experiments/calibration
-    experiments/move_predictor
-    js/vendor
+    experiments
+    js
     test
 # Tests, not measured: the unittest files here, and the drivers that are tests themselves (each a
 # list of checks against the app or an engine). test/coverage_report.py is not one of them: it is measured.
@@ -26,6 +29,10 @@ omit =
 show_missing = True
 skip_covered = False
 fail_under = 100
+include_namespace_packages = True
 # The one exclusion: a script's entry point that only calls main(), which the tests call directly.
-exclude_also =
+# exclude_lines, not exclude_also, which keeps coverage.py's own (pragma: no cover, `...` stub
+# bodies, if TYPE_CHECKING:); and partial_branches empty, which drops its pragma: no branch.
+exclude_lines =
     if __name__ == "__main__":
+partial_branches =

@@ -81,7 +81,7 @@ failed on the code before its fix. The browser checks run the real Stockfish 19,
 every one answered within 5 ms short of its time and never after it. Together
 they run all 4,938 code lines in `js/`, all 727 of its functions, all 4,394 of its
 statements and all 3,551 of its branches (`test/coverage_report.py`, 13 October 2026, again
-on 27 October; the guide says how the last of them were reached), and all 937 statements and
+on 27 October; the guide says how the last of them were reached), and all 940 statements and
 302 branches of the repository's own Python outside the test drivers (coverage.py, `.coveragerc`).
 CI measures both in a job of its own and fails below 100%.
 

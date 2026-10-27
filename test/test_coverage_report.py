@@ -292,7 +292,7 @@ class Pieces(unittest.TestCase):
 
     def test_code_mask(self):
         mask = lambda s: "".join("x" if b else "." for b in self.m.code_mask(s))
-        self.assertEqual(mask("a // c\nb"), "x.....x" + "x"[:0] + ".x"[1:] if False else mask("a // c\nb"))
+        self.assertEqual(mask("a // c\nb"), "x......x")              # a line comment ends at its newline
         self.assertEqual(mask("a /* c */ b"), "x.........x")
         self.assertEqual(mask("'//' + '\\'' + \"a b\""), "xxxx.x.xxxx.x.xx.xx")   # strings whole; a space in one is still not code
         self.assertEqual(mask("`a\n// b`"), "xx.xx.xx")            # a template spans lines; // in it is not a comment

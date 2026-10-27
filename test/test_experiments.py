@@ -10,7 +10,7 @@ stops are checked. One check runs calibrate.py's page helpers on the real index.
 Chromium, so the scripts they send are known to work on the app as it is. The move predictor
 trains for real (PyTorch) on the sample games. Nothing reaches the network.
 """
-import contextlib, importlib, io, json, math, os, re, runpy, shutil, sys, tempfile, unittest
+import contextlib, importlib.util, io, json, math, os, re, runpy, shutil, sys, tempfile, unittest
 from unittest import mock
 
 import chess
@@ -143,8 +143,8 @@ def mirror_side(moves, mirror_white):
 
 class Run:
     """Run a calibration script (or call into calibrate) with the stand-ins in place."""
-    def __init__(self, test, page, sf):
-        self.test, self.page, self.sf = test, page, sf
+    def __init__(self, page, sf):
+        self.page, self.sf = page, sf
 
     def __enter__(self):
         sp, self.browser = playwright_with(self.page)
@@ -179,7 +179,7 @@ class Calibrate(unittest.TestCase):
     def game(self, moves, mirror_white, sf_score=None, over=game_over):
         mirror, theirs = mirror_side(moves, mirror_white)
         page, sf = Page(mirror=mirror, over=over), Stockfish(play=theirs, score=sf_score)
-        with Run(self, page, sf):
+        with Run(page, sf):
             r = c.play_one_game(page, sf, 1800, mirror_white)
         return r, page, sf
 
@@ -213,11 +213,11 @@ class Calibrate(unittest.TestCase):
 
     def test_a_game_that_stops_early_is_scored_by_the_position(self):
         page, sf = Page(mirror=lambda b, ply: None), Stockfish(score=chess.engine.Cp(0))
-        with Run(self, page, sf):
+        with Run(page, sf):
             r = c.play_one_game(page, sf, 1600, True)
         self.assertEqual(r, {"plies": 1, "termination": "unknown", "mirror_score": 0.5})
         page, sf = Page(), Stockfish(play=lambda b: None, score=chess.engine.Cp(0))
-        with Run(self, page, sf):
+        with Run(page, sf):
             r = c.play_one_game(page, sf, 1600, True)
         self.assertEqual((r["plies"], r["termination"]), (2, "unknown"))
 
@@ -243,7 +243,7 @@ class Calibrate(unittest.TestCase):
             if page.elo == 2000: raise RuntimeError("page crashed")
             return move(board)
         page, sf = Page(mirror=mirror), Stockfish(play=move)
-        with Run(self, page, sf) as run:
+        with Run(page, sf) as run:
             c.main()
         rows = rows_of(c.RESULTS_PATH)
         self.assertEqual([(r["elo"], r["game"], r["mirror_is_white"]) for r in rows],
@@ -259,24 +259,26 @@ class Calibrate(unittest.TestCase):
         self.assertEqual((page.url, run.browser.args, run.browser.closed), (c.APP_URL, ["--no-sandbox"], True))
 
     def test_the_smoke_run_leaves_the_study_results_alone(self):
-        study = os.path.join(CAL, "results.jsonl")
-        before = bytes_of(study)
+        # a stand-in for results.jsonl where calibrate.py writes unless told otherwise, and a temp folder of the
+        # test's own: before the fix the smoke run wrote over the study
+        study = c.RESULTS_PATH
+        study.write_bytes(b"the study\n")
         keep = {k: getattr(c, k) for k in ("ELO_CHECKPOINTS", "GAMES_PER_CHECKPOINT", "MAX_PLIES", "RESULTS_PATH")}
         self.addCleanup(lambda: [setattr(c, k, v) for k, v in keep.items()])
         page, sf = Page(), Stockfish()
-        with Run(self, page, sf) as run:
+        with Run(page, sf) as run, mock.patch("tempfile.gettempdir", return_value=str(study.parent)):
             run.script("smoke_test.py")
-        self.assertEqual(bytes_of(study), before)
+        self.assertEqual(bytes_of(study), b"the study\n")
+        self.assertEqual(c.RESULTS_PATH, study.parent / "calibration_smoke_results.jsonl")
         self.assertEqual((c.ELO_CHECKPOINTS, c.GAMES_PER_CHECKPOINT, c.MAX_PLIES), ([1600], 2, 60))
         rows = rows_of(c.RESULTS_PATH)
         self.assertEqual(len(rows), 2)
         self.assertTrue(all(r["plies"] == 60 and r["termination"] == "adjudicated" for r in rows))
-        os.remove(c.RESULTS_PATH)
 
 
 class Debug(unittest.TestCase):
     def run_script(self, name, page, sf=None):
-        with Run(self, page, sf or Stockfish()) as run:
+        with Run(page, sf or Stockfish()) as run:
             run.script(name)
         return run
 

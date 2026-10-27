@@ -391,7 +391,7 @@ statements, branches or functions are below 100%, and the `coverage` job in `tes
 beside the tests. The repository's Python is measured too, by coverage.py with branches
 (`.coveragerc`): `tools/` (the single-file build, the Stockfish installer, the demo recorder),
 `experiments/` (the calibration harness and its debug scripts, the move predictor),
-`js/vendor/make_stockfish_src.py` and `test/coverage_report.py`: 937 statements and 302 branches,
+`js/vendor/make_stockfish_src.py` and `test/coverage_report.py`: 940 statements and 302 branches,
 all run, by 73 checks in `test/test_tools.py`, `test_experiments.py` and `test_coverage_report.py`.
 Nothing in them reaches the network: downloads are answered from bytes made in the check, the
 generator rebuilds the committed `stockfish-19-src.js` byte for byte from the two files inside it,

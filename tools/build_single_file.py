@@ -10,7 +10,12 @@ import io, os, re, sys
 
 ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 OUT = sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, "dist", "Dvoretsky-Lab.html")
-read = lambda rel: io.open(os.path.join(ROOT, rel), encoding="utf-8").read()
+
+
+def read(rel):
+    with io.open(os.path.join(ROOT, rel), encoding="utf-8") as f:
+        return f.read()
+
 
 page = read("index.html")
 css = read("css/app.css")
@@ -31,5 +36,6 @@ if 'src="js/' in page or 'href="css/' in page:
     raise SystemExit("a script or stylesheet reference was left un-inlined")
 
 os.makedirs(os.path.dirname(os.path.abspath(OUT)), exist_ok=True)
-io.open(OUT, "w", encoding="utf-8").write(page)
+with io.open(OUT, "w", encoding="utf-8") as f:
+    f.write(page)
 print("wrote %s: %d KB, %d scripts inlined" % (OUT, len(page.encode()) // 1024, len(scripts)))
