@@ -235,13 +235,13 @@ def install_syzygy():
     return SYZYGY_HOME
 
 
-if __name__ == "__main__":
-    if "--path" in sys.argv[1:]:
+def main(argv):
+    if "--path" in argv:
         p = installed()
         if not p:
             raise SystemExit("Stockfish 19 is not installed; run python tools/install_stockfish.py")
         print(p)
-    elif "--syzygy" in sys.argv[1:]:
+    elif "--syzygy" in argv:
         p = syzygy()
         if not p:
             raise SystemExit("The Syzygy tables are not installed; run python tools/install_stockfish.py")
@@ -249,3 +249,7 @@ if __name__ == "__main__":
     else:
         install()
         install_syzygy()
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])

@@ -42,8 +42,13 @@ def download(url):
         return r.read()
 
 
+def read(path):
+    with open(path, "rb") as f:
+        return f.read()
+
+
 def main():
-    raw = open(sys.argv[1], "rb").read() if len(sys.argv) > 1 else download(TARBALL)
+    raw = read(sys.argv[1]) if len(sys.argv) > 1 else download(TARBALL)
     got = "sha512-" + base64.b64encode(hashlib.sha512(raw).digest()).decode()
     if got != INTEGRITY:
         raise SystemExit("the tarball is not stockfish@19.0.1 as published: %s, expected %s" % (got, INTEGRITY))

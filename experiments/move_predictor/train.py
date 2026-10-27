@@ -8,6 +8,7 @@ README.md in this folder for why only 33, and only this account).
 Usage: python train.py
 Requires: pip install torch python-chess
 """
+import os
 import random
 import chess
 import chess.pgn
@@ -16,7 +17,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 USERNAME = "ermactually"
-PGN_PATH = "ermactually_games.pgn"
+PGN_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ermactually_games.pgn")   # from any folder
 SEED = 0
 
 random.seed(SEED)

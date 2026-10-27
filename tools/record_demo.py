@@ -1,21 +1,21 @@
 """Record docs/demo.gif by driving the real page: nothing is staged but the games.
 
     pip install playwright pillow && playwright install chromium
-    python tools/record_demo.py
+    python tools/record_demo.py [out.gif]      # default: docs/demo.gif
 
 It imports the sample PGN (experiments/move_predictor/ermactually_games.pgn),
 moves the analysis window on the Strength tab, then plays a short sparring game
 and waits for Stockfish to grade each move. One browser for the whole take, with
 real waits: every frame is what the page showed at that moment.
 """
-import io, os
+import io, os, sys
 from PIL import Image
 from playwright.sync_api import sync_playwright
 
 ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 APP = os.path.join(ROOT, "index.html")
 PGN = os.path.join(ROOT, "experiments", "move_predictor", "ermactually_games.pgn")
-OUT = os.path.join(ROOT, "docs", "demo.gif")
+OUT = sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, "docs", "demo.gif")
 WIDTH = 960   # frames are scaled to this width
 
 frames = []
@@ -78,6 +78,6 @@ with sync_playwright() as p:
 # one shared palette keeps the colours steady from frame to frame
 base = frames[0][0].quantize(colors=128, method=Image.Quantize.MEDIANCUT)
 pal = [f.quantize(palette=base, dither=Image.Dither.NONE) for f, _ in frames]
-os.makedirs(os.path.dirname(OUT), exist_ok=True)
+os.makedirs(os.path.dirname(os.path.abspath(OUT)), exist_ok=True)
 pal[0].save(OUT, save_all=True, append_images=pal[1:], duration=[ms for _, ms in frames], loop=0, optimize=True)
-print("wrote %s: %d frames, %d KB" % (os.path.relpath(OUT, ROOT), len(frames), os.path.getsize(OUT) // 1024))
+print("wrote %s: %d frames, %d KB" % (OUT, len(frames), os.path.getsize(OUT) // 1024))

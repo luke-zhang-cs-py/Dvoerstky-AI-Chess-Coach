@@ -10,7 +10,10 @@ for t in test/*.js; do [ "$t" = test/tactics.js ] || node "$t" || break; done   
 pip install playwright==1.62.0 && playwright install chromium
 python test/ui_check.py                         # drives index.html in Chromium
 python tools/build_single_file.py && python test/dist_check.py   # the single-file build, on its own
-python test/coverage_report.py --out coverage.html               # needs a TypeScript parser (--ts, or --no-ts without statements and branches); exits 1 if any run failed; 100% of lines and functions on 11 Oct 2026
+python test/coverage_report.py --fail-under 100 # needs a TypeScript parser (--ts or COVERAGE_TS); exits 1 if any run failed or a figure is below 100%
+
+pip install chess==1.11.2 pillow coverage torch     # the Python checks: tools/, experiments/, the Stockfish generator, the report
+python -m coverage run -m unittest discover -s test -p "test_*.py" && python -m coverage report   # 100% or it fails (.coveragerc)
 
 pip install chess==1.11.2                           # the engine from the outside, over UCI
 python test/engine_gauntlet.py legality             # 1,000 positions: legal, and within movetime + 150 ms
@@ -18,6 +21,12 @@ python test/engine_gauntlet.py mates --min-mate1 100 --min-mate2 100   # test/ep
 python test/engine_gauntlet.py random               # 100 games vs random, 50 vs greedy
 python test/engine_gauntlet.py stockfish --stockfish path/to/stockfish   # 20 games at 0.1 s
 ```
+
+CI runs both coverage figures in a job of its own, beside the tests, and fails below 100%. No
+`pragma: no cover` and no ignore comments: the only line `.coveragerc` leaves out is a script's
+`if __name__ == "__main__":`, whose `main()` the checks call themselves. `.coveragerc` omits the
+test drivers (`test/ui_check.py`, `dist_check.py`, `engine_gauntlet.py`, `stockfish_check.py`),
+which are checks, not code under test.
 
 CI runs the gauntlet with `mates --movetime 1000 --min-mate1 100 --min-mate2 95` (100 of
 100 for both here, about five minutes; 95 leaves room for a slower runner) and the quicker

@@ -2,6 +2,10 @@
 and functions. No npm packages needed. Exits 1 if any run failed or recorded nothing.
 
     python test/coverage_report.py [--node path/to/node] [--ts path/to/typescript.js | --no-ts] [--out coverage.html] [--keep]
+                                   [--fail-under PCT]
+
+With --fail-under (CI passes 100) it also exits 1 when lines, statements, branches or functions,
+in total, are below PCT percent: a gap fails the build instead of only being listed.
 
 What is measured: every .js file under js/, at any depth, except js/vendor/ (Stockfish:
 third-party, shipped as one generated string). A file no run loaded is listed at 0%.
@@ -71,6 +75,7 @@ arg = lambda k, d=None: sys.argv[sys.argv.index(k) + 1] if k in sys.argv else d
 NODE = arg("--node", shutil.which("node") or "node")
 NO_TS = "--no-ts" in sys.argv
 OUT = arg("--out", os.path.join(ROOT, "coverage.html"))
+FAIL_UNDER = float(arg("--fail-under")) if "--fail-under" in sys.argv else None
 NOT_CI = {"tactics.js"}   # scored by the clock, asserts nothing, not run by CI
 SUITES = sorted(s for s in glob.glob(os.path.join(HERE, "*.js")) if os.path.basename(s) not in NOT_CI)
 
@@ -443,6 +448,8 @@ def report(tmp):
     if shutil.which(NODE) is None and not os.path.isfile(NODE):
         raise SystemExit("PROBLEM: node not found (%r). Put node on PATH, or pass --node path/to/node "
                          "(VS Code's Code.exe works too)." % NODE)
+    if NO_TS and FAIL_UNDER is not None:   # a floor on statements and branches needs them measured
+        raise SystemExit("PROBLEM: --fail-under needs statements and branches: it cannot be used with --no-ts.")
     ts = None if NO_TS else find_ts()   # before the runs: no parser is known in seconds, not after twenty minutes
     if not ts and not NO_TS:
         print("PROBLEM: no TypeScript parser found, so statements and branches cannot be measured. "
@@ -493,6 +500,12 @@ def report(tmp):
     for l, c, _, t in runs:
         if c != 0: print("\n--- %s exited %d; its output ends:\n%s" % (l, c, t))
     bad = [l for l, c, _, _ in runs if c != 0] + [p for p in problems if "is lost" in p]
+    if FAIL_UNDER is not None:   # exact, not the floored percentages printed: 4,393 of 4,394 is below 100
+        short = ["%s %d/%d" % (name, a, b) for name, a, b in (
+            ("lines", T["covered"], T["lines"]), ("statements", T["stmts_hit"], T["stmts"]),
+            ("branches", T["br_hit"], T["br"]), ("functions", T["funcs_hit"], T["funcs"])) if a * 100.0 < FAIL_UNDER * b]
+        if short: bad.append("below %g%%: %s" % (FAIL_UNDER, ", ".join(short)))
+        else: print("every figure at or above %g%%" % FAIL_UNDER)
     if bad:   # coverage from a failing or silent run is not a result: say so, and fail
         print("FAILED: " + "; ".join(bad))
         sys.exit(1)

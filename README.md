@@ -57,7 +57,8 @@ house engine judged its own mistakes correctly.
 index.html   the whole app: open it
 js/          11 modules, plain scripts, no bundler; js/vendor/ is Stockfish (GPL-3.0)
 css/         one stylesheet
-test/        Node suites, the UCI gauntlet, Playwright drives of the page and the single file, a coverage report
+test/        Node suites, the UCI gauntlet, Playwright drives of the page and the single file, a coverage report,
+             and Python checks (test_*.py) of the tools, the experiments and the report
 tools/       uci.js (the engine for any UCI GUI), match.js and sprt.js (engine matches; games.js is
              what they share), bench.js and acpl.js (speed and sparring calibration), the
              single-file build and the demo recorder
@@ -67,19 +68,22 @@ notes/       the full guide
 
 ## Tests
 
-**723 checks.** In Node: 96 regression, 84 app (PGN import, Lichess sync, mining,
+**796 checks.** In Node: 96 regression, 84 app (PGN import, Lichess sync, mining,
 calendar, storage, the Stockfish reader), 66 rules (the endgame studies pinned among them), 43 titled-player, 32 analysis,
 30 sparring, 30 Stockfish 19 (the vendored engine itself, run in Node; the time rule; the reader's
 deadline), 29 coach, 23 engine and 22 integration checks,
 and perft on 21 positions (35 counts, plus 5 SAN and PGN checks), 15 of them edge cases (en
 passant out of a pin, castling into check, underpromotion) with counts taken from Stockfish 19,
-one from python-chess. In Chromium: 222 browser checks and 6 on the single-file build. Every
+one from python-chess. In Chromium: 222 browser checks and 6 on the single-file build. In Python:
+73 checks of the tools, the experiments and the coverage report itself (`test/test_*.py`). Every
 suite exits non-zero on a failure, which is what CI reads. Every bug fixed has a check that
 failed on the code before its fix. The browser checks run the real Stockfish 19, and time it: 100 reads at 50 ms to 1 s,
 every one answered within 5 ms short of its time and never after it. Together
 they run all 4,938 code lines in `js/`, all 727 of its functions, all 4,394 of its
-statements and all 3,551 of its branches (`test/coverage_report.py`, 13 October 2026;
-the guide says how the last of them were reached).
+statements and all 3,551 of its branches (`test/coverage_report.py`, 13 October 2026, again
+on 27 October; the guide says how the last of them were reached), and all 937 statements and
+302 branches of the repository's own Python outside the test drivers (coverage.py, `.coveragerc`).
+CI measures both in a job of its own and fails below 100%.
 
 **From the outside** (`test/engine_gauntlet.py`): the engine driven over UCI the way a
 GUI drives it, with python-chess as a referee that shares no code with `js/core.js`.

@@ -44,7 +44,7 @@ with sync_playwright() as p, chess.engine.SimpleEngine.popen_uci(str(c.STOCKFISH
         if over == "checkmate":
             mate_victim_is_white = board.turn == chess.WHITE
             mirror_score = 1.0 if (mate_victim_is_white != mirror_is_white) else 0.0
-        elif over in ("stalemate", "fifty", "material"):
+        elif over in c.DRAWS:
             mirror_score = 0.5
         else:
             sf.configure({"UCI_LimitStrength": False})

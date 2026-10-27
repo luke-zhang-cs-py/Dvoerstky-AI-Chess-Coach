@@ -93,6 +93,13 @@ chess-programming community, not specific to this app.
   standard cp -> win-probability logistic, not a flat 0.5 draw — scoring
   every truncated game as a draw would have biased the whole study toward
   50% regardless of who was actually winning.
+- A draw by repetition (which the app's `gameOver()` names `repetition`) was
+  adjudicated the same way until 27 October 2026, as if the game had not
+  ended; it now scores 0.5 like stalemate, the fifty-move rule and
+  insufficient material. No game of the recorded run ended that way (23
+  checkmates, 1 adjudicated), so the result above stands. `smoke_test.py`
+  now writes its two games to a file in the temp folder instead of over
+  `results.jsonl`.
 - Only one run (24 games) plus the four targeted isolation tests above,
   not a large repeated-trials study — the mechanism is now well enough
   understood (four independent tests agree) that more games at the same

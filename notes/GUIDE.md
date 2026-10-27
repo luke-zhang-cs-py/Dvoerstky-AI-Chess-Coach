@@ -382,6 +382,30 @@ Coverage on 13 October 2026: all 4,938 lines, 727 functions, 4,394 statements, 3
 panel showing a reading whose line is no legal move, and the house engine more hopeful for Black.
 Each now has a check of its own.
 
+Coverage on 27 October 2026, and now in CI: the same totals for `js/` (one run of the report on a
+machine under full load had `test/stockfish19.js` die on an unhandled rejection from the reader's
+watchdog ("no move 3020 ms after it was asked", a 20 ms read), which left five statements, three branches and one
+function of `stockfish-reader.js` unrun; that suite alone, rerun, reaches them, and the report
+fails on any suite that exits non-zero). `--fail-under 100` makes the report exit 1 when lines,
+statements, branches or functions are below 100%, and the `coverage` job in `tests.yml` runs it
+beside the tests. The repository's Python is measured too, by coverage.py with branches
+(`.coveragerc`): `tools/` (the single-file build, the Stockfish installer, the demo recorder),
+`experiments/` (the calibration harness and its debug scripts, the move predictor),
+`js/vendor/make_stockfish_src.py` and `test/coverage_report.py`: 937 statements and 302 branches,
+all run, by 73 checks in `test/test_tools.py`, `test_experiments.py` and `test_coverage_report.py`.
+Nothing in them reaches the network: downloads are answered from bytes made in the check, the
+generator rebuilds the committed `stockfish-19-src.js` byte for byte from the two files inside it,
+the demo recorder drives the real page with every http(s) request stopped, the calibration scripts
+play games against a stand-in page and Stockfish chosen to end each known way (and its page helpers
+run once on the real `index.html`), the move predictor trains for real, and the report reads a
+small repository of its own whose figures are known. The test drivers (`ui_check.py`,
+`dist_check.py`, `engine_gauntlet.py`, `stockfish_check.py`) are checks, so they are not measured.
+No `pragma: no cover` or ignore comment anywhere; the one line left out is a script's
+`if __name__ == "__main__":`, whose `main()` the checks call. Found on the way: the calibration
+scored a draw by repetition by Stockfish's view of the position instead of as half a point,
+`smoke_test.py` overwrote the study's `results.jsonl`, `train.py` ran only from its own folder, and
+`calibrate.adjudicate_score` had a branch for a mate score python-chess never returns.
+
 ---
 
 ## File map
@@ -405,7 +429,8 @@ test/               Node suites: perft.js, rules.js, eng.js (engine), an.js (ana
                     spar.js (sparring), regress.js, titled.js, coach.js, app.js (PGN import, sync, mining,
                     calendar), stockfish19.js (the vendored engine in Node, the time rule); ui_check.py (the UI in a real browser); dist_check.py (the single-file
                     build on its own); engine_gauntlet.py (the engine over UCI, refereed by
-                    python-chess); and coverage_report.py
+                    python-chess); coverage_report.py; and test_tools.py, test_experiments.py,
+                    test_coverage_report.py (the Python checks, under coverage.py)
 test/tactics.js     EPD suites in test/epd/ (Win at Chess, Bratko-Kopec, BT2630, STS), timed to the move found
 test/stockfish_check.py  the app's claims re-checked against a local Stockfish
 tools/bench.js      fixed-depth benchmark: nodes/s and a signature that changes when the search does

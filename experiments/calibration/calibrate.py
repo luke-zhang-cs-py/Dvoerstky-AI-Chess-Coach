@@ -35,6 +35,8 @@ MIRROR_BUDGET_MS = 600             # below the app's 900ms default purely for ru
 MIRROR_MAX_DEPTH = 3               # noted explicitly in the report, since it's a real deviation
 STOCKFISH_MOVETIME_S = 0.15
 MAX_PLIES = 120                    # safety cap; adjudicate_score() handles games that hit it
+# every draw Chess.prototype.gameOver() (js/core.js) names; anything else that ends a game is a mate
+DRAWS = ("stalemate", "fifty", "repetition", "material")
 
 
 def new_position(page, mirror_elo):
@@ -80,10 +82,8 @@ def adjudicate_score(sf, board, mirror_is_white):
     truncated game as a flat 0.5 draw would bias the whole study toward
     50% regardless of which side was actually winning."""
     info = sf.analyse(board, chess.engine.Limit(time=0.5))
-    score = info["score"].white()
-    cp = score.score(mate_score=10000)
-    if cp is None:
-        cp = 10000 if score.mate() and score.mate() > 0 else -10000
+    # a mate in n counts as 10000 - n for the side that mates, so it is never None
+    cp = info["score"].white().score(mate_score=10000)
     white_win_prob = 1 / (1 + 10 ** (-cp / 400))
     return white_win_prob if mirror_is_white else 1 - white_win_prob
 
@@ -120,7 +120,7 @@ def play_one_game(page, sf, mirror_elo, mirror_is_white):
         mate_victim_is_white = board.turn == chess.WHITE
         mirror_won = mate_victim_is_white != mirror_is_white
         mirror_score = 1.0 if mirror_won else 0.0
-    elif over in ("stalemate", "fifty", "material"):
+    elif over in DRAWS:
         mirror_score = 0.5
     else:  # adjudicated / unknown: game didn't actually conclude, so score by position, not a flat draw
         sf.configure({"UCI_LimitStrength": False})

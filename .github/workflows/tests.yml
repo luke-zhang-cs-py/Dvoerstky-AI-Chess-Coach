@@ -58,3 +58,40 @@ jobs:
         run: |
           python tools/build_single_file.py
           python test/dist_check.py
+
+  coverage:
+    # The same runs as the test job, measured, beside it: js/ through V8's block coverage
+    # (test/coverage_report.py: every Node suite but tactics.js, ui_check.py and dist_check.py),
+    # and the repository's own Python through coverage.py (.coveragerc). Either below 100% of its
+    # lines, statements, branches or functions fails the build.
+    runs-on: ubuntu-24.04
+    # About 15 minutes; the browser drive is most of it.
+    timeout-minutes: 40
+    env:
+      TZ: America/Toronto
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Tools (the TypeScript parser the report reads js/ with; Playwright, python-chess, Pillow, PyTorch, coverage.py)
+        run: |
+          npm install --prefix "$RUNNER_TEMP/ts" typescript@6.0.3
+          echo "COVERAGE_TS=$RUNNER_TEMP/ts/node_modules/typescript/lib/typescript.js" >> "$GITHUB_ENV"
+          pip install playwright==1.62.0 chess==1.11.2 pillow==12.3.0 coverage==7.16.0
+          pip install torch==2.14.0 --index-url https://download.pytorch.org/whl/cpu
+          python -m playwright install --with-deps chromium
+
+      - name: js/ coverage, 100% or fail
+        run: python test/coverage_report.py --fail-under 100
+
+      - name: Python checks and their coverage (tools/, experiments/, the Stockfish generator, the report), 100% or fail
+        run: |
+          python -m coverage run -m unittest discover -v -s test -p "test_*.py"
+          python -m coverage report
