@@ -118,7 +118,16 @@ Useful for preparing against a specific opponent, and for pointing the app at a 
 **Settings** — minutes per day, endgame difficulty tier, session hour, API
 key, PGN import, full backup export/import, and a delete-everything button. The board
 theme list includes the Lichess (brown, blue) and Chess.com (green, brown, blue) boards,
-with their square and highlight colours and solid pieces.
+with their square and highlight colours and solid pieces; their coordinates are darkened
+from the sites' own until they read at 4.5:1 on every square.
+
+**The page theme** — the button at the right of the masthead switches the page between
+dark (the default, and what it is with JavaScript off) and light, and remembers the choice
+under the key `theme`, which every page on luke-zhang-cs-py.github.io shares. It is
+independent of the board colours: a board looks the same in either. Every colour comes
+from tokens at the top of `css/app.css`; adding a theme is one `.theme-<name>` block there
+and one name in `THEMES` in `js/theme.js`, and `test/theme.js` then checks the new block's
+contrast.
 
 ---
 
@@ -377,6 +386,10 @@ at 100, 251.9 ms at 250); most had none.
 position, with the native Stockfish 19: with `--quick`, the same verdict on 9 of 11 moves (81%), and
 every endgame claim holds.
 
+Coverage on 24 November 2026, with `js/theme.js` (the page theme) added: all 4,974 lines, 737
+functions, 4,423 statements, 3,559 branches and 3,034 V8 blocks; `theme.js` is reached from both
+sides, its storage-blocked paths by `test/theme.js` in Node and the rest by the page in Chromium.
+
 Coverage on 13 October 2026: all 4,938 lines, 727 functions, 4,394 statements, 3,551 branches and
 3,030 V8 blocks. Two guards of `js/ui.js` had been reached only because readings came at once: the
 panel showing a reading whose line is no legal move, and the house engine more hopeful for Black.
@@ -412,7 +425,8 @@ scored a draw by repetition by Stockfish's view of the position instead of as ha
 
 ```
 index.html          shell and tab structure
-css/app.css         the whole stylesheet
+css/app.css         the whole stylesheet: design tokens first (page themes, board themes), then components
+js/theme.js         the page theme: restored before first paint, and the masthead's theme button
 js/core.js          0x88 chess rules: move generation, SAN, FEN, PGN parsing
 js/engine.js        evaluation, alpha-beta search, quiescence, complexity scoring
 js/data.js          Lichess API, PGN import, localStorage wrapper
@@ -427,7 +441,8 @@ js/vendor/          Stockfish.js 19.0.1, lite single-threaded (GPL-3.0): glue an
 js/ui.js            all seven workspaces
 test/               Node suites: perft.js, rules.js, eng.js (engine), an.js (analysis), integration.js,
                     spar.js (sparring), regress.js, titled.js, coach.js, app.js (PGN import, sync, mining,
-                    calendar), stockfish19.js (the vendored engine in Node, the time rule); ui_check.py (the UI in a real browser); dist_check.py (the single-file
+                    calendar), stockfish19.js (the vendored engine in Node, the time rule), theme.js (tokens,
+                    contrast, the theme switch); ui_check.py (the UI in a real browser); dist_check.py (the single-file
                     build on its own); engine_gauntlet.py (the engine over UCI, refereed by
                     python-chess); coverage_report.py; and test_tools.py, test_experiments.py,
                     test_coverage_report.py (the Python checks, under coverage.py)
