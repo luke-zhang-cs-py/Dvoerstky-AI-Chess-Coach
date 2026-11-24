@@ -2238,6 +2238,88 @@ with sync_playwright() as p:
                     "The move was Ncxd5. Ncxd5 h6", True, ["h3 could not be checked (look-check). Try a move again, or show the move.", True]], looks)
     c2.close()
 
+    # ---- page theme: dark in the markup with no script, light a click away and remembered, and every
+    # piece of text on every tab at WCAG AA in both (test/theme.js checks the token pairings themselves).
+    THEME_OF = r"(document.documentElement.className.match(/(^|\s)theme-\S+/g) || []).join('').trim()"
+    AA_SCAN = r"""() => {
+      const parse = c => { const n = c.match(/[\d.]+/g).map(Number); const unit = c.startsWith('color(') ? 1 : 255;
+                           return { rgb: n.slice(0, 3).map(v => v / unit), a: n.length > 3 ? n[3] : 1 }; };
+      const lum = c => { const [r, g, b] = parse(c).rgb.map(v => v <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4);
+                         return .2126 * r + .7152 * g + .0722 * b; };
+      const behind = el => { for (let e = el; e; e = e.parentElement) { const bg = getComputedStyle(e).backgroundColor;
+                         if (/\d/.test(bg) && parse(bg).a > .5) return bg; } return getComputedStyle(document.body).backgroundColor; };
+      const out = [];
+      for (const el of document.querySelectorAll('body *')) {
+        if (![...el.childNodes].some(n => n.nodeType === 3 && n.textContent.trim())) continue;
+        const s = getComputedStyle(el); if (s.visibility === 'hidden' || s.display === 'none' || !el.getClientRects().length) continue;
+        if (el.closest('svg, option')) continue;   // chart labels are filled, not coloured; options are drawn by the browser
+        const big = parseFloat(s.fontSize) >= 24 || (parseFloat(s.fontSize) >= 18.66 && +s.fontWeight >= 700);
+        const [L1, L2] = [lum(s.color), lum(behind(el))].sort((a, b) => b - a);
+        const r = (L1 + .05) / (L2 + .05);
+        if (r < (big ? 3 : 4.5)) out.push(el.tagName + '.' + el.className + ' ' + r.toFixed(2) + ' "' + el.textContent.trim().slice(0, 24) + '"');
+      }
+      return [...new Set(out)]; }"""
+    BODY_BG = "getComputedStyle(document.body).backgroundColor"
+    DARK_BG, LIGHT_BG = "rgb(10, 14, 20)", "rgb(238, 242, 245)"
+
+    cn = b.new_context(java_script_enabled=False, viewport={"width": 1280, "height": 900})
+    pn = cn.new_page(); pn.goto("file:///" + os.path.abspath(APP).replace("\\", "/"))
+    seen = pn.evaluate("""[document.documentElement.className, getComputedStyle(document.body).backgroundColor,
+      getComputedStyle(document.documentElement).colorScheme, document.querySelector('#themeBtn').innerText.trim()]""")
+    check("theme: with no JavaScript the page is dark: the class, the background, the colour scheme, a button offering light",
+          seen == ["theme-dark", DARK_BG, "dark", "Light"], seen)
+    check("theme: with no JavaScript every piece of text meets AA", not pn.evaluate(AA_SCAN), pn.evaluate(AA_SCAN)[:4])
+    cn.close()
+
+    c2, p2 = fresh({})
+    p2.set_input_files("#importFile", PGN); p2.wait_for_timeout(2500)
+    check("theme: the page opens dark, and the button offers light",
+          [p2.evaluate(THEME_OF), p2.get_attribute("#themeBtn", "aria-label")] == ["theme-dark", "Switch to light theme"])
+    def scan_tabs(page):
+        bad = {}
+        for tab in ("strength", "sparring", "drills", "calendar", "review", "scout", "settings"):
+            page.click("button.tab[data-tab=%s]" % tab); page.wait_for_timeout(200)
+            if tab == "sparring" and not page.evaluate("document.querySelectorAll('#sparMoves .mv').length"):
+                page.select_option("#sparColor", "w"); page.click("#sparStart"); page.wait_for_timeout(200)
+                page.click('#sparBoard [data-sq="e2"]'); page.click('#sparBoard [data-sq="e4"]')   # highlights, notation, advice
+                page.wait_for_function("document.querySelectorAll('#sparMoves .mv').length >= 2", timeout=15000)
+            if tab == "review" and page.evaluate("document.querySelector('#revStage').classList.contains('hidden')"):
+                page.click("#revStart"); page.wait_for_timeout(300)
+            found = page.evaluate(AA_SCAN)
+            if found: bad[tab] = found[:3]
+        return bad
+    dark_bad = scan_tabs(p2)
+    check("theme: dark: every piece of text on every tab meets AA (a game in play, a review open, the import notice up)", not dark_bad, dark_bad)
+    p2.click("#themeBtn"); p2.wait_for_timeout(200)
+    seen = [p2.evaluate(THEME_OF), p2.evaluate("localStorage.getItem('theme')"), p2.get_attribute("#themeBtn", "aria-label"),
+            p2.evaluate(BODY_BG), p2.evaluate("document.querySelector('#themeBtn').innerText.trim()")]
+    check("theme: the button switches to light, saves it under 'theme' and then offers dark",
+          seen == ["theme-light", "light", "Switch to dark theme", LIGHT_BG, "Dark"], seen)
+    light_bad = scan_tabs(p2)
+    check("theme: light: every piece of text on every tab meets AA", not light_bad, light_bad)
+    board_bad = {}
+    for theme in SITE.keys() | {"cyan", "green", "amber", "mono"}:
+        p2.evaluate("t => document.documentElement.setAttribute('data-board-theme', t)", theme)
+        p2.click("button.tab[data-tab=sparring]"); p2.wait_for_timeout(50)
+        # coordinates sit on the a-file and the first rank: put the last move and a check there
+        p2.evaluate("""() => { const sq = n => document.querySelector('#sparBoard [data-sq=' + n + ']');
+          sq('a1').classList.add('from'); sq('b1').classList.add('to'); sq('a3').classList.add('check'); }""")
+        found = [x for x in p2.evaluate(AA_SCAN) if x.startswith("SPAN.coord")]
+        if found: board_bad[theme] = found[:3]
+    p2.evaluate("document.documentElement.setAttribute('data-board-theme', 'cyan')")
+    check("theme: board coordinates meet AA on every board colour theme, the last move's squares included", not board_bad, board_bad)
+    snap_page(p2); p2.reload(); p2.wait_for_timeout(500)
+    check("theme: light is remembered across a reload", [p2.evaluate(THEME_OF), p2.evaluate(BODY_BG)] == ["theme-light", LIGHT_BG])
+    c2.close()
+
+    opened = {}
+    for saved in ("light", "sepia"):
+        c2, p2 = fresh({}, init="if (!sessionStorage.getItem('themed')) { localStorage.setItem('theme', %r); sessionStorage.setItem('themed', '1'); }" % saved)
+        opened[saved] = [p2.evaluate(THEME_OF), p2.evaluate(BODY_BG), p2.get_attribute("#themeBtn", "aria-label")]
+        c2.close()
+    check("theme: a saved light theme opens light; an unknown saved theme ('sepia') falls back to dark",
+          opened == {"light": ["theme-light", LIGHT_BG, "Switch to dark theme"], "sepia": ["theme-dark", DARK_BG, "Switch to light theme"]}, opened)
+
     check("page: no uncaught errors throughout", not errors, errors[:3])
 
     if COV:
