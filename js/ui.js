@@ -440,20 +440,20 @@
     [1800, 1900, 2000, 2100, 2200, 2300].forEach(function (v) {   // all inside: lo starts at 1700, hi at 2300
       var goal = v === 2200;
       s.push('<line x1="' + padL + '" y1="' + Y(v) + '" x2="' + (W - padR) + '" y2="' + Y(v) +
-        '" stroke="' + (goal ? 'var(--blue)' : 'var(--rule)') + '" stroke-width="1"' +
+        '" stroke="' + (goal ? 'var(--color-accent)' : 'var(--color-border)') + '" stroke-width="1"' +
         (goal ? ' stroke-dasharray="5 3"' : '') + '/>');
       s.push('<text x="' + (padL - 6) + '" y="' + (Y(v) + 3.5) + '" text-anchor="end" class="traj-lab">' + v + '</text>');
     });
 
     var ratePts = track.filter(function (p) { return p.rating; });
     if (ratePts.length > 1) {
-      s.push('<polyline fill="none" stroke="var(--ink-faint)" stroke-width="1.5" stroke-dasharray="3 3" points="' +
+      s.push('<polyline fill="none" stroke="var(--color-text-subtle)" stroke-width="1.5" stroke-dasharray="3 3" points="' +
         ratePts.map(function (p) { return X(p.day) + ',' + Y(p.rating); }).join(' ') + '"/>');
     }
-    s.push('<polyline fill="none" stroke="var(--olive)" stroke-width="2" points="' +
+    s.push('<polyline fill="none" stroke="var(--color-success)" stroke-width="2" points="' +
       track.map(function (p) { return X(p.day) + ',' + Y(p.measured); }).join(' ') + '"/>');
     track.forEach(function (p) {
-      s.push('<circle cx="' + X(p.day) + '" cy="' + Y(p.measured) + '" r="3" fill="var(--olive)"><title>' +
+      s.push('<circle cx="' + X(p.day) + '" cy="' + Y(p.measured) + '" r="3" fill="var(--color-success)"><title>' +
         esc(p.day) + ': ' + esc(p.measured) + ' ± ' + esc(p.moe) + ' from ' + esc(p.n) + ' games</title></circle>');
     });
     s.push('<text x="' + padL + '" y="' + (H - 6) + '" class="traj-lab">' + esc(track[0].day) + '</text>');
@@ -823,7 +823,7 @@
       row('Mistakes', p.counts.mistakes) +
       row('Games analysed', p.counts.analysed + ' of ' + p.counts.games) +
       '</tbody></table>' +
-      (c.pressureRate > 25 ? '<p class="tiny" style="color:var(--red);margin-top:.5rem">More than a quarter of your errors arrive with under fifteen percent of the clock. That is a time-management problem wearing a tactics costume.</p>' : '') +
+      (c.pressureRate > 25 ? '<p class="tiny" style="color:var(--color-danger);margin-top:.5rem">More than a quarter of your errors arrive with under fifteen percent of the clock. That is a time-management problem wearing a tactics costume.</p>' : '') +
       '</div>';
   }
 
@@ -847,7 +847,7 @@
       var bad = o.scorePct != null && o.scorePct < 42;   // null: no finished game to score
       h += '<tr><td>' + esc(o.name) + '</td><td class="soft">' + (o.color === 'w' ? 'White' : 'Black') + '</td>' +
         '<td class="num">' + o.games + '</td>' +
-        '<td class="num"' + (bad ? ' style="color:var(--red)"' : '') + '>' + (o.scorePct == null ? '—' : o.scorePct + '%') + '</td>' +
+        '<td class="num"' + (bad ? ' style="color:var(--color-danger)"' : '') + '>' + (o.scorePct == null ? '—' : o.scorePct + '%') + '</td>' +
         '<td class="num">' + o.cpLost + '</td></tr>';
     });
     return h + '</tbody></table>';
@@ -910,8 +910,8 @@
       h += '<tr><td class="tiny">' + new Date(e.date).toLocaleDateString() +
         (e.gameUrl ? ' <a href="' + esc(e.gameUrl) + '" target="_blank" rel="noopener">↗</a>' : '') + '</td>' +
         '<td class="mono tiny">' + e.moveNo + (e.myColor === 'w' ? '.' : '…') + '</td>' +
-        '<td class="mono" style="color:var(--red)">' + esc(e.played) + '</td>' +
-        '<td class="mono" style="color:var(--olive)">' + esc(e.best || '—') + '</td>' +
+        '<td class="mono" style="color:var(--color-danger)">' + esc(e.played) + '</td>' +
+        '<td class="mono" style="color:var(--color-success)">' + esc(e.best || '—') + '</td>' +
         '<td class="num">' + (e.cpLoss / 100).toFixed(1) + '</td>' +
         '<td class="tiny">' + e.motifs.slice(0, 2).map(function (m) { return '<span class="tag">' + esc(m) + '</span>'; }).join('') + '</td>' +
         '<td><button class="quiet" data-jump="' + esc(e.key) + '">Drill</button></td></tr>';
@@ -1341,7 +1341,7 @@
     $('#drillPrompt').innerHTML =
       '<h3>' + (g.turnColor() === 'w' ? 'White' : 'Black') + ' to move. Find what you missed.</h3>' +
       '<p class="tiny soft">Your game, move ' + c.meta.moveNo + ', ' + new Date(c.meta.date).toLocaleDateString() +
-      (c.meta.opening ? ' · ' + esc(c.meta.opening) : '') + '. You played <span class="mono" style="color:var(--red)">' + esc(c.meta.played) + '</span> here and it cost ' +
+      (c.meta.opening ? ' · ' + esc(c.meta.opening) : '') + '. You played <span class="mono" style="color:var(--color-danger)">' + esc(c.meta.played) + '</span> here and it cost ' +
       (c.meta.cpLoss / 100).toFixed(1) + ' pawns.' + (c.meta.timePressure ? ' You were short of time.' : '') + '</p>' +
       '<p>' + c.meta.motifs.map(function (m) { return '<span class="tag">' + esc(m) + '</span>'; }).join('') + '</p>';
     $('#drillFeedback').innerHTML = '';
@@ -1605,7 +1605,7 @@
     S.plans = plans;
 
     var todayKey = Training.dateKey(new Date());
-    var h = '<div class="grid2" style="grid-template-columns:2fr 1fr;align-items:start">';
+    var h = '<div class="grid2 cal-layout">';
     h += '<div><div class="row" style="margin-bottom:.5rem"><h3 style="margin:0">Next four weeks</h3>' +
       '<span style="flex:1"></span><button id="icsBtn">Download .ics</button></div><div class="calgrid">';
     ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].forEach(function (d) {
@@ -1783,8 +1783,8 @@
       h += '<div class="coach-note' + (entry.cpLoss < 30 ? ' ok' : '') + '">' + esc(n) + '</div>';
     });
     if (entry.cpLoss >= 80) {
-      h += '<p class="tiny">You played <span class="mono" style="color:var(--red)">' + esc(entry.san) + '</span>' +
-        (entry.best ? ', the engine wanted <span class="mono" style="color:var(--olive)">' + esc(entry.best) + '</span>' : '') +
+      h += '<p class="tiny">You played <span class="mono" style="color:var(--color-danger)">' + esc(entry.san) + '</span>' +
+        (entry.best ? ', the engine wanted <span class="mono" style="color:var(--color-success)">' + esc(entry.best) + '</span>' : '') +
         ', cost ' + (entry.cpLoss / 100).toFixed(1) + ' pawns.</p>';
     } else {
       h += '<p class="tiny">You played <span class="mono">' + esc(entry.san) + '</span>. The engine has no complaint about the move.</p>';
