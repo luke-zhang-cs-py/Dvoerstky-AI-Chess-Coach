@@ -2308,8 +2308,15 @@ with sync_playwright() as p:
         if found: board_bad[theme] = found[:3]
     p2.evaluate("document.documentElement.setAttribute('data-board-theme', 'cyan')")
     check("theme: board coordinates meet AA on every board colour theme, the last move's squares included", not board_bad, board_bad)
-    snap_page(p2); p2.reload(); p2.wait_for_timeout(500)
-    check("theme: light is remembered across a reload", [p2.evaluate(THEME_OF), p2.evaluate(BODY_BG)] == ["theme-light", LIGHT_BG])
+    snap_page(p2); p2.reload(); p2.wait_for_load_state("load")
+    # Polled rather than read once after a fixed sleep: on a slow CI runner one read 500 ms after the reload
+    # came back wrong once and right on a re-run, so the reload had not finished settling.
+    after = None
+    for _ in range(40):
+        after = [p2.evaluate(THEME_OF), p2.evaluate(BODY_BG)]
+        if after == ["theme-light", LIGHT_BG]: break
+        p2.wait_for_timeout(125)
+    check("theme: light is remembered across a reload", after == ["theme-light", LIGHT_BG], after)
     c2.close()
 
     opened = {}
