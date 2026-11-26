@@ -26,12 +26,15 @@ if not os.path.exists(BUILT):
 alone = os.path.join(tempfile.mkdtemp(), "Dvoretsky-Lab.html")
 shutil.copy(BUILT, alone)
 html = open(alone, encoding="utf-8").read()
-check("build: no script or stylesheet is left as a reference", 'src="js/' not in html and 'href="css/' not in html)
+check("build: no script, stylesheet or font is left as a reference", 'src="js/' not in html and 'href="css/' not in html and 'url("fonts/' not in html)
 # A build left from older sources (dist/ is not in git, so nothing else notices) is stale.
 ROOT = os.path.join(HERE, "..")
 stale = [rel for rel in __import__("re").findall(r'<script src="(js/[a-z0-9/\-]+\.js)"></script>', open(os.path.join(ROOT, "index.html"), encoding="utf-8").read())
          if "<script>/* %s */\n%s\n</script>" % (rel, open(os.path.join(ROOT, rel), encoding="utf-8").read()) not in html]
 if open(os.path.join(ROOT, "css", "app.css"), encoding="utf-8").read() not in html: stale.append("css/app.css")
+# the fonts go in as data: URLs, each the bytes of its file in css/fonts/ now
+for font in __import__("re").findall(r'url\("(fonts/[a-z0-9\-]+\.woff2)"\)', open(os.path.join(ROOT, "css", "fonts.css"), encoding="utf-8").read()):
+    if __import__("base64").b64encode(open(os.path.join(ROOT, "css", font), "rb").read()).decode("ascii") not in html: stale.append("css/" + font)
 check("build: every inlined file is the one in the working tree now", not stale, stale[:4])
 
 with sync_playwright() as p:

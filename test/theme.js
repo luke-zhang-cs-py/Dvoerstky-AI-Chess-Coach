@@ -81,16 +81,20 @@ function short(pairs, need, tokens, prefix) {
 const BGS = ['bg', 'surface', 'surface-subtle'];
 const TEXT = [
   ...['text-primary', 'text-muted', 'text-subtle', 'accent', 'danger', 'success', 'warning'].flatMap(f => BGS.map(b => [f, b])),
-  ['text-primary', 'accent-subtle'], ['text-muted', 'accent-subtle'], ['accent', 'accent-subtle'],   // tags, quiet buttons hovered, side to move
+  ['text-primary', 'accent-subtle'], ['text-muted', 'accent-subtle'], ['accent-ink', 'accent-subtle'],   // tags, quiet buttons hovered, side to move
   ['danger', 'danger-subtle'], ['success', 'success-subtle'], ['warning', 'warning-subtle'],         // tags, the goal pin
   ['text-primary', 'success-subtle'], ['text-muted', 'success-subtle'],                              // a calendar day done
   ['text-on-accent', 'accent'], ['text-on-accent', 'accent-hover'],                                  // primary buttons, hovered too
   ['surface', 'text-primary'],                                                                        // the current move, the ruler's pin
   ['bg', 'accent'], ['bg', 'success'],                                                                // letters in the comparison dots
 ];
-// Edges that identify a control, focus rings, and lines or bars that carry meaning: 3:1.
+// Edges that identify a control, focus rings, and lines or bars that carry meaning: 3:1. A field's edge is
+// drawn on the page, on a sheet and on the field's own fill, which is read from its rule here, so a fill
+// changed to one the edge does not read on fails this check (a missing one fails it too).
+const fieldRule = rules.find(r => parts(r).includes('input[type=text]') && parts(r).includes('textarea'));
+const fieldFill = ((fieldRule && fieldRule.body.match(/background:\s*var\(--color-([\w-]+)\)/)) || [])[1];
 const UI = [
-  ...BGS.map(b => ['border-strong', b]),                                                              // form fields, tick marks
+  ...['bg', 'surface', fieldFill].map(b => ['border-strong', b]),                                     // form fields, buttons, tick marks
   ...['accent', 'danger', 'success', 'warning', 'text-subtle'].flatMap(f => ['bg', 'surface'].map(b => [f, b])),   // focus, bars, chart lines
 ];
 const textShort = Theme.THEMES.map(t => [t, short(TEXT, 4.5, themes[t] || {}, '--color-')]).filter(x => x[1].length);

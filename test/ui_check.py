@@ -2266,7 +2266,7 @@ with sync_playwright() as p:
       }
       return [...new Set(out)]; }"""
     BODY_BG = "getComputedStyle(document.body).backgroundColor"
-    DARK_BG, LIGHT_BG = "rgb(10, 14, 20)", "rgb(238, 242, 245)"
+    DARK_BG, LIGHT_BG = "rgb(14, 28, 28)", "rgb(238, 248, 248)"   # #0E1C1C, #EEF8F8
 
     cn = b.new_context(java_script_enabled=False, viewport={"width": 1280, "height": 900})
     pn = cn.new_page(); pn.goto("file:///" + os.path.abspath(APP).replace("\\", "/"))

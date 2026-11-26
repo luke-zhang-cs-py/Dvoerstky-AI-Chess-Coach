@@ -532,21 +532,23 @@ def write_html(report, runs, ts):
             ("Branches never taken", r["br_missed"]), ("V8 blocks never run (line)", r["blocks_missed"])))
         bodies.append('<section id="%s"><h2>%s <span>%.2f%% of %d lines &middot; %d/%d functions</span></h2>%s<table class=src>%s</table></section>'
                       % (fid, r["file"], pct, r["lines"], r["funcs_hit"], r["funcs"], notes, "".join(code)))
-    page = """<!doctype html><meta charset=utf-8><title>Dvoretsky Lab coverage</title>
-<style>body{margin:0;background:#0b0f16;color:#dfe7ef;font:14px system-ui,Segoe UI,sans-serif}main{max-width:1100px;margin:auto;padding:28px}
-h1{font:600 24px Consolas,monospace}h2{font:600 15px Consolas,monospace;position:sticky;top:0;background:#131b27;padding:9px 12px;margin:28px 0 0;border:1px solid #1f2a38}
-h2 span{color:#8fa1b3;font-weight:400}a{color:#3fd3f2}table{border-collapse:collapse;width:100%%}
-.sum td,.sum th{padding:7px 10px;border-bottom:1px solid #1f2a38;text-align:left}.n{text-align:right;font-family:Consolas,monospace}
-.bar{background:#1f2a38;height:9px;width:120px}.bar i{display:block;height:9px;background:#5fe0a0}
-.src{font:12.5px/1.45 Consolas,monospace;border:1px solid #1f2a38;border-top:0}.src pre{margin:0;white-space:pre-wrap}
-.src td{padding:0 8px;vertical-align:top}.ln{color:#4d5b6a;text-align:right;user-select:none;width:44px}
-tr.m{background:rgba(255,107,107,.16)}tr.p{background:rgba(242,193,78,.13)}.un{color:#8fa1b3;margin:8px 0}
+    # The app's dark theme and its self-hosted type (DESIGN.md), the fonts linked from wherever the report is written.
+    fonts = os.path.relpath(os.path.join(ROOT, "css", "fonts.css"), os.path.dirname(os.path.abspath(OUT))).replace(os.sep, "/")
+    page = """<!doctype html><meta charset=utf-8><title>Dvoretsky Lab coverage</title><link rel=stylesheet href="%s">
+<style>body{margin:0;background:#0E1C1C;color:#E0EAEA;font:14px "IBM Plex Sans",sans-serif;font-variant-numeric:tabular-nums}main{max-width:1100px;margin:auto;padding:28px}
+h1{font:800 24px "Bricolage Grotesque",sans-serif}h2{font:600 15px "IBM Plex Mono",monospace;position:sticky;top:0;background:#162626;padding:9px 12px;margin:28px 0 0;border:1px solid #2A3C3C}
+h2 span{color:#AABCBB;font-weight:400}a{color:#E29C96}table{border-collapse:collapse;width:100%%}
+.sum td,.sum th{padding:7px 10px;border-bottom:1px solid #2A3C3C;text-align:left}.n{text-align:right;font-family:"IBM Plex Mono",monospace}
+.bar{background:#2A3C3C;height:9px;width:120px}.bar i{display:block;height:9px;background:#94CEA3}
+.src{font:12.5px/1.45 "IBM Plex Mono",monospace;border:1px solid #2A3C3C;border-top:0}.src pre{margin:0;white-space:pre-wrap}
+.src td{padding:0 8px;vertical-align:top}.ln{color:#95A9A9;text-align:right;user-select:none;width:44px}
+tr.m{background:rgba(223,127,120,.16)}tr.p{background:rgba(225,196,135,.13)}.un{color:#AABCBB;margin:8px 0}
 .key span{display:inline-block;padding:1px 8px;margin-right:8px}</style><main>
 <h1>&gt; Dvoretsky Lab &middot; coverage %.2f%% of lines</h1>
 <p>Lines %d/%d, statements %d/%d, branches %d/%d, V8 blocks %d/%d, functions %d/%d, across %d runs: %s. Parser: %s.</p>
-<p class=key><span style="background:rgba(255,107,107,.3)">never ran</span><span style="background:rgba(242,193,78,.25)">ran, but part of the line did not</span></p>
+<p class=key><span style="background:rgba(223,127,120,.3)">never ran</span><span style="background:rgba(225,196,135,.25)">ran, but part of the line did not</span></p>
 <table class=sum><tr><th>file</th><th class=n>lines</th><th></th><th class=n>lines</th><th class=n>statements</th><th class=n>branches</th><th class=n>V8 blocks</th><th class=n>functions</th><th class=n>partial</th></tr>%s</table>
-%s</main>""" % (pc(T("covered"), T("lines")), T("covered"), T("lines"), T("stmts_hit"), T("stmts"), T("br_hit"), T("br"),
+%s</main>""" % (html.escape(fonts), pc(T("covered"), T("lines")), T("covered"), T("lines"), T("stmts_hit"), T("stmts"), T("br_hit"), T("br"),
                 T("blocks_hit"), T("blocks"), T("funcs_hit"), T("funcs"), len(runs), html.escape(", ".join(l for l, _, _, _ in runs)),
                 html.escape(ts or "none"), "".join(rows), "".join(bodies))
     with open(OUT, "w", encoding="utf-8") as f: f.write(page)

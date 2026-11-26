@@ -95,8 +95,14 @@ class Build(unittest.TestCase):
             body = got(os.path.join(ROOT, rel), False)
             self.assertIn("<script>/* %s */\n%s\n</script>" % (rel, body), page)
         self.assertIn("<style>\n" + got(os.path.join(ROOT, "css", "app.css"), False) + "\n</style>", page)
+        fonts = re.findall(r'url\("(fonts/[a-z0-9\-]+\.woff2)"\)', got(os.path.join(ROOT, "css", "fonts.css"), False))
+        self.assertEqual(len(fonts), 5)   # Bricolage Grotesque, and Plex Sans and Mono at 400 and 600
+        for rel in fonts:
+            with REAL_OPEN(os.path.join(ROOT, "css", rel), "rb") as f:
+                self.assertIn('url("data:font/woff2;base64,%s")' % base64.b64encode(f.read()).decode("ascii"), page)
         self.assertNotIn('src="js/', page)
         self.assertNotIn('href="css/', page)
+        self.assertNotIn('url("fonts/', page)
         self.assertIn("%d scripts inlined" % len(scripts), out)
         mk.assert_called_once_with(os.path.dirname(os.path.abspath(target)), exist_ok=True)
 
@@ -111,24 +117,26 @@ class Build(unittest.TestCase):
         self.assertEqual(writes, {})
 
     def test_not_exactly_one_stylesheet_link_is_refused(self):
-        link = '<link rel="stylesheet" href="css/app.css">'
-        for page in ("<html></html>", link + link):
+        link, fonts = '<link rel="stylesheet" href="css/app.css">', '<link rel="stylesheet" href="css/fonts.css">'
+        for page in ("<html></html>", fonts + link + link, link, fonts + fonts + link):
             writes, err, _, _ = self.build(["o.html"], {"index.html": page})
             self.assertIn("exactly one stylesheet link", err)
             self.assertEqual(writes, {})
 
     def test_a_script_holding_a_closing_tag_is_refused(self):
-        page = '<link rel="stylesheet" href="css/app.css"><script src="js/board.js"></script>'
+        page = '<link rel="stylesheet" href="css/fonts.css"><link rel="stylesheet" href="css/app.css"><script src="js/board.js"></script>'
         writes, err, _, _ = self.build(["o.html"], {"index.html": page, "js/board.js": "var s = '</SCRIPT>';"})
         self.assertEqual(err, "js/board.js contains </script, which would end the inlined tag early")
         self.assertEqual(writes, {})
 
     def test_a_reference_left_behind_is_refused(self):
-        # an upper-case name is not one the build inlines, so it would be left pointing at js/
-        page = '<link rel="stylesheet" href="css/app.css"><script src="js/Board.js"></script>'
-        writes, err, _, _ = self.build(["o.html"], {"index.html": page})
-        self.assertEqual(err, "a script or stylesheet reference was left un-inlined")
-        self.assertEqual(writes, {})
+        # an upper-case name is not one the build inlines, so it would be left pointing at js/ or css/fonts/
+        links = '<link rel="stylesheet" href="css/fonts.css"><link rel="stylesheet" href="css/app.css">'
+        for files in ({"index.html": links + '<script src="js/Board.js"></script>'},
+                      {"index.html": links, "css/fonts.css": '@font-face{src:url("fonts/Plex.woff2")}'}):
+            writes, err, _, _ = self.build(["o.html"], files)
+            self.assertEqual(err, "a script or stylesheet reference was left un-inlined")
+            self.assertEqual(writes, {})
 
 
 # ---------------------------------------------------------------- tools/install_stockfish.py
