@@ -625,7 +625,13 @@ with sync_playwright() as p:
                 return real_close(*a, **k)
             c.close = close_measured
         js = "".join("localStorage.setItem(%s, %s);" % (json.dumps("dvor:" + k), json.dumps(json.dumps(v))) for k, v in seed.items())
-        page.add_init_script('if (!sessionStorage.getItem("seeded")) { localStorage.clear(); %s sessionStorage.setItem("seeded", "1"); }' % js)
+        # Seeded on the first document only. A reload must never seed again: it would clear storage and put the seed
+        # back, so a check that reloads (Delete everything, the remembered theme) would read the seed, not the page's
+        # own doing. sessionStorage alone is not enough: Chromium now and then starts the reloaded document without it
+        # (CI saw it: dvor:games and dvor:cards back after Delete everything, not-this-app gone), so the navigation's
+        # own type is asked as well.
+        page.add_init_script('if (!sessionStorage.getItem("seeded") && (performance.getEntriesByType("navigation")[0] || {}).type !== "reload")'
+                             ' { localStorage.clear(); %s sessionStorage.setItem("seeded", "1"); }' % js)
         if init: page.add_init_script(init)
         page.goto("file:///" + os.path.abspath(APP).replace("\\", "/") + hash_)
         page.wait_for_timeout(500)
