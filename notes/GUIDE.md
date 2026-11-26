@@ -127,7 +127,10 @@ under the key `theme`, which every page on luke-zhang-cs-py.github.io shares. It
 independent of the board colours: a board looks the same in either. Every colour comes
 from tokens at the top of `css/app.css`; adding a theme is one `.theme-<name>` block there
 and one name in `THEMES` in `js/theme.js`, and `test/theme.js` then checks the new block's
-contrast.
+contrast. The colours are the repository's palette in `DESIGN.md` (fog teal with a brick
+accent); the type is Bricolage Grotesque for headings, IBM Plex Sans for the rest and IBM
+Plex Mono for moves, evaluations and counts, all three served from `css/fonts/` (no font is
+fetched from anywhere else, so the page still works offline and from `file://`).
 
 ---
 
@@ -426,6 +429,7 @@ scored a draw by repetition by Stockfish's view of the position instead of as ha
 ```
 index.html          shell and tab structure
 css/app.css         the whole stylesheet: design tokens first (page themes, board themes), then components
+css/fonts.css       the self-hosted fonts (css/fonts/, with their OFL licences), linked before app.css
 js/theme.js         the page theme: restored before first paint, and the masthead's theme button
 js/core.js          0x88 chess rules: move generation, SAN, FEN, PGN parsing
 js/engine.js        evaluation, alpha-beta search, quiescence, complexity scoring

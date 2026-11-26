@@ -56,7 +56,8 @@ house engine judged its own mistakes correctly.
 ```
 index.html   the whole app: open it
 js/          12 modules, plain scripts, no bundler; js/vendor/ is Stockfish (GPL-3.0)
-css/         one stylesheet: design tokens (a dark and a light page theme, nine board themes), then components
+css/         one stylesheet: design tokens (a dark and a light page theme, nine board themes), then components;
+             fonts.css and fonts/, the self-hosted type (OFL); DESIGN.md has the rules both follow
 test/        Node suites, the UCI gauntlet, Playwright drives of the page and the single file, a coverage report,
              and Python checks (test_*.py) of the tools, the experiments and the report
 tools/       uci.js (the engine for any UCI GUI), match.js and sprt.js (engine matches; games.js is
